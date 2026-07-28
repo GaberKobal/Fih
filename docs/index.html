@@ -474,7 +474,22 @@ function renderHours(d){
   const day=(d.days||[])[selDay];
   const host=$("#hours"); host.innerHTML="";
   $("#hourdet").textContent="";
-  if(!day) return;
+
+  if(!day){
+    // Data file predates the hourly breakdown - fall back to the single
+    // overall window rather than rendering an empty panel.
+    const w=d.best_window;
+    $("#window").innerHTML = w
+      ? `<span class="when">${w.start.slice(11,16)} – ${w.end.slice(11,16)}</span>
+         <span style="color:var(--sound);font-size:13px">${w.wave_height_m} m · ${w.wind_speed_kmh} km/h</span>`
+      : `<span class="when">—</span>`;
+    $("#hourdet").innerHTML =
+      '<span style="color:var(--flag)">Hour-by-hour needs the current fish_finder.py. '+
+      'Upload it and re-run the workflow.</span>';
+    $("#hourax").style.display="none";
+    return;
+  }
+  $("#hourax").style.display="flex";
 
   const inBest=h=>day.best && h.t>=day.best.start && h.t<=day.best.end;
   day.hours.forEach(h=>{
