@@ -130,6 +130,34 @@
   #window .when{font-family:var(--mono); font-size:16px; color:var(--buoy)}
   #spark{display:block; width:100%; height:46px; margin-top:10px}
 
+  /* ---- day tabs + hour-by-hour strip ---- */
+  #days{display:flex; gap:6px; margin:10px 0 2px; flex-wrap:wrap}
+  .day{
+    flex:1 1 auto; min-width:78px; cursor:pointer; text-align:left;
+    background:var(--abyss); border:1px solid var(--line); border-radius:2px;
+    padding:7px 9px; color:var(--chart); font-family:var(--sans);
+  }
+  .day[aria-pressed="true"]{border-color:var(--buoy); background:var(--shoal)}
+  .day .dl{display:block; font:700 9.5px/1 var(--sans); letter-spacing:.16em;
+    text-transform:uppercase; color:var(--sound)}
+  .day .dt{display:block; font-family:var(--mono); font-size:14px; margin-top:4px}
+  #hours{display:flex; gap:2px; align-items:flex-end; height:64px; margin-top:12px}
+  #hours .hr{
+    flex:1 1 0; min-width:0; height:100%; position:relative; cursor:pointer;
+    display:flex; align-items:flex-end; background:none; border:0; padding:0;
+  }
+  #hours .hr span{display:block; width:100%; border-radius:1px 1px 0 0; min-height:2px}
+  #hours .hr.dark span{opacity:.22}
+  #hours .hr.best::after{
+    content:""; position:absolute; inset:-2px -1px; border:1px solid var(--buoy);
+    border-radius:2px; pointer-events:none;
+  }
+  #hours .hr[aria-pressed="true"] span{outline:1px solid var(--chart)}
+  #hourax{display:flex; justify-content:space-between; margin-top:4px;
+    font:400 9.5px/1 var(--mono); color:var(--sound)}
+  #hourdet{margin-top:9px; font-size:12.5px; color:var(--sound); min-height:18px}
+  #hourdet b{color:var(--chart); font-family:var(--mono); font-weight:500}
+
   ol#spots{list-style:none; margin:0; padding:0}
   ol#spots li{
     display:grid; grid-template-columns:26px 1fr auto; gap:12px; align-items:center;
@@ -233,6 +261,10 @@
     <section class="band">
       <div class="eyebrow">Best window</div>
       <div id="window"><span class="when">—</span></div>
+      <div id="days" role="group" aria-label="Forecast day"></div>
+      <div id="hours" role="group" aria-label="Hour by hour"></div>
+      <div id="hourax"><span>00</span><span>06</span><span>12</span><span>18</span><span>23</span></div>
+      <div id="hourdet"></div>
       <svg id="spark" viewBox="0 0 300 46" preserveAspectRatio="none" aria-hidden="true"></svg>
       <div class="eyebrow" style="margin-top:6px" id="sparklabel"></div>
     </section>
@@ -418,6 +450,63 @@ function selectTarget(id){
   if(sp && $("#f_species").options.length){ $("#f_species").value=sp.id; buildRow(); }
 }
 
+let selDay=0;
+
+function renderDays(d){
+  const host=$("#days"); host.innerHTML="";
+  (d.days||[]).forEach((day,i)=>{
+    const b=document.createElement("button");
+    b.type="button"; b.className="day"; b.setAttribute("aria-pressed",String(i===selDay));
+    const dt=new Date(day.date+"T12:00");
+    const label=day.is_today?"Today":dt.toLocaleDateString([], {weekday:"short"});
+    const best=day.best
+      ? day.best.start.slice(11,16)+"–"+day.best.end.slice(11,16)
+      : "—";
+    const col=day.peak_score>=.6?"var(--kelp)":day.peak_score>=.3?"var(--buoy)":"var(--flag)";
+    b.innerHTML=`<span class="dl">${label}</span>
+                 <span class="dt" style="color:${col}">${best}</span>`;
+    b.addEventListener("click",()=>{selDay=i; renderDays(d); renderHours(d);});
+    host.appendChild(b);
+  });
+}
+
+function renderHours(d){
+  const day=(d.days||[])[selDay];
+  const host=$("#hours"); host.innerHTML="";
+  $("#hourdet").textContent="";
+  if(!day) return;
+
+  const inBest=h=>day.best && h.t>=day.best.start && h.t<=day.best.end;
+  day.hours.forEach(h=>{
+    const b=document.createElement("button");
+    b.type="button";
+    b.className="hr"+(h.daylight?"":" dark")+(inBest(h)?" best":"");
+    b.setAttribute("aria-pressed","false");
+    b.title=`${String(h.hour).padStart(2,"0")}:00`;
+    const [r,g,bl]=ramp(h.score);
+    const pct=Math.max(3,Math.round(h.score*100));
+    b.innerHTML=`<span style="height:${pct}%;background:rgb(${r},${g},${bl})"></span>`;
+    b.addEventListener("click",()=>{
+      host.querySelectorAll(".hr").forEach(x=>x.setAttribute("aria-pressed","false"));
+      b.setAttribute("aria-pressed","true");
+      $("#hourdet").innerHTML =
+        `<b>${String(h.hour).padStart(2,"0")}:00</b> · score <b>${h.score.toFixed(2)}</b>
+         · viz <b>${h.viz_m}</b> m · swell <b>${h.wave_m}</b> m
+         · wind <b>${h.wind_kmh}</b> km/h · <b>${h.sea_temp_c}</b> °C
+         ${h.daylight?"":" · dark"}${h.workable?"":" · unworkable"}${h.past?" · past":""}`;
+    });
+    host.appendChild(b);
+  });
+
+  const b=day.best;
+  $("#window").innerHTML = b
+    ? `<span class="when">${b.start.slice(11,16)} – ${b.end.slice(11,16)}</span>
+       <span style="color:var(--sound);font-size:13px">
+        viz ${b.viz_m} m · ${b.wave_m} m · ${b.wind_kmh} km/h</span>`
+    : `<span class="when">nothing diveable</span>
+       <span style="color:var(--sound);font-size:13px">on this day</span>`;
+}
+
 function renderSpecies(d){
   const host=$("#species"); host.innerHTML="";
   const mk=(id,name,score,why,out)=>{
@@ -470,14 +559,9 @@ async function load(){
     ["current",   `${fmt(d.now.current_ms,2)} m/s`],
   ].map(([k,v])=>`<div><span class="eyebrow">${k}</span><b>${v}</b></div>`).join("");
 
-  const w=d.best_window;
-  $("#window").innerHTML = w
-    ? `<span class="when">${new Date(w.start+"Z").toLocaleString([], {weekday:"short",hour:"2-digit",minute:"2-digit"})}
-        – ${new Date(w.end+"Z").toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})}</span>
-       <span style="color:var(--sound);font-size:13px">
-        ${fmt(w.wave_height_m,2)} m · ${fmt(w.wind_speed_kmh,0)} km/h · ${fmt(w.sea_temp_c,1)} °C</span>`
-    : `<span class="when">none in range</span>
-       <span style="color:var(--sound);font-size:13px">nothing diveable in the next 72 h</span>`;
+  selDay = 0;
+  renderDays(d);
+  renderHours(d);
 
   drawVerdictGradient(d.series, d.now_index);
   drawSpark(d.series, d.now_index);
