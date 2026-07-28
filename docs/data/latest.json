@@ -1,5 +1,5 @@
 {
- "generated": "2026-07-28T14:53:27+00:00",
+ "generated": "2026-07-28T15:02:02+00:00",
  "region": "Novigrad, Istria",
  "bounds": [
   [
@@ -12,16 +12,16 @@
   ]
  ],
  "now": {
-  "time": "2026-07-28T14:00",
+  "time": "2026-07-28T15:00",
   "verdict": "go",
   "limited_by": "nothing limiting",
-  "score": 0.92,
+  "score": 0.968,
   "visibility_m": 17.6,
   "wave_height_m": 0.1,
-  "wind_speed_kmh": 12.0,
-  "wind_from_deg": 279,
-  "sea_temp_c": 26.9,
-  "current_ms": 0.5
+  "wind_speed_kmh": 10.8,
+  "wind_from_deg": 270,
+  "sea_temp_c": 27.0,
+  "current_ms": 0.4
  },
  "best_window": {
   "start": "2026-07-30T16:00",
@@ -69,7 +69,6 @@
  ],
  "series": {
   "time": [
-   "2026-07-27T14:00",
    "2026-07-27T15:00",
    "2026-07-27T16:00",
    "2026-07-27T17:00",
@@ -154,7 +153,6 @@
   ],
   "visibility_m": [
    16.9,
-   16.9,
    17.0,
    17.0,
    17.0,
@@ -238,7 +236,6 @@
   ],
   "wave_height_m": [
    0.28,
-   0.28,
    0.26,
    0.24,
    0.22,
@@ -321,7 +318,6 @@
    0.04
   ],
   "wind_speed_kmh": [
-   10.8,
    10.7,
    7.4,
    3.0,
@@ -485,11 +481,9 @@
    0.0,
    0.0,
    0.0,
-   0.0,
    0.0
   ],
   "sea_level_m": [
-   -0.4,
    -0.33,
    -0.24,
    -0.16,
@@ -573,7 +567,6 @@
    -0.49
   ],
   "workability": [
-   0.954,
    0.954,
    0.985,
    1.0,
@@ -662,110 +655,128 @@
   {
    "lat": 45.321865,
    "lon": 13.557324,
-   "score": 0.863,
+   "score": 0.882,
    "depth_m": 4.2,
    "relief": 1.0,
-   "slope": 0.427,
+   "slope": 0.508,
    "shelter": 0.993
   },
   {
-   "lat": 45.312882,
-   "lon": 13.575212,
-   "score": 0.845,
-   "depth_m": 4.9,
+   "lat": 45.321865,
+   "lon": 13.549658,
+   "score": 0.759,
+   "depth_m": 5.4,
    "relief": 1.0,
-   "slope": 0.431,
-   "shelter": 0.94
-  },
-  {
-   "lat": 45.312882,
-   "lon": 13.585433,
-   "score": 0.779,
-   "depth_m": 4.1,
-   "relief": 1.0,
-   "slope": 0.094,
-   "shelter": 0.978
-  },
-  {
-   "lat": 45.33534,
-   "lon": 13.539437,
-   "score": 0.771,
-   "depth_m": 7.1,
-   "relief": 1.0,
-   "slope": 0.554,
-   "shelter": 0.647
-  },
-  {
-   "lat": 45.322763,
-   "lon": 13.548381,
-   "score": 0.761,
-   "depth_m": 8.1,
-   "relief": 0.994,
-   "slope": 0.579,
+   "slope": 0.562,
    "shelter": 0.61
   },
   {
-   "lat": 45.32995,
-   "lon": 13.535604,
-   "score": 0.753,
-   "depth_m": 9.8,
+   "lat": 45.336238,
+   "lon": 13.536882,
+   "score": 0.756,
+   "depth_m": 10.0,
    "relief": 1.0,
-   "slope": 0.456,
+   "slope": 0.467,
    "shelter": 0.662
   },
   {
-   "lat": 45.309289,
-   "lon": 13.547103,
-   "score": 0.721,
-   "depth_m": 11.1,
+   "lat": 45.342526,
+   "lon": 13.541992,
+   "score": 0.75,
+   "depth_m": 4.8,
    "relief": 1.0,
-   "slope": 0.386,
-   "shelter": 0.617
+   "slope": 0.479,
+   "shelter": 0.64
   },
   {
-   "lat": 45.31378,
-   "lon": 13.557324,
-   "score": 0.71,
-   "depth_m": 6.5,
+   "lat": 45.311983,
+   "lon": 13.541992,
+   "score": 0.727,
+   "depth_m": 12.0,
    "relief": 1.0,
-   "slope": 0.409,
-   "shelter": 0.573
+   "slope": 0.379,
+   "shelter": 0.64
+  },
+  {
+   "lat": 45.309289,
+   "lon": 13.548381,
+   "score": 0.71,
+   "depth_m": 10.9,
+   "relief": 1.0,
+   "slope": 0.34,
+   "shelter": 0.617
   },
   {
    "lat": 45.318272,
    "lon": 13.59821,
-   "score": 0.703,
+   "score": 0.709,
    "depth_m": 3.6,
    "relief": 1.0,
-   "slope": 0.168,
-   "shelter": 0.985
+   "slope": 0.182,
+   "shelter": 0.993
   },
   {
-   "lat": 45.304797,
-   "lon": 13.590544,
-   "score": 0.694,
-   "depth_m": 4.4,
+   "lat": 45.312882,
+   "lon": 13.57649,
+   "score": 0.701,
+   "depth_m": 5.1,
    "relief": 1.0,
-   "slope": 0.531,
-   "shelter": 0.445
+   "slope": 0.473,
+   "shelter": 0.505
   },
   {
-   "lat": 45.321865,
-   "lon": 13.536882,
-   "score": 0.691,
-   "depth_m": 11.8,
-   "relief": 0.993,
-   "slope": 0.216,
+   "lat": 45.314678,
+   "lon": 13.556047,
+   "score": 0.688,
+   "depth_m": 4.3,
+   "relief": 1.0,
+   "slope": 0.294,
+   "shelter": 0.588
+  },
+  {
+   "lat": 45.305695,
+   "lon": 13.590544,
+   "score": 0.676,
+   "depth_m": 4.9,
+   "relief": 1.0,
+   "slope": 0.445,
+   "shelter": 0.453
+  },
+  {
+   "lat": 45.320068,
+   "lon": 13.538159,
+   "score": 0.673,
+   "depth_m": 10.5,
+   "relief": 1.0,
+   "slope": 0.128,
    "shelter": 0.655
   },
   {
-   "lat": 45.311085,
-   "lon": 13.594377,
-   "score": 0.67,
-   "depth_m": 3.9,
+   "lat": 45.31378,
+   "lon": 13.567546,
+   "score": 0.652,
+   "depth_m": 4.3,
+   "relief": 1.0,
+   "slope": 0.209,
+   "shelter": 0.542
+  },
+  {
+   "lat": 45.303,
+   "lon": 13.579045,
+   "score": 0.631,
+   "depth_m": 5.6,
+   "relief": 1.0,
+   "slope": 0.184,
+   "shelter": 0.498
+  },
+  {
+   "lat": 45.302102,
+   "lon": 13.568823,
+   "score": 0.596,
+   "depth_m": 8.2,
    "relief": 0.83,
-   "slope": 0.097,
-   "shelter": 0.917
+   "slope": 0.277,
+   "shelter": 0.535
   }
  ]
 }
