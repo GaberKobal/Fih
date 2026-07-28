@@ -83,12 +83,17 @@ def main():
     ap.add_argument("--config", default=str(ROOT / "config.json"))
     ap.add_argument("--log", default=str(ROOT / "dive_log.csv"))
     ap.add_argument("--l2", type=float, default=1.0)
+    ap.add_argument("--species", default=None,
+                    help="fit one species only, using its id from species.json")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
 
     cfg = json.loads(Path(args.config).read_text())
     rows = list(csv.DictReader(open(args.log)))
     rows = [r for r in rows if r.get("lat") and r.get("result") not in (None, "")]
+    if args.species:
+        rows = [r for r in rows if r.get("species", "").strip() == args.species]
+        print(f"filtered to species={args.species}")
     if not rows:
         raise SystemExit("dive_log.csv has no usable rows yet")
 
@@ -174,8 +179,10 @@ def main():
     if args.dry_run:
         print("(dry run, nothing written)")
         return
-    (ROOT / "weights.json").write_text(json.dumps(out, indent=1))
-    print(f"wrote {ROOT / 'weights.json'}")
+    out["species"] = args.species
+    name = f"weights_{args.species}.json" if args.species else "weights.json"
+    (ROOT / name).write_text(json.dumps(out, indent=1))
+    print(f"wrote {ROOT / name}")
 
 
 if __name__ == "__main__":

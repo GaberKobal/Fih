@@ -44,6 +44,7 @@ triggers a rebuild automatically.
 | `entry_points` | **Edit these.** Only one placeholder is filled in. Add every place you actually get in the water. |
 | `max_swim_km` | How far out you will swim from an entry point. |
 | `weights` | The relative pull of relief, slope, shelter, habitat. |
+| `species_ids` | `null` scores every species in `species.json`. Set to a list like `["sargus","aurata"]` to cut the run short. |
 | `visibility.*` | How fast you think the water clears after a blow or rain. |
 | `workability.*` | The sea state and wind you personally will and will not dive. |
 
@@ -84,10 +85,14 @@ Fill in `dive_log.csv` as you dive — one row per dive, **including the
 blanks**, which matter more than the good days:
 
 ```csv
-date,lat,lon,depth_m,viz_m,wind_from_deg,result,notes
-2026-07-12,45.3204,13.5691,17.5,6,120,1,two decent sarago on the edge
-2026-07-12,45.3255,13.5602,11.0,6,120,0,flat sand, nothing
+date,lat,lon,depth_m,viz_m,wind_from_deg,species,result,notes
+2026-07-12,45.3204,13.5691,17.5,6,120,sargus,1,two decent sarago on the edge
+2026-07-12,45.3255,13.5602,11.0,6,120,sargus,0,flat sand nothing
 ```
+
+Use the `id` from `species.json` in the species column. Once you have enough
+rows for one species you can fit that species on its own:
+`python calibrate.py --species sargus`.
 
 Then run `python calibrate.py`. It fits a logistic regression of `result` on
 the terms sampled at your points, writes `weights.json`, and the daily job

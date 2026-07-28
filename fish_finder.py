@@ -268,8 +268,6 @@ def structure_terms(depth_m, land, lats, lons, cfg):
     # mound (tegnua, boulder field, wreck mound), negative for a hole.
     bg_sigma_cells = max(2.0, cfg["structure"]["background_scale_m"] /
                          cfg["grid_resolution_m"])
-    from scipy.ndimage import median_filter
-    filled = median_filter(filled, size=3)      # kills 1-cell survey seams
     background = gaussian_filter(filled, sigma=bg_sigma_cells)
     relief = background - filled
 
@@ -620,6 +618,98 @@ def verdict(viz_now, viz_m_now, work_now, sea_now, air_now, cfg):
 # scoring and spot extraction
 # --------------------------------------------------------------------------
 
+def trapezoid(x, lo, best_lo, best_hi, hi):
+    """1.0 across [best_lo, best_hi], ramping linearly to 0 at lo and hi."""
+    x = np.asarray(x, dtype=float)
+    up = np.clip((x - lo) / max(best_lo - lo, 1e-9), 0, 1)
+    down = np.clip((hi - x) / max(hi - best_hi, 1e-9), 0, 1)
+    return np.minimum(up, down)
+
+
+def load_species(cfg):
+    path = ROOT / cfg.get("species_file", "species.json")
+    if not path.exists():
+        return []
+    doc = json.loads(path.read_text())
+    wanted = cfg.get("species_ids")          # null/absent = all of them
+    out = [sp for sp in doc.get("species", [])
+           if not wanted or sp["id"] in wanted]
+    return out
+
+
+def species_day_factors(sp, sea_temp_c, viz_score, month):
+    """How available this species is today, independent of location.
+
+    Three independent gates, multiplied: temperature, season, and whether
+    today's water clarity suits how you hunt it.
+    """
+    t_lo, t_hi = sp["temp_c"]
+    tb_lo, tb_hi = sp["temp_best_c"]
+    temp_fit = float(trapezoid(sea_temp_c, t_lo, tb_lo, tb_hi, t_hi))
+
+    season_fit = 1.0 if month in sp["months"] else 0.0
+
+    pref = sp.get("viz_pref", "any")
+    if pref == "clear":
+        viz_fit = float(viz_score)
+    elif pref == "murky":
+        # The inversion that matters: bass and orada get easier as the
+        # water colours up, which is exactly when the generic map says stay home.
+        viz_fit = float(1.0 - 0.65 * viz_score)
+    else:
+        viz_fit = float(0.55 + 0.45 * viz_score)
+
+    return {
+        "temp_fit": round(temp_fit, 3),
+        "season_fit": round(season_fit, 3),
+        "viz_fit": round(viz_fit, 3),
+        "today": round(temp_fit * season_fit * viz_fit, 3),
+    }
+
+
+def species_depth_fit(sp, depth_m, land, cfg):
+    """Species depth envelope, intersected with what you can actually dive.
+
+    A dentex at 40 m is irrelevant if your limit is 24.
+    """
+    lo, hi = sp["depth_m"]
+    blo, bhi = sp["depth_best_m"]
+    lo = max(lo, cfg["depth"]["min_m"])
+    hi = min(hi, cfg["depth"]["max_m"])
+    blo = min(max(blo, lo), hi)
+    bhi = max(min(bhi, hi), lo)
+    if hi <= lo:
+        return np.zeros_like(depth_m)
+    fit = trapezoid(np.nan_to_num(depth_m, nan=-999.0), lo, blo, bhi, hi)
+    fit[land] = 0.0
+    fit[~np.isfinite(depth_m)] = 0.0
+    return fit
+
+
+def species_spatial_score(sp, terms, depth_m, land, gates, cfg):
+    """Reweight the structure terms by what this species actually associates with."""
+    r = sp["relief_affinity"]
+    sl = sp["slope_affinity"]
+    parts = {"relief": r * terms["relief"], "slope": sl * terms["slope"]}
+    denom = r + sl
+
+    if "habitat" in terms:
+        parts["habitat"] = terms["habitat"]
+        denom += 1.0
+
+    structure = sum(parts.values()) / max(denom, 1e-9)
+
+    # Shelter keeps its configured pull: it is about you being able to hunt,
+    # not about the fish.
+    ws = cfg["weights"].get("shelter", 0.3)
+    score = (1.0 - ws) * structure + ws * terms["shelter"]
+
+    score = score * species_depth_fit(sp, depth_m, land, cfg)
+    for g in gates:
+        score = score * g
+    return np.clip(score, 0.0, 1.0)
+
+
 def combine_score(terms, weights, gates):
     total_w = sum(weights[k] for k in terms)
     if total_w <= 0:
@@ -863,6 +953,41 @@ def run(cfg, selftest=False):
     write_geojson(spots, OUT / "spots.geojson", {"generated": stamp})
     write_gpx(spots, OUT / "spots.gpx", f"{cfg['region_name']} {stamp[:10]}")
 
+    # ---- per-species maps ----
+    # The generic map above answers "where is there structure you can reach".
+    # These answer "where is THIS animal likely to be, given today".
+    sea_temp = float(h["sea_surface_temperature"][now_i])
+    if not np.isfinite(sea_temp):
+        sea_temp = float(np.nanmedian(h["sea_surface_temperature"]))
+    month = int(now_iso[5:7])
+    gates = [afit, (~excl).astype(float)]
+
+    species_out = []
+    for sp in load_species(cfg):
+        day = species_day_factors(sp, sea_temp, float(viz[now_i]), month)
+        smap = species_spatial_score(sp, terms, depth_m, land, gates, cfg)
+        smap[land] = 0.0
+        sspots = find_spots(smap, lats, lons, depth_m, terms, cfg)
+        write_overlay_png(smap, lats, lons, OUT / f"score_{sp['id']}.png")
+        write_gpx(sspots, OUT / f"spots_{sp['id']}.gpx",
+                  f"{sp['common']} {stamp[:10]}")
+        species_out.append({
+            "id": sp["id"],
+            "common": sp["common"],
+            "scientific": sp["scientific"],
+            "note": sp.get("note", ""),
+            "viz_pref": sp.get("viz_pref", "any"),
+            "wary": sp.get("wary"),
+            "depth_best_m": sp["depth_best_m"],
+            "in_season": bool(day["season_fit"]),
+            **day,
+            "spots": sspots,
+        })
+    species_out.sort(key=lambda x: -x["today"])
+    if species_out:
+        log("today's ranking: " + ", ".join(
+            f"{x['common'].split(' /')[0]} {x['today']:.2f}" for x in species_out[:4]))
+
     keep = slice(max(0, now_i - 24), min(len(h["time"]), now_i + 60))
     payload = {
         "generated": stamp,
@@ -895,7 +1020,10 @@ def run(cfg, selftest=False):
             "workability": [round(float(v), 3) for v in work[keep]],
         },
         "now_index": now_i - max(0, now_i - 24),
+        "sea_temp_now_c": round(sea_temp, 1),
+        "month": month,
         "spots": spots,
+        "species": species_out,
     }
     (OUT / "latest.json").write_text(json.dumps(payload, indent=1))
     log(f"wrote {OUT / 'latest.json'}")
