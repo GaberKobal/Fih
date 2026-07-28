@@ -1,0 +1,5 @@
+{
+  "type": "FeatureCollection",
+  "comment": "Hard no-go polygons: protected areas, port limits, cable/anchorage zones, anything you must not shoot in. Cells inside these are forced to zero. Replace the example below with real boundaries before relying on it.",
+  "features": []
+}
