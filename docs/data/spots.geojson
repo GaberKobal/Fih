@@ -1,7 +1,7 @@
 {
  "type": "FeatureCollection",
  "properties": {
-  "generated": "2026-07-28T18:19:41+00:00"
+  "generated": "2026-07-28T18:27:26+00:00"
  },
  "features": [
   {
@@ -43,6 +43,57 @@
    "geometry": {
     "type": "Point",
     "coordinates": [
+     13.538159,
+     45.336238
+    ]
+   },
+   "properties": {
+    "score": 0.774,
+    "depth_m": 8.4,
+    "relief": 1.0,
+    "slope": 0.557,
+    "shelter": 0.655
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     13.538159,
+     45.345221
+    ]
+   },
+   "properties": {
+    "score": 0.752,
+    "depth_m": 9.7,
+    "relief": 0.963,
+    "slope": 0.528,
+    "shelter": 0.655
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     13.541992,
+     45.311983
+    ]
+   },
+   "properties": {
+    "score": 0.729,
+    "depth_m": 12.0,
+    "relief": 1.0,
+    "slope": 0.389,
+    "shelter": 0.64
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
      13.548381,
      45.309289
     ]
@@ -77,16 +128,16 @@
    "geometry": {
     "type": "Point",
     "coordinates": [
-     13.544548,
-     45.31378
+     13.59821,
+     45.318272
     ]
    },
    "properties": {
-    "score": 0.695,
-    "depth_m": 9.3,
+    "score": 0.706,
+    "depth_m": 3.6,
     "relief": 1.0,
-    "slope": 0.257,
-    "shelter": 0.633
+    "slope": 0.168,
+    "shelter": 0.993
    }
   },
   {
@@ -94,16 +145,67 @@
    "geometry": {
     "type": "Point",
     "coordinates": [
-     13.571379,
+     13.590544,
+     45.304797
+    ]
+   },
+   "properties": {
+    "score": 0.696,
+    "depth_m": 4.4,
+    "relief": 1.0,
+    "slope": 0.531,
+    "shelter": 0.453
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     13.575212,
+     45.312882
+    ]
+   },
+   "properties": {
+    "score": 0.694,
+    "depth_m": 4.9,
+    "relief": 1.0,
+    "slope": 0.431,
+    "shelter": 0.512
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     13.536882,
+     45.321865
+    ]
+   },
+   "properties": {
+    "score": 0.693,
+    "depth_m": 11.8,
+    "relief": 0.993,
+    "slope": 0.216,
+    "shelter": 0.662
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     13.582878,
      45.311983
     ]
    },
    "properties": {
-    "score": 0.654,
-    "depth_m": 5.7,
+    "score": 0.613,
+    "depth_m": 4.5,
     "relief": 1.0,
-    "slope": 0.236,
-    "shelter": 0.528
+    "slope": 0.131,
+    "shelter": 0.483
    }
   }
  ]
