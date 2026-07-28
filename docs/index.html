@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#071A22">
+<title>Novigrad — dive forecast</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  /* ---------------------------------------------------------------
+     No webfonts on purpose. This page gets opened in a car park on a
+     bad coastal signal; system faces render instantly and work from
+     cache. The character comes from weight, tracking and scale.
+     --------------------------------------------------------------- */
+  :root{
+    --abyss:#071A22;      /* page ground: deep petrol, not neutral black */
+    --shelf:#0E2E3A;      /* panels */
+    --shoal:#164657;      /* raised, hover */
+    --line:#1E5163;
+    --chart:#C9DDE3;      /* chart-paper text */
+    --sound:#6E93A0;      /* muted */
+    --buoy:#F2B138;       /* cardinal-mark amber */
+    --flag:#E4573D;       /* dive-flag red */
+    --kelp:#5FBFA0;
+
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{
+    background:var(--abyss); color:var(--chart); font-family:var(--sans);
+    -webkit-font-smoothing:antialiased;
+    display:flex; flex-direction:column;
+    padding-bottom:env(safe-area-inset-bottom);
+  }
+  .eyebrow{
+    font-size:10px; font-weight:700; letter-spacing:.18em; text-transform:uppercase;
+    color:var(--sound);
+  }
+  .num{font-family:var(--mono); font-variant-numeric:tabular-nums}
+
+  /* ---- signature: the verdict band is also the 72-hour forecast ---- */
+  #verdict{
+    position:relative; padding:14px 16px 12px;
+    border-bottom:1px solid var(--line);
+    background:var(--shelf); overflow:hidden;
+  }
+  #vgrad{position:absolute; inset:0; opacity:.30}
+  #vnow{
+    position:absolute; top:0; bottom:0; width:1px;
+    background:var(--chart); opacity:.55;
+  }
+  #vnow::after{
+    content:""; position:absolute; top:0; left:-3px;
+    border-left:3.5px solid transparent; border-right:3.5px solid transparent;
+    border-top:5px solid var(--chart);
+  }
+  #verdict > .row{position:relative}
+  .row{display:flex; align-items:baseline; justify-content:space-between; gap:12px}
+  #word{
+    font-size:clamp(30px,10vw,44px); font-weight:300; letter-spacing:-.03em;
+    line-height:1; text-transform:lowercase;
+  }
+  #word[data-v="go"]{color:var(--kelp)}
+  #word[data-v="marginal"]{color:var(--buoy)}
+  #word[data-v="poor"],#word[data-v="stay home"]{color:var(--flag)}
+  #limit{font-size:13px; color:var(--sound); margin-top:6px}
+  #vitals{display:flex; gap:16px; margin-top:12px; flex-wrap:wrap}
+  #vitals div{min-width:56px}
+  #vitals b{display:block; font-family:var(--mono); font-size:17px; font-weight:500}
+
+  /* ---- map ---- */
+  #map{flex:1 1 auto; min-height:44vh; background:var(--abyss)}
+  .leaflet-container{background:var(--abyss); font-family:var(--sans)}
+  .leaflet-control-attribution{
+    background:rgba(7,26,34,.82)!important; color:var(--sound)!important; font-size:9px
+  }
+  .leaflet-control-attribution a{color:var(--sound)!important}
+  .mark{
+    width:26px;height:26px;border-radius:50%;
+    display:grid;place-items:center;
+    font:600 11px/1 var(--mono); color:var(--abyss);
+    background:var(--buoy); border:1.5px solid var(--abyss);
+    box-shadow:0 0 0 1px rgba(242,177,56,.55);
+  }
+  .mark.dim{background:var(--sound); box-shadow:none}
+  .entry{
+    width:12px;height:12px;border-radius:50%;
+    background:transparent;border:2px solid var(--chart);
+  }
+
+  /* ---- bottom drawer ---- */
+  #sheet{
+    flex:0 0 auto; max-height:42vh; overflow-y:auto;
+    border-top:1px solid var(--line); background:var(--shelf);
+    -webkit-overflow-scrolling:touch;
+  }
+  .band{padding:12px 16px; border-bottom:1px solid var(--line)}
+  #window{display:flex; align-items:baseline; gap:10px; flex-wrap:wrap}
+  #window .when{font-family:var(--mono); font-size:16px; color:var(--buoy)}
+  #spark{display:block; width:100%; height:46px; margin-top:10px}
+
+  ol#spots{list-style:none; margin:0; padding:0}
+  ol#spots li{
+    display:grid; grid-template-columns:26px 1fr auto; gap:12px; align-items:center;
+    padding:11px 16px; border-bottom:1px solid var(--line); cursor:pointer;
+  }
+  ol#spots li:hover,ol#spots li:focus-visible{background:var(--shoal); outline:none}
+  ol#spots li .rank{
+    font:600 11px/26px var(--mono); text-align:center; color:var(--abyss);
+    background:var(--buoy); border-radius:50%; height:26px;
+  }
+  .coords{font-family:var(--mono); font-size:12.5px}
+  .bars{display:flex; gap:3px; margin-top:5px}
+  .bars i{height:3px; width:26px; background:var(--shoal); border-radius:2px; display:block}
+  .bars i span{display:block; height:100%; background:var(--sound); border-radius:2px}
+  .depth{font-family:var(--mono); font-size:15px; color:var(--buoy); white-space:nowrap}
+
+  .actions{display:flex; gap:8px; padding:12px 16px 16px; flex-wrap:wrap}
+  .actions a,.actions button{
+    font:600 11px/1 var(--sans); letter-spacing:.12em; text-transform:uppercase;
+    color:var(--chart); background:var(--shoal); border:1px solid var(--line);
+    border-radius:2px; padding:10px 13px; text-decoration:none; cursor:pointer;
+  }
+  .actions a:hover,.actions button:hover{background:var(--line)}
+  :focus-visible{outline:2px solid var(--buoy); outline-offset:2px}
+
+  #stamp{padding:10px 16px 16px; font-size:11px; color:var(--sound)}
+  #err{padding:20px 16px; color:var(--flag); font-size:14px; display:none}
+  @media (prefers-reduced-motion:no-preference){
+    #verdict{animation:rise .4s ease-out both}
+    @keyframes rise{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
+  }
+  @media (min-width:820px){
+    body{flex-direction:row}
+    #left{display:flex;flex-direction:column;width:380px;flex:0 0 380px;height:100%;overflow:hidden}
+    #sheet{max-height:none;flex:1 1 auto;border-top:none}
+    #map{height:100%}
+  }
+</style>
+</head>
+<body>
+
+<div id="left">
+  <header id="verdict">
+    <canvas id="vgrad" aria-hidden="true"></canvas>
+    <div id="vnow" aria-hidden="true"></div>
+    <div class="row">
+      <div>
+        <div class="eyebrow" id="region">loading</div>
+        <div id="word">—</div>
+        <div id="limit"></div>
+      </div>
+    </div>
+    <div id="vitals"></div>
+  </header>
+
+  <div id="sheet">
+    <div id="err"></div>
+    <section class="band">
+      <div class="eyebrow">Best window</div>
+      <div id="window"><span class="when">—</span></div>
+      <svg id="spark" viewBox="0 0 300 46" preserveAspectRatio="none" aria-hidden="true"></svg>
+      <div class="eyebrow" style="margin-top:6px" id="sparklabel"></div>
+    </section>
+    <ol id="spots"></ol>
+    <div class="actions">
+      <a id="gpx" href="data/spots.gpx" download>Download GPX</a>
+      <button id="refresh" type="button">Refresh</button>
+    </div>
+    <div id="stamp"></div>
+  </div>
+</div>
+
+<div id="map"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const $ = s => document.querySelector(s);
+const fmt = (n,d=1) => (n===null||n===undefined||Number.isNaN(n)) ? "–" : Number(n).toFixed(d);
+
+const map = L.map("map", {zoomControl:false, attributionControl:true});
+L.control.zoom({position:"bottomright"}).addTo(map);
+L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+  maxZoom:18, attribution:"&copy; OpenStreetMap"
+}).addTo(map);
+L.tileLayer("https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png", {
+  maxZoom:18, opacity:.9, attribution:"OpenSeaMap"
+}).addTo(map);
+
+let overlay=null, marks=[];
+
+// score -> colour ramp: red (bad) through amber to green (good)
+function ramp(q){
+  const stops=[[0,[228,87,61]],[0.5,[242,177,56]],[1,[95,191,160]]];
+  q=Math.max(0,Math.min(1,q));
+  for(let i=1;i<stops.length;i++){
+    if(q<=stops[i][0]){
+      const [a,ca]=stops[i-1],[b,cb]=stops[i],t=(q-a)/(b-a);
+      return ca.map((v,j)=>Math.round(v+(cb[j]-v)*t));
+    }
+  }
+  return stops[2][1];
+}
+
+function drawVerdictGradient(series, nowIdx){
+  const c=$("#vgrad"), host=$("#verdict");
+  const w=host.clientWidth, h=host.clientHeight;
+  c.width=w*devicePixelRatio; c.height=h*devicePixelRatio;
+  c.style.width=w+"px"; c.style.height=h+"px";
+  const ctx=c.getContext("2d"); ctx.scale(devicePixelRatio,devicePixelRatio);
+
+  const viz=series.visibility_m, work=series.workability, n=viz.length;
+  const g=ctx.createLinearGradient(0,0,w,0);
+  for(let i=0;i<n;i++){
+    const q=0.6*Math.min(1,viz[i]/12)+0.4*work[i];
+    const [r,gg,b]=ramp(q);
+    g.addColorStop(i/(n-1), `rgb(${r},${gg},${b})`);
+  }
+  ctx.fillStyle=g; ctx.fillRect(0,0,w,h);
+  $("#vnow").style.left = (nowIdx/(n-1)*w) + "px";
+}
+
+function drawSpark(series, nowIdx){
+  const svg=$("#spark"), W=300, H=46, n=series.time.length;
+  const x=i=>i/(n-1)*W;
+  const viz=series.visibility_m, mx=Math.max(12,...viz);
+  const yv=v=>H-4-(v/mx)*(H-10);
+  const wave=series.wave_height_m, mw=Math.max(0.8,...wave);
+  const yw=v=>H-4-(v/mw)*(H-10);
+
+  const path = a=>a.map((v,i)=>`${i?"L":"M"}${x(i).toFixed(1)},${a===viz?yv(v):yw(v)}`).join("");
+  const area = `${path(viz)}L${W},${H}L0,${H}Z`;
+
+  svg.innerHTML = `
+    <path d="${area}" fill="rgba(95,191,160,.18)"/>
+    <path d="${path(viz)}" fill="none" stroke="#5FBFA0" stroke-width="1.6"/>
+    <path d="${path(wave)}" fill="none" stroke="#E4573D" stroke-width="1.2"
+          stroke-dasharray="3 2" opacity=".85"/>
+    <line x1="${x(nowIdx)}" y1="0" x2="${x(nowIdx)}" y2="${H}"
+          stroke="#C9DDE3" stroke-width="1" opacity=".5"/>`;
+  $("#sparklabel").textContent =
+    `visibility (green, to ${Math.round(mx)} m) vs wave height (red, to ${mw.toFixed(1)} m) · past 24 h and next ${n-nowIdx-1} h`;
+}
+
+function renderSpots(d){
+  marks.forEach(m=>map.removeLayer(m)); marks=[];
+  const ol=$("#spots"); ol.innerHTML="";
+
+  (d.entry_points||[]).forEach(p=>{
+    marks.push(L.marker([p.lat,p.lon],{
+      icon:L.divIcon({className:"",html:'<div class="entry"></div>',iconSize:[12,12]}),
+      title:p.name
+    }).addTo(map).bindTooltip(p.name));
+  });
+
+  d.spots.forEach((s,i)=>{
+    const m=L.marker([s.lat,s.lon],{
+      icon:L.divIcon({className:"",iconSize:[26,26],
+        html:`<div class="mark${s.score<0.5?" dim":""}">${i+1}</div>`}),
+      title:`${fmt(s.depth_m,0)} m`
+    }).addTo(map);
+    m.bindPopup(
+      `<b>${i+1}</b> · ${fmt(s.depth_m,0)} m<br>`+
+      `<span style="font-family:monospace">${s.lat.toFixed(5)}, ${s.lon.toFixed(5)}</span><br>`+
+      `relief ${fmt(s.relief,2)} · slope ${fmt(s.slope,2)} · shelter ${fmt(s.shelter,2)}`);
+    marks.push(m);
+
+    const li=document.createElement("li");
+    li.tabIndex=0;
+    li.innerHTML=
+      `<span class="rank">${i+1}</span>
+       <span>
+         <span class="coords">${s.lat.toFixed(5)}, ${s.lon.toFixed(5)}</span>
+         <span class="bars">
+           <i title="relief"><span style="width:${s.relief*100}%"></span></i>
+           <i title="slope"><span style="width:${s.slope*100}%"></span></i>
+           <i title="shelter"><span style="width:${s.shelter*100}%"></span></i>
+         </span>
+       </span>
+       <span class="depth">${fmt(s.depth_m,0)} m</span>`;
+    const go=()=>{map.setView([s.lat,s.lon],16); m.openPopup();};
+    li.addEventListener("click",go);
+    li.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();go();}});
+    ol.appendChild(li);
+  });
+}
+
+async function load(){
+  let d;
+  try{
+    const r=await fetch("data/latest.json",{cache:"no-store"});
+    if(!r.ok) throw new Error("HTTP "+r.status);
+    d=await r.json();
+  }catch(e){
+    $("#err").style.display="block";
+    $("#err").textContent="No forecast file yet. Run the Update dive forecast workflow in GitHub Actions, then reload.";
+    return;
+  }
+
+  $("#region").textContent = d.region;
+  $("#word").textContent = d.now.verdict;
+  $("#word").dataset.v = d.now.verdict;
+  $("#limit").textContent = "limited by " + d.now.limited_by;
+
+  $("#vitals").innerHTML = [
+    ["viz",       `${fmt(d.now.visibility_m,0)} m`],
+    ["swell",     `${fmt(d.now.wave_height_m,2)} m`],
+    ["wind",      `${fmt(d.now.wind_speed_kmh,0)} km/h`],
+    ["from",      `${d.now.wind_from_deg}°`],
+    ["water",     `${fmt(d.now.sea_temp_c,1)} °C`],
+    ["current",   `${fmt(d.now.current_ms,2)} m/s`],
+  ].map(([k,v])=>`<div><span class="eyebrow">${k}</span><b>${v}</b></div>`).join("");
+
+  const w=d.best_window;
+  $("#window").innerHTML = w
+    ? `<span class="when">${new Date(w.start+"Z").toLocaleString([], {weekday:"short",hour:"2-digit",minute:"2-digit"})}
+        – ${new Date(w.end+"Z").toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})}</span>
+       <span style="color:var(--sound);font-size:13px">
+        ${fmt(w.wave_height_m,2)} m · ${fmt(w.wind_speed_kmh,0)} km/h · ${fmt(w.sea_temp_c,1)} °C</span>`
+    : `<span class="when">none in range</span>
+       <span style="color:var(--sound);font-size:13px">nothing diveable in the next 72 h</span>`;
+
+  drawVerdictGradient(d.series, d.now_index);
+  drawSpark(d.series, d.now_index);
+
+  const b=L.latLngBounds(d.bounds);
+  if(!overlay){
+    map.fitBounds(b);
+  }else{ map.removeLayer(overlay); }
+  overlay=L.imageOverlay("data/score.png?v="+encodeURIComponent(d.generated),b,{opacity:.75})
+    .addTo(map);
+
+  renderSpots(d);
+
+  const t=new Date(d.generated);
+  $("#stamp").innerHTML =
+    `Updated ${t.toLocaleString()} · depth band ${d.depth_range_m[0]}–${d.depth_range_m[1]} m<br>
+     Weights: ${Object.entries(d.weights).map(([k,v])=>k+" "+v).join(" · ")}<br>
+     Bathymetry EMODnet · conditions Open-Meteo. Model output, not a chart. Check the
+     rules and the protected areas before you get in.`;
+}
+
+$("#refresh").addEventListener("click",load);
+addEventListener("resize",()=>{
+  const el=$("#vgrad");
+  if(el.width) fetch("data/latest.json",{cache:"force-cache"})
+    .then(r=>r.json()).then(d=>drawVerdictGradient(d.series,d.now_index)).catch(()=>{});
+});
+load();
+</script>
+</body>
+</html>
