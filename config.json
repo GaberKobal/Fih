@@ -16,13 +16,16 @@
   },
 
   "entry_points": [
-    { "name": "Novigrad waterfront", "lat": 45.3175, "lon": 13.5583 }
+    { "name": "Mareda",              "lat": 45.3345, "lon": 13.5490 },
+    { "name": "Karpinjan",           "lat": 45.3270, "lon": 13.5545 },
+    { "name": "Novigrad waterfront", "lat": 45.3175, "lon": 13.5583 },
+    { "name": "Novigrad south bay",  "lat": 45.3145, "lon": 13.5640 },
+    { "name": "Antenal",             "lat": 45.3155, "lon": 13.5800 }
   ],
-  "max_swim_km": 1.2,
-  "swim_taper_km": 0.4,
+  "max_swim_km": 1.5,
 
-  "top_spots": 12,
-  "min_spot_separation_m": 300,
+  "top_spots": 18,
+  "min_spot_separation_m": 400,
   "min_spot_score": 0.35,
 
   "weights": {
