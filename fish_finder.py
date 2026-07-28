@@ -870,8 +870,17 @@ def write_overlay_png(score, lats, lons, path):
     rgba[..., 3] = np.clip(resampled * 1.6, 0.0, 0.88)
     rgba[resampled <= 0.02, 3] = 0.0
 
-    import matplotlib.pyplot as plt
-    plt.imsave(path, np.flipud(rgba))   # PNG rows run north to south
+    arr = (np.flipud(rgba) * 255).astype(np.uint8)   # PNG rows run north to south
+    try:
+        # Quantise to a palette: visually identical, roughly a quarter the
+        # size. These get committed every day, so it adds up.
+        from PIL import Image
+        im = Image.fromarray(arr, mode="RGBA")
+        im.quantize(colors=64, method=Image.Quantize.FASTOCTREE).save(
+            path, optimize=True)
+    except Exception:
+        import matplotlib.pyplot as plt
+        plt.imsave(path, np.flipud(rgba))
     log(f"wrote {path}")
 
 
