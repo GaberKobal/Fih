@@ -474,13 +474,13 @@ def fetch_conditions(lat, lon, cfg):
     m = http_json(f"{OPENMETEO_MARINE}?" + urllib.parse.urlencode({
         "latitude": lat, "longitude": lon,
         "hourly": ",".join(marine_vars),
-        "past_days": past, "forecast_days": fwd, "timezone": "UTC",
+        "past_days": past, "forecast_days": fwd, "timezone": "auto",
     }))
     w = http_json(f"{OPENMETEO_WEATHER}?" + urllib.parse.urlencode({
         "latitude": lat, "longitude": lon,
         "hourly": ",".join(weather_vars),
         "daily": "sunrise,sunset",
-        "past_days": past, "forecast_days": fwd, "timezone": "UTC",
+        "past_days": past, "forecast_days": fwd, "timezone": "auto",
     }))
 
     times = m["hourly"]["time"]
@@ -494,7 +494,7 @@ def fetch_conditions(lat, lon, cfg):
     for k in weather_vars:
         h[k] = np.array([np.nan if v is None else v
                          for v in w["hourly"].get(k, [None] * len(times))], float)
-    return h, w.get("daily", {})
+    return h, w.get("daily", {}), int(w.get("utc_offset_seconds", 0))
 
 
 def visibility_series(h, cfg):
@@ -595,6 +595,75 @@ def best_window(h, daily, viz, work, move, cfg, now_iso):
         "wind_speed_kmh": round(float(np.nanmean(h["wind_speed_10m"][i:i + win])), 1),
         "sea_temp_c": round(float(np.nanmean(h["sea_surface_temperature"][i:i + win])), 1),
     }
+
+
+def hourly_scores(h, daily, viz, work, move, cfg):
+    """The blended dive score for every hour in the series."""
+    base = (cfg["day_weights"]["visibility"] * viz
+            + cfg["day_weights"]["workability"] * work
+            + cfg["day_weights"]["movement"] * move)
+    ok = work > cfg["workability"]["hard_floor"]
+    light = daylight_mask(h["time"], daily)
+    return base * ok * light, ok, light
+
+
+def daily_breakdown(h, daily, viz, viz_m, work, move, cfg, now_iso):
+    """Group the forecast into local days so you can pick tomorrow's hour.
+
+    Times are already local because the API is queried with timezone=auto,
+    so slicing the date off the timestamp is enough.
+    """
+    scores, ok, light = hourly_scores(h, daily, viz, work, move, cfg)
+    win = cfg["conditions"]["window_hours"]
+    today = now_iso[:10]
+
+    by_date = {}
+    for i, t in enumerate(h["time"]):
+        if t[:10] < today:
+            continue                       # past days are history, not a plan
+        by_date.setdefault(t[:10], []).append(i)
+
+    days = []
+    for date, idx in sorted(by_date.items()):
+        hours = [{
+            "t": h["time"][i],
+            "hour": int(h["time"][i][11:13]),
+            "score": round(float(scores[i]), 3),
+            "viz_m": round(float(viz_m[i]), 1),
+            "wave_m": round(float(h["wave_height"][i]), 2),
+            "wind_kmh": round(float(h["wind_speed_10m"][i]), 1),
+            "sea_temp_c": round(float(h["sea_surface_temperature"][i]), 1),
+            "daylight": bool(light[i]),
+            "workable": bool(ok[i]),
+            "past": h["time"][i] < now_iso,
+        } for i in idx]
+
+        # best contiguous block of `win` hours inside this day
+        best = None
+        vals = [x["score"] if not x["past"] else -1.0 for x in hours]
+        if len(vals) >= win:
+            sums = [(sum(vals[j:j + win]) / win, j) for j in range(len(vals) - win + 1)]
+            top, j = max(sums)
+            if top > 0:
+                blk = hours[j:j + win]
+                best = {
+                    "start": blk[0]["t"], "end": blk[-1]["t"],
+                    "score": round(top, 3),
+                    "viz_m": round(sum(b["viz_m"] for b in blk) / win, 1),
+                    "wave_m": round(sum(b["wave_m"] for b in blk) / win, 2),
+                    "wind_kmh": round(sum(b["wind_kmh"] for b in blk) / win, 1),
+                }
+        peak = max((x for x in hours if not x["past"]),
+                   key=lambda x: x["score"], default=None)
+        days.append({
+            "date": date,
+            "is_today": date == today,
+            "best": best,
+            "peak_hour": peak["t"] if peak and peak["score"] > 0 else None,
+            "peak_score": peak["score"] if peak else 0.0,
+            "hours": hours,
+        })
+    return days
 
 
 def verdict(viz_now, viz_m_now, work_now, sea_now, air_now, cfg):
@@ -908,11 +977,13 @@ def run(cfg, selftest=False):
         daily = {"sunrise": [f"2026-07-{28+d}T03:30" for d in range(4)],
                  "sunset": [f"2026-07-{28+d}T18:40" for d in range(4)]}
         now_i = 24
+        tz_offset = 0
     else:
         log("conditions: Open-Meteo marine + weather")
-        h, daily = fetch_conditions(clat, clon, cfg)
-        now = dt.datetime.now(dt.timezone.utc).replace(
-            minute=0, second=0, microsecond=0, tzinfo=None)
+        h, daily, tz_offset = fetch_conditions(clat, clon, cfg)
+        # API returned local wall-clock times, so compare against local now.
+        now = (dt.datetime.now(dt.timezone.utc) + dt.timedelta(seconds=tz_offset)
+               ).replace(minute=0, second=0, microsecond=0, tzinfo=None)
         now_i = int(np.argmin([abs((dt.datetime.fromisoformat(t) - now).total_seconds())
                                for t in h["time"]]))
 
@@ -925,6 +996,7 @@ def run(cfg, selftest=False):
         float(viz[now_i]), float(viz_m[now_i]), float(work[now_i]),
         float(sea_ok[now_i]), float(air_ok[now_i]), cfg)
     window = best_window(h, daily, viz, work, move, cfg, now_iso)
+    days = daily_breakdown(h, daily, viz, viz_m, work, move, cfg, now_iso)
     log(f"verdict: {word} (limited by {limiter}), viz ~{viz_m[now_i]:.0f} m")
 
     # ---- spatial terms ----
@@ -1027,6 +1099,8 @@ def run(cfg, selftest=False):
             "current_ms": round(float(h["ocean_current_velocity"][now_i]), 2),
         },
         "best_window": window,
+        "days": days,
+        "utc_offset_seconds": tz_offset,
         "weights": weights,
         "depth_range_m": [cfg["depth"]["min_m"], cfg["depth"]["max_m"]],
         "entry_points": cfg.get("entry_points", []),
