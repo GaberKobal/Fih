@@ -637,7 +637,23 @@ def load_species(cfg):
     return out
 
 
-def species_day_factors(sp, sea_temp_c, viz_score, month):
+def temp_at_depth(sst_c, depth_m, month, cfg):
+    """Estimate temperature at depth from SST plus a seasonal stratification drop.
+
+    Using bare SST to decide where a demersal fish sits is wrong for half the
+    year here: in July the surface can be 28 C while 15 m is 19 C. This is a
+    crude correction, not a measurement - the honest fix is CMEMS Med physics
+    temperature at depth, which needs a (free) Copernicus account.
+    """
+    tc = cfg.get("thermocline")
+    if not tc:
+        return sst_c
+    drop = tc["monthly_drop_c"][int(month) - 1]
+    frac = min(max(depth_m / tc["reference_depth_m"], 0.0), 1.2)
+    return sst_c - drop * frac
+
+
+def species_day_factors(sp, sea_temp_c, viz_score, month, cfg=None):
     """How available this species is today, independent of location.
 
     Three independent gates, multiplied: temperature, season, and whether
@@ -645,7 +661,10 @@ def species_day_factors(sp, sea_temp_c, viz_score, month):
     """
     t_lo, t_hi = sp["temp_c"]
     tb_lo, tb_hi = sp["temp_best_c"]
-    temp_fit = float(trapezoid(sea_temp_c, t_lo, tb_lo, tb_hi, t_hi))
+    # Evaluate at the depth the species actually holds, not at the surface.
+    d_mid = 0.5 * (sp["depth_best_m"][0] + sp["depth_best_m"][1])
+    t_at = temp_at_depth(sea_temp_c, d_mid, month, cfg or {})
+    temp_fit = float(trapezoid(t_at, t_lo, tb_lo, tb_hi, t_hi))
 
     season_fit = 1.0 if month in sp["months"] else 0.0
 
@@ -664,6 +683,7 @@ def species_day_factors(sp, sea_temp_c, viz_score, month):
         "season_fit": round(season_fit, 3),
         "viz_fit": round(viz_fit, 3),
         "today": round(temp_fit * season_fit * viz_fit, 3),
+        "temp_at_depth_c": round(float(t_at), 1),
     }
 
 
@@ -964,7 +984,7 @@ def run(cfg, selftest=False):
 
     species_out = []
     for sp in load_species(cfg):
-        day = species_day_factors(sp, sea_temp, float(viz[now_i]), month)
+        day = species_day_factors(sp, sea_temp, float(viz[now_i]), month, cfg)
         smap = species_spatial_score(sp, terms, depth_m, land, gates, cfg)
         smap[land] = 0.0
         sspots = find_spots(smap, lats, lons, depth_m, terms, cfg)
@@ -1010,6 +1030,7 @@ def run(cfg, selftest=False):
         "weights": weights,
         "depth_range_m": [cfg["depth"]["min_m"], cfg["depth"]["max_m"]],
         "entry_points": cfg.get("entry_points", []),
+        "repo_edit_url": cfg.get("repo_edit_url"),
         "series": {
             "time": h["time"][keep],
             "visibility_m": [round(float(v), 1) for v in viz_m[keep]],

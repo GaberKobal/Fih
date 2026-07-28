@@ -14,15 +14,35 @@
   },
   "entry_points": [
     {
+      "name": "Mareda",
+      "lat": 45.3345,
+      "lon": 13.549
+    },
+    {
+      "name": "Karpinjan",
+      "lat": 45.327,
+      "lon": 13.5545
+    },
+    {
       "name": "Novigrad waterfront",
       "lat": 45.3175,
       "lon": 13.5583
+    },
+    {
+      "name": "Novigrad south bay",
+      "lat": 45.3145,
+      "lon": 13.564
+    },
+    {
+      "name": "Antenal",
+      "lat": 45.3155,
+      "lon": 13.58
     }
   ],
-  "max_swim_km": 1.2,
+  "max_swim_km": 1.5,
   "swim_taper_km": 0.4,
-  "top_spots": 12,
-  "min_spot_separation_m": 300,
+  "top_spots": 18,
+  "min_spot_separation_m": 400,
   "min_spot_score": 0.35,
   "weights": {
     "relief": 0.35,
@@ -88,5 +108,24 @@
     "marginal": 0.4
   },
   "species_file": "species.json",
-  "species_ids": null
+  "species_ids": null,
+  "thermocline": {
+    "_note": "How much colder it is at depth than at the surface, by month (Jan..Dec). The north Adriatic stratifies hard in summer, so surface temperature says nothing about where a demersal fish actually sits. These are estimates - check them against your dive computer and edit.",
+    "monthly_drop_c": [
+      0,
+      0,
+      0.5,
+      1.5,
+      3.0,
+      6.0,
+      8.0,
+      8.0,
+      5.0,
+      2.0,
+      0.5,
+      0
+    ],
+    "reference_depth_m": 20.0
+  },
+  "repo_edit_url": "https://github.com/GaberKobal/fish-finder/edit/main/dive_log.csv"
 }
