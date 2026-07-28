@@ -1,5 +1,5 @@
 {
- "generated": "2026-07-28T18:04:00+00:00",
+ "generated": "2026-07-28T18:19:41+00:00",
  "region": "Novigrad, Istria",
  "bounds": [
   [
@@ -42,29 +42,9 @@
  ],
  "entry_points": [
   {
-   "name": "Mareda",
-   "lat": 45.3345,
-   "lon": 13.549
-  },
-  {
-   "name": "Karpinjan",
-   "lat": 45.327,
-   "lon": 13.5545
-  },
-  {
    "name": "Novigrad waterfront",
    "lat": 45.3175,
    "lon": 13.5583
-  },
-  {
-   "name": "Novigrad south bay",
-   "lat": 45.3145,
-   "lon": 13.564
-  },
-  {
-   "name": "Antenal",
-   "lat": 45.3155,
-   "lon": 13.58
   }
  ],
  "series": {
@@ -630,132 +610,621 @@
   ]
  },
  "now_index": 24,
+ "sea_temp_now_c": 27.0,
+ "month": 7,
  "spots": [
   {
    "lat": 45.321865,
    "lon": 13.557324,
-   "score": 0.882,
+   "score": 0.863,
    "depth_m": 4.2,
    "relief": 1.0,
-   "slope": 0.508,
+   "slope": 0.427,
    "shelter": 0.993
   },
   {
    "lat": 45.321865,
    "lon": 13.549658,
-   "score": 0.759,
+   "score": 0.776,
    "depth_m": 5.4,
    "relief": 1.0,
-   "slope": 0.562,
+   "slope": 0.634,
    "shelter": 0.61
-  },
-  {
-   "lat": 45.336238,
-   "lon": 13.536882,
-   "score": 0.756,
-   "depth_m": 10.0,
-   "relief": 1.0,
-   "slope": 0.467,
-   "shelter": 0.662
-  },
-  {
-   "lat": 45.342526,
-   "lon": 13.541992,
-   "score": 0.75,
-   "depth_m": 4.8,
-   "relief": 1.0,
-   "slope": 0.479,
-   "shelter": 0.64
-  },
-  {
-   "lat": 45.311983,
-   "lon": 13.541992,
-   "score": 0.727,
-   "depth_m": 12.0,
-   "relief": 1.0,
-   "slope": 0.379,
-   "shelter": 0.64
   },
   {
    "lat": 45.309289,
    "lon": 13.548381,
-   "score": 0.71,
+   "score": 0.716,
    "depth_m": 10.9,
    "relief": 1.0,
-   "slope": 0.34,
+   "slope": 0.365,
    "shelter": 0.617
   },
   {
-   "lat": 45.318272,
-   "lon": 13.59821,
-   "score": 0.709,
-   "depth_m": 3.6,
+   "lat": 45.31378,
+   "lon": 13.557324,
+   "score": 0.713,
+   "depth_m": 6.5,
    "relief": 1.0,
-   "slope": 0.182,
-   "shelter": 0.993
-  },
-  {
-   "lat": 45.312882,
-   "lon": 13.57649,
-   "score": 0.701,
-   "depth_m": 5.1,
-   "relief": 1.0,
-   "slope": 0.473,
-   "shelter": 0.505
-  },
-  {
-   "lat": 45.314678,
-   "lon": 13.556047,
-   "score": 0.688,
-   "depth_m": 4.3,
-   "relief": 1.0,
-   "slope": 0.294,
-   "shelter": 0.588
-  },
-  {
-   "lat": 45.305695,
-   "lon": 13.590544,
-   "score": 0.676,
-   "depth_m": 4.9,
-   "relief": 1.0,
-   "slope": 0.445,
-   "shelter": 0.453
-  },
-  {
-   "lat": 45.320068,
-   "lon": 13.538159,
-   "score": 0.673,
-   "depth_m": 10.5,
-   "relief": 1.0,
-   "slope": 0.128,
-   "shelter": 0.655
+   "slope": 0.409,
+   "shelter": 0.58
   },
   {
    "lat": 45.31378,
-   "lon": 13.567546,
-   "score": 0.652,
-   "depth_m": 4.3,
+   "lon": 13.544548,
+   "score": 0.695,
+   "depth_m": 9.3,
    "relief": 1.0,
-   "slope": 0.209,
-   "shelter": 0.542
+   "slope": 0.257,
+   "shelter": 0.633
   },
   {
-   "lat": 45.303,
-   "lon": 13.579045,
-   "score": 0.631,
-   "depth_m": 5.6,
+   "lat": 45.311983,
+   "lon": 13.571379,
+   "score": 0.654,
+   "depth_m": 5.7,
    "relief": 1.0,
-   "slope": 0.184,
-   "shelter": 0.498
+   "slope": 0.236,
+   "shelter": 0.528
+  }
+ ],
+ "species": [
+  {
+   "id": "aurata",
+   "common": "orada / gilthead seabream",
+   "scientific": "Sparus aurata",
+   "note": "Works soft bottom and seagrass, not rock \u2014 so it scores where the rest of the model scores low. Extremely wary in clear water; coloured water is your friend.",
+   "viz_pref": "murky",
+   "wary": 0.8,
+   "depth_best_m": [
+    3,
+    12
+   ],
+   "in_season": true,
+   "temp_fit": 0.75,
+   "season_fit": 1.0,
+   "viz_fit": 0.364,
+   "today": 0.273,
+   "spots": [
+    {
+     "lat": 45.321865,
+     "lon": 13.557324,
+     "score": 0.784,
+     "depth_m": 4.2,
+     "relief": 1.0,
+     "slope": 0.427,
+     "shelter": 0.993
+    },
+    {
+     "lat": 45.321865,
+     "lon": 13.549658,
+     "score": 0.746,
+     "depth_m": 5.4,
+     "relief": 1.0,
+     "slope": 0.634,
+     "shelter": 0.61
+    },
+    {
+     "lat": 45.31378,
+     "lon": 13.557324,
+     "score": 0.654,
+     "depth_m": 6.5,
+     "relief": 1.0,
+     "slope": 0.409,
+     "shelter": 0.58
+    },
+    {
+     "lat": 45.309289,
+     "lon": 13.548381,
+     "score": 0.648,
+     "depth_m": 10.9,
+     "relief": 1.0,
+     "slope": 0.365,
+     "shelter": 0.617
+    },
+    {
+     "lat": 45.31378,
+     "lon": 13.544548,
+     "score": 0.612,
+     "depth_m": 9.3,
+     "relief": 1.0,
+     "slope": 0.257,
+     "shelter": 0.633
+    },
+    {
+     "lat": 45.311983,
+     "lon": 13.571379,
+     "score": 0.573,
+     "depth_m": 5.7,
+     "relief": 1.0,
+     "slope": 0.236,
+     "shelter": 0.528
+    },
+    {
+     "lat": 45.312882,
+     "lon": 13.563713,
+     "score": 0.552,
+     "depth_m": 6.7,
+     "relief": 0.903,
+     "slope": 0.24,
+     "shelter": 0.557
+    }
+   ]
   },
   {
-   "lat": 45.302102,
-   "lon": 13.568823,
-   "score": 0.596,
-   "depth_m": 8.2,
-   "relief": 0.83,
-   "slope": 0.277,
-   "shelter": 0.535
+   "id": "sargus",
+   "common": "\u0161arag / white seabream",
+   "scientific": "Diplodus sargus",
+   "note": "Resident on rocky edges year round. The bread-and-butter fish here; holds tight to structure and comes back to the same rock.",
+   "viz_pref": "any",
+   "wary": 0.5,
+   "depth_best_m": [
+    4,
+    15
+   ],
+   "in_season": true,
+   "temp_fit": 0.0,
+   "season_fit": 1.0,
+   "viz_fit": 0.99,
+   "today": 0.0,
+   "spots": [
+    {
+     "lat": 45.321865,
+     "lon": 13.557324,
+     "score": 0.809,
+     "depth_m": 4.2,
+     "relief": 1.0,
+     "slope": 0.427,
+     "shelter": 0.993
+    },
+    {
+     "lat": 45.321865,
+     "lon": 13.549658,
+     "score": 0.762,
+     "depth_m": 5.4,
+     "relief": 1.0,
+     "slope": 0.634,
+     "shelter": 0.61
+    },
+    {
+     "lat": 45.31378,
+     "lon": 13.557324,
+     "score": 0.679,
+     "depth_m": 6.5,
+     "relief": 1.0,
+     "slope": 0.409,
+     "shelter": 0.58
+    },
+    {
+     "lat": 45.309289,
+     "lon": 13.548381,
+     "score": 0.676,
+     "depth_m": 10.9,
+     "relief": 1.0,
+     "slope": 0.365,
+     "shelter": 0.617
+    },
+    {
+     "lat": 45.31378,
+     "lon": 13.544548,
+     "score": 0.645,
+     "depth_m": 9.3,
+     "relief": 1.0,
+     "slope": 0.257,
+     "shelter": 0.633
+    },
+    {
+     "lat": 45.311983,
+     "lon": 13.571379,
+     "score": 0.607,
+     "depth_m": 5.7,
+     "relief": 1.0,
+     "slope": 0.236,
+     "shelter": 0.528
+    },
+    {
+     "lat": 45.312882,
+     "lon": 13.563713,
+     "score": 0.581,
+     "depth_m": 6.7,
+     "relief": 0.903,
+     "slope": 0.24,
+     "shelter": 0.557
+    }
+   ]
+  },
+  {
+   "id": "vulgaris",
+   "common": "fratar / two-banded seabream",
+   "scientific": "Diplodus vulgaris",
+   "note": "Schools more than sargus and less spooky. Often the first fish on a new mark, which makes it a decent test of whether a mark is real.",
+   "viz_pref": "any",
+   "wary": 0.4,
+   "depth_best_m": [
+    5,
+    20
+   ],
+   "in_season": true,
+   "temp_fit": 0.0,
+   "season_fit": 1.0,
+   "viz_fit": 0.99,
+   "today": 0.0,
+   "spots": [
+    {
+     "lat": 45.321865,
+     "lon": 13.549658,
+     "score": 0.767,
+     "depth_m": 5.4,
+     "relief": 1.0,
+     "slope": 0.634,
+     "shelter": 0.61
+    },
+    {
+     "lat": 45.31378,
+     "lon": 13.557324,
+     "score": 0.687,
+     "depth_m": 6.5,
+     "relief": 1.0,
+     "slope": 0.409,
+     "shelter": 0.58
+    },
+    {
+     "lat": 45.309289,
+     "lon": 13.548381,
+     "score": 0.685,
+     "depth_m": 10.9,
+     "relief": 1.0,
+     "slope": 0.365,
+     "shelter": 0.617
+    },
+    {
+     "lat": 45.31378,
+     "lon": 13.544548,
+     "score": 0.655,
+     "depth_m": 9.3,
+     "relief": 1.0,
+     "slope": 0.257,
+     "shelter": 0.633
+    },
+    {
+     "lat": 45.311983,
+     "lon": 13.571379,
+     "score": 0.617,
+     "depth_m": 5.7,
+     "relief": 1.0,
+     "slope": 0.236,
+     "shelter": 0.528
+    },
+    {
+     "lat": 45.312882,
+     "lon": 13.563713,
+     "score": 0.59,
+     "depth_m": 6.7,
+     "relief": 0.903,
+     "slope": 0.24,
+     "shelter": 0.557
+    }
+   ]
+  },
+  {
+   "id": "labrax",
+   "common": "brancin / European seabass",
+   "scientific": "Dicentrarchus labrax",
+   "note": "The exception to everything else in this file. Hunts stirred, coloured water and river outflow \u2014 the conditions that make the day look bad. Best on the days you would otherwise stay home.",
+   "viz_pref": "murky",
+   "wary": 0.85,
+   "depth_best_m": [
+    2,
+    10
+   ],
+   "in_season": false,
+   "temp_fit": 0.0,
+   "season_fit": 0.0,
+   "viz_fit": 0.364,
+   "today": 0.0,
+   "spots": [
+    {
+     "lat": 45.321865,
+     "lon": 13.557324,
+     "score": 0.777,
+     "depth_m": 4.2,
+     "relief": 1.0,
+     "slope": 0.427,
+     "shelter": 0.993
+    },
+    {
+     "lat": 45.321865,
+     "lon": 13.549658,
+     "score": 0.742,
+     "depth_m": 5.4,
+     "relief": 1.0,
+     "slope": 0.634,
+     "shelter": 0.61
+    },
+    {
+     "lat": 45.31378,
+     "lon": 13.557324,
+     "score": 0.647,
+     "depth_m": 6.5,
+     "relief": 1.0,
+     "slope": 0.409,
+     "shelter": 0.58
+    },
+    {
+     "lat": 45.310187,
+     "lon": 13.548381,
+     "score": 0.627,
+     "depth_m": 9.1,
+     "relief": 1.0,
+     "slope": 0.329,
+     "shelter": 0.617
+    },
+    {
+     "lat": 45.31378,
+     "lon": 13.544548,
+     "score": 0.604,
+     "depth_m": 9.3,
+     "relief": 1.0,
+     "slope": 0.257,
+     "shelter": 0.633
+    },
+    {
+     "lat": 45.311983,
+     "lon": 13.571379,
+     "score": 0.564,
+     "depth_m": 5.7,
+     "relief": 1.0,
+     "slope": 0.236,
+     "shelter": 0.528
+    },
+    {
+     "lat": 45.312882,
+     "lon": 13.563713,
+     "score": 0.544,
+     "depth_m": 6.7,
+     "relief": 0.903,
+     "slope": 0.24,
+     "shelter": 0.557
+    }
+   ]
+  },
+  {
+   "id": "dentex",
+   "common": "zubatac / common dentex",
+   "scientific": "Dentex dentex",
+   "note": "Roaming predator that works drop-off edges rather than sitting on structure. Needs clear water and long, still waits. Rare in the shallow north Adriatic shelf \u2014 expect this one to score low here most days, and treat a high score as worth the drive.",
+   "viz_pref": "clear",
+   "wary": 0.95,
+   "depth_best_m": [
+    15,
+    30
+   ],
+   "in_season": true,
+   "temp_fit": 0.0,
+   "season_fit": 1.0,
+   "viz_fit": 0.979,
+   "today": 0.0,
+   "spots": [
+    {
+     "lat": 45.309289,
+     "lon": 13.548381,
+     "score": 0.373,
+     "depth_m": 10.9,
+     "relief": 1.0,
+     "slope": 0.365,
+     "shelter": 0.617
+    }
+   ]
+  },
+  {
+   "id": "umbra",
+   "common": "kavala / brown meagre",
+   "scientific": "Sciaena umbra",
+   "note": "Lives in holes, caves and under overhangs \u2014 the highest relief affinity in this list. Protected or restricted in parts of the Adriatic; CHECK THE CURRENT RULES before targeting it.",
+   "viz_pref": "any",
+   "wary": 0.6,
+   "depth_best_m": [
+    10,
+    25
+   ],
+   "in_season": true,
+   "temp_fit": 0.0,
+   "season_fit": 1.0,
+   "viz_fit": 0.99,
+   "today": 0.0,
+   "spots": [
+    {
+     "lat": 45.309289,
+     "lon": 13.548381,
+     "score": 0.713,
+     "depth_m": 10.9,
+     "relief": 1.0,
+     "slope": 0.365,
+     "shelter": 0.617
+    },
+    {
+     "lat": 45.314678,
+     "lon": 13.544548,
+     "score": 0.661,
+     "depth_m": 10.1,
+     "relief": 0.927,
+     "slope": 0.273,
+     "shelter": 0.633
+    },
+    {
+     "lat": 45.321865,
+     "lon": 13.548381,
+     "score": 0.491,
+     "depth_m": 8.6,
+     "relief": 0.772,
+     "slope": 0.61,
+     "shelter": 0.617
+    },
+    {
+     "lat": 45.310187,
+     "lon": 13.557324,
+     "score": 0.41,
+     "depth_m": 9.5,
+     "relief": 0.516,
+     "slope": 0.204,
+     "shelter": 0.58
+    }
+   ]
+  },
+  {
+   "id": "octopus",
+   "common": "hobotnica / common octopus",
+   "scientific": "Octopus vulgaris",
+   "note": "Rubble and rock edges, in holes. Barely cares about visibility and does not spook, so it salvages otherwise poor days. Best in the cooler months.",
+   "viz_pref": "any",
+   "wary": 0.15,
+   "depth_best_m": [
+    3,
+    18
+   ],
+   "in_season": false,
+   "temp_fit": 0.25,
+   "season_fit": 0.0,
+   "viz_fit": 0.99,
+   "today": 0.0,
+   "spots": [
+    {
+     "lat": 45.321865,
+     "lon": 13.557324,
+     "score": 0.853,
+     "depth_m": 4.2,
+     "relief": 1.0,
+     "slope": 0.427,
+     "shelter": 0.993
+    },
+    {
+     "lat": 45.321865,
+     "lon": 13.549658,
+     "score": 0.791,
+     "depth_m": 5.4,
+     "relief": 1.0,
+     "slope": 0.634,
+     "shelter": 0.61
+    },
+    {
+     "lat": 45.309289,
+     "lon": 13.548381,
+     "score": 0.725,
+     "depth_m": 10.9,
+     "relief": 1.0,
+     "slope": 0.365,
+     "shelter": 0.617
+    },
+    {
+     "lat": 45.31378,
+     "lon": 13.557324,
+     "score": 0.725,
+     "depth_m": 6.5,
+     "relief": 1.0,
+     "slope": 0.409,
+     "shelter": 0.58
+    },
+    {
+     "lat": 45.31378,
+     "lon": 13.544548,
+     "score": 0.702,
+     "depth_m": 9.3,
+     "relief": 1.0,
+     "slope": 0.257,
+     "shelter": 0.633
+    },
+    {
+     "lat": 45.311983,
+     "lon": 13.571379,
+     "score": 0.666,
+     "depth_m": 5.7,
+     "relief": 1.0,
+     "slope": 0.236,
+     "shelter": 0.528
+    }
+   ]
+  },
+  {
+   "id": "sepia",
+   "common": "sipa / common cuttlefish",
+   "scientific": "Sepia officinalis",
+   "note": "Seagrass and sand, strongly seasonal \u2014 the spring inshore spawning run is the window. Scores where rock-loving species do not.",
+   "viz_pref": "any",
+   "wary": 0.2,
+   "depth_best_m": [
+    3,
+    15
+   ],
+   "in_season": false,
+   "temp_fit": 0.0,
+   "season_fit": 0.0,
+   "viz_fit": 0.99,
+   "today": 0.0,
+   "spots": [
+    {
+     "lat": 45.321865,
+     "lon": 13.557324,
+     "score": 0.779,
+     "depth_m": 4.2,
+     "relief": 1.0,
+     "slope": 0.427,
+     "shelter": 0.993
+    },
+    {
+     "lat": 45.321865,
+     "lon": 13.549658,
+     "score": 0.743,
+     "depth_m": 5.4,
+     "relief": 1.0,
+     "slope": 0.634,
+     "shelter": 0.61
+    },
+    {
+     "lat": 45.31378,
+     "lon": 13.557324,
+     "score": 0.648,
+     "depth_m": 6.5,
+     "relief": 1.0,
+     "slope": 0.409,
+     "shelter": 0.58
+    },
+    {
+     "lat": 45.309289,
+     "lon": 13.548381,
+     "score": 0.643,
+     "depth_m": 10.9,
+     "relief": 1.0,
+     "slope": 0.365,
+     "shelter": 0.617
+    },
+    {
+     "lat": 45.31378,
+     "lon": 13.544548,
+     "score": 0.606,
+     "depth_m": 9.3,
+     "relief": 1.0,
+     "slope": 0.257,
+     "shelter": 0.633
+    },
+    {
+     "lat": 45.311983,
+     "lon": 13.571379,
+     "score": 0.567,
+     "depth_m": 5.7,
+     "relief": 1.0,
+     "slope": 0.236,
+     "shelter": 0.528
+    },
+    {
+     "lat": 45.312882,
+     "lon": 13.563713,
+     "score": 0.546,
+     "depth_m": 6.7,
+     "relief": 0.903,
+     "slope": 0.24,
+     "shelter": 0.557
+    }
+   ]
   }
  ]
 }
