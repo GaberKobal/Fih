@@ -268,6 +268,8 @@ def structure_terms(depth_m, land, lats, lons, cfg):
     # mound (tegnua, boulder field, wreck mound), negative for a hole.
     bg_sigma_cells = max(2.0, cfg["structure"]["background_scale_m"] /
                          cfg["grid_resolution_m"])
+    from scipy.ndimage import median_filter
+    filled = median_filter(filled, size=3)      # kills 1-cell survey seams
     background = gaussian_filter(filled, sigma=bg_sigma_cells)
     relief = background - filled
 
