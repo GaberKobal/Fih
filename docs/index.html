@@ -434,9 +434,25 @@ function selectTarget(id){
   document.querySelectorAll(".sp").forEach(b=>
     b.setAttribute("aria-pressed", String(b.dataset.id===(id||"")) ));
 
-  $("#spnote").textContent = sp
-    ? sp.note
-    : "Structure map: where there is reachable relief and shelter, regardless of species.";
+  if(!sp){
+    $("#spnote").textContent =
+      "Structure map: where there is reachable relief and shelter, regardless of species.";
+  }else{
+    const L = sp.legal || {};
+    const rules = [];
+    if(sp.legally_open===false)
+      rules.push(`<b style="color:var(--flag)">CLOSED — ${sp.closed_reason}`+
+                 `${sp.reopens?`, reopens ${sp.reopens}`:""}</b>`);
+    if(L.min_size_cm) rules.push(`min ${L.min_size_cm} cm`+
+      (L.size_note?` (${L.size_note})`:""));
+    if(L.min_mass_g) rules.push(`min ${L.min_mass_g} g`);
+    if(L.must_tail_mark) rules.push("must tail-mark if kept");
+    $("#spnote").innerHTML =
+      (rules.length?`<div style="margin-bottom:6px">${rules.join(" · ")}</div>`:"")
+      + `<div>${sp.note}</div>`
+      + (L.min_size_source?`<div style="font-size:11px;margin-top:5px;opacity:.75">`+
+         `Size: ${L.min_size_source}</div>`:"");
+  }
 
   $("#gpx").href = sp ? `data/spots_${sp.id}.gpx` : "data/spots.gpx";
   $("#gpx").textContent = sp ? `GPX · ${sp.common.split(" /")[0]}` : "Download GPX";
@@ -538,12 +554,14 @@ function renderSpecies(d){
   };
   mk(null,"Structure",null,"any target");
   (d.species||[]).forEach(sp=>{
-    const why = !sp.in_season ? "out of season"
+    const why = sp.legally_open===false ? "CLOSED SEASON"
+              : !sp.in_season ? "out of season"
               : sp.temp_fit<.35 ? "water temp"
-              : sp.viz_fit<.35  ? "needs clearer" 
+              : sp.viz_fit<.35  ? "needs clearer"
               : sp.viz_pref==="murky" ? "likes the murk"
               : "in season";
-    mk(sp.id, sp.common.split(" /")[0], sp.today, why, !sp.in_season);
+    mk(sp.id, sp.common.split(" /")[0], sp.today, why,
+       !sp.in_season || sp.legally_open===false);
   });
 }
 
