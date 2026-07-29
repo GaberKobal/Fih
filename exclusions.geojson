@@ -1,5 +1,33 @@
 {
   "type": "FeatureCollection",
-  "comment": "Hard no-go polygons: protected areas, port limits, cable/anchorage zones, anything you must not shoot in. Cells inside these are forced to zero. Replace the example below with real boundaries before relying on it.",
-  "features": []
+  "comment": [
+    "Hard no-go polygons. Cells inside these are scored zero for every species.",
+    "The Mirna estuary polygon below is APPROXIMATE - drawn generously around the",
+    "river mouth, not traced from the legal boundary. It deliberately over-covers:",
+    "excluding water you could legally hunt costs you a spot, while missing a",
+    "restricted zone costs you a fine. Replace it with the real boundary when you",
+    "have it, and add any other protected areas, port limits or no-take zones.",
+    "Verify against the current rules at ribarstvo.mps.hr."
+  ],
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Mirna estuary (approximate)",
+        "reason": "River mouths including the Mirna are special habitats where sport and recreational fishing is separately regulated",
+        "confidence": "approximate - verify and redraw",
+        "checked": "2026-07-29"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [13.5600, 45.3250],
+          [13.6100, 45.3250],
+          [13.6100, 45.3050],
+          [13.5600, 45.3050],
+          [13.5600, 45.3250]
+        ]]
+      }
+    }
+  ]
 }

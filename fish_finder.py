@@ -873,7 +873,28 @@ def temp_at_depth(sst_c, depth_m, month, cfg, profile=None):
     return sst_c - drop * frac
 
 
-def species_day_factors(sp, sea_temp_c, viz_score, month, cfg=None, profile=None):
+def legal_status(sp, on_date):
+    """Is this species legally takeable today?
+
+    Closed seasons run on real dates, not whole months: kavala closes on
+    15 May and reopens on 15 July, so a month-granularity model would have
+    pointed you at a closed fish for two weeks either side.
+    """
+    L = sp.get("legal") or {}
+    md = f"{on_date.month:02d}-{on_date.day:02d}"
+    for w in L.get("closed_seasons", []):
+        a, b = w["from"], w["to"]
+        closed = (a <= md <= b) if a <= b else (md >= a or md <= b)
+        if closed:
+            y = on_date.year + (1 if b < a and md >= a else 0)
+            return {"open": False,
+                    "reason": f"closed season {a} to {b}",
+                    "reopens": f"{y}-{b}"}
+    return {"open": True, "reason": "", "reopens": None}
+
+
+def species_day_factors(sp, sea_temp_c, viz_score, month, cfg=None, profile=None,
+                        on_date=None):
     """How available this species is today, independent of location.
 
     Three independent gates, multiplied: temperature, season, and whether
@@ -887,6 +908,11 @@ def species_day_factors(sp, sea_temp_c, viz_score, month, cfg=None, profile=None
     temp_fit = float(trapezoid(t_at, t_lo, tb_lo, tb_hi, t_hi))
 
     season_fit = 1.0 if month in sp["months"] else 0.0
+
+    # A legal closure is an absolute gate, and it overrides everything else.
+    law = legal_status(sp, on_date or dt.date.today())
+    if not law["open"]:
+        season_fit = 0.0
 
     pref = sp.get("viz_pref", "any")
     if pref == "clear":
@@ -904,6 +930,9 @@ def species_day_factors(sp, sea_temp_c, viz_score, month, cfg=None, profile=None
         "viz_fit": round(viz_fit, 3),
         "today": round(temp_fit * season_fit * viz_fit, 3),
         "temp_at_depth_c": round(float(t_at), 1),
+        "legally_open": law["open"],
+        "closed_reason": law["reason"],
+        "reopens": law["reopens"],
     }
 
 
@@ -1231,7 +1260,7 @@ def run(cfg, selftest=False):
     species_out = []
     for sp in load_species(cfg):
         day = species_day_factors(sp, sea_temp, float(viz[now_i]), month, cfg,
-                                  profile)
+                                  profile, dt.date.fromisoformat(now_iso[:10]))
         smap = species_spatial_score(sp, terms, depth_m, land, gates, cfg)
         smap[land] = 0.0
         sspots = find_spots(smap, lats, lons, depth_m, terms, cfg)
@@ -1247,6 +1276,7 @@ def run(cfg, selftest=False):
             "wary": sp.get("wary"),
             "depth_best_m": sp["depth_best_m"],
             "in_season": bool(day["season_fit"]),
+            "legal": sp.get("legal", {}),
             **day,
             "spots": sspots,
         })
