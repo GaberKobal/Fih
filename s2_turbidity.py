@@ -69,8 +69,13 @@ NECHAD_C = 0.19563
 
 EVALSCRIPT = """//VERSION=3
 function setup() {
+  // Two input entries, not one: B04 is a physical reflectance, but SCL is a
+  // categorical class number and Sentinel Hub only serves it as raw DN.
   return {
-    input: [{bands: ["B04", "SCL"], units: "REFLECTANCE"}],
+    input: [
+      {bands: ["B04"], units: "REFLECTANCE"},
+      {bands: ["SCL"], units: "DN"}
+    ],
     output: {bands: 2, sampleType: "FLOAT32"}
   };
 }
