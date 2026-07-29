@@ -47,6 +47,7 @@ import datetime as dt
 import io
 import json
 import os
+import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -97,14 +98,32 @@ def get_token(cid, secret):
         return json.loads(r.read())["access_token"]
 
 
-def post_json(url, token, payload, timeout=180, raw=False):
+def post_json(url, token, payload, timeout=180, raw=False, accept=None):
+    """POST JSON and get JSON (or bytes) back.
+
+    The Accept header matters here: the Catalog API answers STAC search with
+    application/geo+json, so asking for application/json alone gets a bare
+    406 with no explanation.
+    """
+    if accept is None:
+        accept = ("image/tiff" if raw
+                  else "application/json, application/geo+json, */*")
     req = urllib.request.Request(
         url, data=json.dumps(payload).encode(), method="POST",
         headers={"Authorization": f"Bearer {token}",
                  "Content-Type": "application/json",
-                 "Accept": "image/tiff" if raw else "application/json"})
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        return r.read() if raw else json.loads(r.read())
+                 "Accept": accept})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return r.read() if raw else json.loads(r.read())
+    except urllib.error.HTTPError as e:
+        # Sentinel Hub puts a useful message in the body; surface it instead
+        # of a bare status code.
+        try:
+            detail = e.read().decode("utf-8", "replace")[:600]
+        except Exception:
+            detail = ""
+        raise RuntimeError(f"{url} -> HTTP {e.code} {e.reason}\n{detail}") from None
 
 
 def find_scene(token, bbox, days, max_cloud):
@@ -236,4 +255,9 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    # This is an optional reality check, not part of the forecast. It must
+    # never turn the daily run red.
+    try:
+        main()
+    except Exception as exc:
+        log(f"skipped: {exc.__class__.__name__}: {exc}")
