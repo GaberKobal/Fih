@@ -157,5 +157,67 @@
     ],
     "reference_depth_m": 20.0
   },
-  "repo_edit_url": "https://github.com/GaberKobal/fish-finder/edit/main/dive_log.csv"
+  "repo_edit_url": "https://github.com/GaberKobal/fish-finder/edit/main/dive_log.csv",
+  "light": {
+    "_note": "Sun elevation shapes the hourly score. 0 below the horizon (night spearfishing is prohibited in Croatia); best at low sun; worst under flat high sun.",
+    "golden_max_deg": 12.0,
+    "high_sun_deg": 45.0,
+    "high_sun_factor": 0.6
+  },
+  "wind_regimes": {
+    "_note": "Direction the wind blows FROM, degrees. First match wins.",
+    "bora": {
+      "from_deg": [
+        20,
+        80
+      ],
+      "viz_factor": 1.15,
+      "work_factor": 0.85,
+      "note": "Offshore, cold and gusty. Short fetch at the coast so the water often runs clear, but the surface is hard work and gusts build fast."
+    },
+    "jugo": {
+      "from_deg": [
+        100,
+        170
+      ],
+      "viz_factor": 0.7,
+      "work_factor": 0.9,
+      "note": "Onshore and warm, pushes long swell and turbid water in. The classic viz-killer here; it can take days to clear after."
+    },
+    "maestral": {
+      "from_deg": [
+        260,
+        330
+      ],
+      "viz_factor": 0.95,
+      "work_factor": 0.9,
+      "note": "Summer afternoon thermal. Builds from midday and dies at dusk, so morning and evening stay workable."
+    },
+    "tramontana": {
+      "from_deg": [
+        330,
+        20
+      ],
+      "viz_factor": 1.05,
+      "work_factor": 0.95,
+      "note": "Cold northerly off the land. Generally clean water, choppy surface."
+    },
+    "other": {
+      "viz_factor": 1.0,
+      "work_factor": 1.0,
+      "note": ""
+    }
+  },
+  "gust": {
+    "ratio_threshold": 1.6,
+    "penalty": 0.8
+  },
+  "cmems": {
+    "_note": "Real temperature at depth, replacing the thermocline guesses. Credentials come from the COPERNICUSMARINE_SERVICE_USERNAME and COPERNICUSMARINE_SERVICE_PASSWORD environment variables, set as GitHub Actions secrets. NEVER put a username or password in this file - it is committed to a public repository. Falls back to the thermocline estimate automatically if credentials are missing or the service is unreachable.",
+    "enabled": true,
+    "dataset_id": "cmems_mod_med_phy-tem_anfc_4.2km_P1D-m",
+    "variable": "thetao",
+    "pad_deg": 0.1,
+    "max_depth_m": 50.0
+  }
 }

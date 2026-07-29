@@ -497,6 +497,91 @@ def fetch_conditions(lat, lon, cfg):
     return h, w.get("daily", {}), int(w.get("utc_offset_seconds", 0))
 
 
+def solar_elevation_deg(times_local, lat, lon, tz_offset_s):
+    """Sun elevation for each hour, via the NOAA solar position algorithm.
+
+    Pure arithmetic, no API. Replaces the binary daylight test: dawn and dusk
+    are not merely "not dark", they are when fish feed and when they let you
+    close. Flat noon sun is the worst light of the day to hunt in.
+    """
+    out = []
+    for t in times_local:
+        u = dt.datetime.fromisoformat(t) - dt.timedelta(seconds=tz_offset_s)
+        n = u.timetuple().tm_yday
+        fh = u.hour + u.minute / 60.0
+        g = 2 * math.pi / 365.0 * (n - 1 + (fh - 12) / 24.0)
+        eqtime = 229.18 * (0.000075 + 0.001868 * math.cos(g)
+                           - 0.032077 * math.sin(g)
+                           - 0.014615 * math.cos(2 * g)
+                           - 0.040849 * math.sin(2 * g))
+        decl = (0.006918 - 0.399912 * math.cos(g) + 0.070257 * math.sin(g)
+                - 0.006758 * math.cos(2 * g) + 0.000907 * math.sin(2 * g)
+                - 0.002697 * math.cos(3 * g) + 0.00148 * math.sin(3 * g))
+        tst = fh * 60.0 + eqtime + 4.0 * lon
+        ha = math.radians(tst / 4.0 - 180.0)
+        la = math.radians(lat)
+        cz = (math.sin(la) * math.sin(decl)
+              + math.cos(la) * math.cos(decl) * math.cos(ha))
+        out.append(math.degrees(math.asin(max(-1.0, min(1.0, cz)))))
+    return np.array(out)
+
+
+def light_quality(elev_deg, cfg):
+    """0 when the sun is down, best at low sun, worst at high noon.
+
+    Hard zero below the horizon is deliberate and not just about fish:
+    spearfishing at night is prohibited in Croatia.
+    """
+    c = cfg.get("light", {})
+    golden = c.get("golden_max_deg", 12.0)
+    high = c.get("high_sun_deg", 45.0)
+    floor = c.get("high_sun_factor", 0.6)
+    q = 1.0 - (1.0 - floor) * np.clip((elev_deg - golden) / max(high - golden, 1e-6), 0, 1)
+    return np.where(elev_deg > 0, q, 0.0)
+
+
+def classify_wind(dir_deg, speed_kmh, gust_kmh, cfg):
+    """Name the wind, because on this coast the name carries the forecast.
+
+    Bora off the land, jugo onshore and warm, maestral the afternoon thermal.
+    They do very different things to visibility and to whether you can work.
+    """
+    regs = cfg.get("wind_regimes", {})
+    name, spec = "other", regs.get("other", {})
+    d = float(dir_deg) % 360.0
+    for key, r in regs.items():
+        if key == "other" or "from_deg" not in r:
+            continue
+        lo, hi = r["from_deg"]
+        inside = (lo <= d <= hi) if lo <= hi else (d >= lo or d <= hi)
+        if inside:
+            name, spec = key, r
+            break
+    viz_f = float(spec.get("viz_factor", 1.0))
+    work_f = float(spec.get("work_factor", 1.0))
+
+    # Gustiness is the bora signature and it is what makes the surface
+    # unworkable even when mean wind looks fine.
+    gust_ratio = 1.0
+    if speed_kmh and speed_kmh > 3 and np.isfinite(gust_kmh):
+        gust_ratio = float(gust_kmh) / float(speed_kmh)
+        if gust_ratio > cfg.get("gust", {}).get("ratio_threshold", 1.6):
+            work_f *= cfg.get("gust", {}).get("penalty", 0.8)
+    return {"name": name, "viz_factor": viz_f, "work_factor": work_f,
+            "gust_ratio": round(gust_ratio, 2),
+            "note": spec.get("note", "")}
+
+
+def wind_regime_series(h, cfg):
+    names, vizf, workf = [], [], []
+    for i in range(len(h["time"])):
+        r = classify_wind(np.nan_to_num(h["wind_direction_10m"][i], nan=0.0),
+                          np.nan_to_num(h["wind_speed_10m"][i], nan=0.0),
+                          np.nan_to_num(h["wind_gusts_10m"][i], nan=0.0), cfg)
+        names.append(r["name"]); vizf.append(r["viz_factor"]); workf.append(r["work_factor"])
+    return names, np.array(vizf), np.array(workf)
+
+
 def visibility_series(h, cfg):
     """Underwater visibility as a decaying memory of stirring and runoff.
 
@@ -562,14 +647,15 @@ def daylight_mask(times, daily):
     return ok
 
 
-def best_window(h, daily, viz, work, move, cfg, now_iso):
+def best_window(h, daily, viz, work, move, cfg, now_iso, light=None):
     """Best contiguous block of dive hours from now forward."""
     times = h["time"]
     base = (cfg["day_weights"]["visibility"] * viz
             + cfg["day_weights"]["workability"] * work
             + cfg["day_weights"]["movement"] * move)
     hourly = base * (work > cfg["workability"]["hard_floor"])
-    hourly = hourly * daylight_mask(times, daily)
+    hourly = hourly * (light if light is not None
+                       else daylight_mask(times, daily).astype(float))
 
     future = np.array([t >= now_iso for t in times])
     hourly = np.where(future, hourly, -1.0)
@@ -597,23 +683,27 @@ def best_window(h, daily, viz, work, move, cfg, now_iso):
     }
 
 
-def hourly_scores(h, daily, viz, work, move, cfg):
+def hourly_scores(h, daily, viz, work, move, cfg, light=None):
     """The blended dive score for every hour in the series."""
     base = (cfg["day_weights"]["visibility"] * viz
             + cfg["day_weights"]["workability"] * work
             + cfg["day_weights"]["movement"] * move)
     ok = work > cfg["workability"]["hard_floor"]
-    light = daylight_mask(h["time"], daily)
+    if light is None:
+        light = daylight_mask(h["time"], daily).astype(float)
+    # Light is a quality factor now, not a yes/no: it zeroes the dark hours
+    # and still prefers dawn and dusk over flat midday sun.
     return base * ok * light, ok, light
 
 
-def daily_breakdown(h, daily, viz, viz_m, work, move, cfg, now_iso):
+def daily_breakdown(h, daily, viz, viz_m, work, move, cfg, now_iso,
+                    light=None, regimes=None):
     """Group the forecast into local days so you can pick tomorrow's hour.
 
     Times are already local because the API is queried with timezone=auto,
     so slicing the date off the timestamp is enough.
     """
-    scores, ok, light = hourly_scores(h, daily, viz, work, move, cfg)
+    scores, ok, light = hourly_scores(h, daily, viz, work, move, cfg, light)
     win = cfg["conditions"]["window_hours"]
     today = now_iso[:10]
 
@@ -633,7 +723,9 @@ def daily_breakdown(h, daily, viz, viz_m, work, move, cfg, now_iso):
             "wave_m": round(float(h["wave_height"][i]), 2),
             "wind_kmh": round(float(h["wind_speed_10m"][i]), 1),
             "sea_temp_c": round(float(h["sea_surface_temperature"][i]), 1),
-            "daylight": bool(light[i]),
+            "daylight": bool(light[i] > 0),
+            "light": round(float(light[i]), 2),
+            "wind_regime": (regimes[i] if regimes else None),
             "workable": bool(ok[i]),
             "past": h["time"][i] < now_iso,
         } for i in idx]
@@ -706,7 +798,64 @@ def load_species(cfg):
     return out
 
 
-def temp_at_depth(sst_c, depth_m, month, cfg):
+def fetch_cmems_profile(lat, lon, cfg):
+    """Measured temperature profile at depth from Copernicus Marine.
+
+    Replaces the guessed thermocline drop with the real thing. Needs a free
+    Copernicus account; credentials come from the environment, so nothing
+    secret is ever committed. Returns None on any problem and the caller
+    falls back to the estimate.
+    """
+    c = cfg.get("cmems", {})
+    if not c.get("enabled"):
+        return None
+    if not (os.environ.get("COPERNICUSMARINE_SERVICE_USERNAME")
+            and os.environ.get("COPERNICUSMARINE_SERVICE_PASSWORD")):
+        log("cmems: enabled but no credentials in the environment "
+            "- falling back to the thermocline estimate")
+        return None
+
+    cache_file = CACHE / f"cmems_{dt.date.today().isoformat()}.json"
+    if cache_file.exists():
+        log("cmems: cache hit for today")
+        return json.loads(cache_file.read_text())
+
+    try:
+        import copernicusmarine
+        pad = c.get("pad_deg", 0.1)
+        today = dt.date.today()
+        ds = copernicusmarine.open_dataset(
+            dataset_id=c["dataset_id"],
+            variables=[c.get("variable", "thetao")],
+            minimum_longitude=lon - pad, maximum_longitude=lon + pad,
+            minimum_latitude=lat - pad, maximum_latitude=lat + pad,
+            minimum_depth=0.0, maximum_depth=c.get("max_depth_m", 50.0),
+            start_datetime=f"{today - dt.timedelta(days=2)}T00:00:00",
+            end_datetime=f"{today}T23:59:59",
+        )
+        var = ds[c.get("variable", "thetao")]
+        prof = var.isel(time=-1).mean(dim=["latitude", "longitude"], skipna=True)
+        depths = [float(d) for d in prof["depth"].values]
+        temps = [float(t) for t in prof.values]
+        keep = [(d, t) for d, t in zip(depths, temps) if np.isfinite(t)]
+        if len(keep) < 2:
+            log("cmems: profile came back empty - using the estimate")
+            return None
+        out = {"depths": [k[0] for k in keep], "temps": [k[1] for k in keep],
+               "source": c["dataset_id"], "fetched": today.isoformat()}
+        CACHE.mkdir(parents=True, exist_ok=True)
+        cache_file.write_text(json.dumps(out))
+        log(f"cmems: profile {out['temps'][0]:.1f} C at "
+            f"{out['depths'][0]:.0f} m -> {out['temps'][-1]:.1f} C at "
+            f"{out['depths'][-1]:.0f} m")
+        return out
+    except Exception as e:
+        log(f"cmems: unavailable ({e.__class__.__name__}: {e}) "
+            "- falling back to the thermocline estimate")
+        return None
+
+
+def temp_at_depth(sst_c, depth_m, month, cfg, profile=None):
     """Estimate temperature at depth from SST plus a seasonal stratification drop.
 
     Using bare SST to decide where a demersal fish sits is wrong for half the
@@ -714,6 +863,8 @@ def temp_at_depth(sst_c, depth_m, month, cfg):
     crude correction, not a measurement - the honest fix is CMEMS Med physics
     temperature at depth, which needs a (free) Copernicus account.
     """
+    if profile:
+        return float(np.interp(depth_m, profile["depths"], profile["temps"]))
     tc = cfg.get("thermocline")
     if not tc:
         return sst_c
@@ -722,7 +873,7 @@ def temp_at_depth(sst_c, depth_m, month, cfg):
     return sst_c - drop * frac
 
 
-def species_day_factors(sp, sea_temp_c, viz_score, month, cfg=None):
+def species_day_factors(sp, sea_temp_c, viz_score, month, cfg=None, profile=None):
     """How available this species is today, independent of location.
 
     Three independent gates, multiplied: temperature, season, and whether
@@ -732,7 +883,7 @@ def species_day_factors(sp, sea_temp_c, viz_score, month, cfg=None):
     tb_lo, tb_hi = sp["temp_best_c"]
     # Evaluate at the depth the species actually holds, not at the surface.
     d_mid = 0.5 * (sp["depth_best_m"][0] + sp["depth_best_m"][1])
-    t_at = temp_at_depth(sea_temp_c, d_mid, month, cfg or {})
+    t_at = temp_at_depth(sea_temp_c, d_mid, month, cfg or {}, profile)
     temp_fit = float(trapezoid(t_at, t_lo, tb_lo, tb_hi, t_hi))
 
     season_fit = 1.0 if month in sp["months"] else 0.0
@@ -1001,11 +1152,23 @@ def run(cfg, selftest=False):
     move = movement_series(h, cfg)
     now_iso = h["time"][now_i]
 
+    # Named wind regimes: bora, jugo, maestral do different things to the
+    # water and to whether you can work in it.
+    regimes, viz_f, work_f = wind_regime_series(h, cfg)
+    viz = np.clip(viz * viz_f, 0.0, 1.0)
+    vc = cfg["visibility"]
+    viz_m = vc["viz_min_m"] + viz * (vc["viz_max_m"] - vc["viz_min_m"])
+    work = np.clip(work * work_f, 0.0, 1.0)
+
+    elev = solar_elevation_deg(h["time"], clat, clon, tz_offset)
+    light = light_quality(elev, cfg)
+
     word, limiter, day_score = verdict(
         float(viz[now_i]), float(viz_m[now_i]), float(work[now_i]),
         float(sea_ok[now_i]), float(air_ok[now_i]), cfg)
-    window = best_window(h, daily, viz, work, move, cfg, now_iso)
-    days = daily_breakdown(h, daily, viz, viz_m, work, move, cfg, now_iso)
+    window = best_window(h, daily, viz, work, move, cfg, now_iso, light)
+    days = daily_breakdown(h, daily, viz, viz_m, work, move, cfg, now_iso,
+                           light, regimes)
     log(f"verdict: {word} (limited by {limiter}), viz ~{viz_m[now_i]:.0f} m")
 
     # ---- spatial terms ----
@@ -1063,9 +1226,12 @@ def run(cfg, selftest=False):
     month = int(now_iso[5:7])
     gates = [afit, (~excl).astype(float)]
 
+    profile = None if selftest else fetch_cmems_profile(clat, clon, cfg)
+
     species_out = []
     for sp in load_species(cfg):
-        day = species_day_factors(sp, sea_temp, float(viz[now_i]), month, cfg)
+        day = species_day_factors(sp, sea_temp, float(viz[now_i]), month, cfg,
+                                  profile)
         smap = species_spatial_score(sp, terms, depth_m, land, gates, cfg)
         smap[land] = 0.0
         sspots = find_spots(smap, lats, lons, depth_m, terms, cfg)
@@ -1106,6 +1272,11 @@ def run(cfg, selftest=False):
             "wind_from_deg": round(wind_from),
             "sea_temp_c": round(float(h["sea_surface_temperature"][now_i]), 1),
             "current_ms": round(float(h["ocean_current_velocity"][now_i]), 2),
+            "wind_regime": regimes[now_i],
+            "wind_regime_note": cfg.get("wind_regimes", {}).get(
+                regimes[now_i], {}).get("note", ""),
+            "sun_elevation_deg": round(float(elev[now_i]), 1),
+            "light": round(float(light[now_i]), 2),
         },
         "best_window": window,
         "days": days,
@@ -1122,9 +1293,14 @@ def run(cfg, selftest=False):
             "precipitation_mm": [round(float(v), 1) for v in h["precipitation"][keep]],
             "sea_level_m": [round(float(v), 2) for v in h["sea_level_height_msl"][keep]],
             "workability": [round(float(v), 3) for v in work[keep]],
+            "light": [round(float(v), 2) for v in light[keep]],
+            "wind_regime": regimes[keep],
         },
         "now_index": now_i - max(0, now_i - 24),
         "sea_temp_now_c": round(sea_temp, 1),
+        "temp_source": ("Copernicus Marine measured profile" if profile
+                        else "estimated from SST + seasonal thermocline"),
+        "temp_profile": profile,
         "month": month,
         "spots": spots,
         "species": species_out,

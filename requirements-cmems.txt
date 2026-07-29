@@ -1,0 +1,3 @@
+# Optional: real temperature at depth from Copernicus Marine.
+# Only installed when the CMEMS secrets are present (see the workflow).
+copernicusmarine>=1.3
