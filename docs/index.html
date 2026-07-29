@@ -591,6 +591,7 @@ async function load(){
   $("#stamp").innerHTML =
     `Updated ${t.toLocaleString()} · depth band ${d.depth_range_m[0]}–${d.depth_range_m[1]} m<br>
      Weights: ${Object.entries(d.weights).map(([k,v])=>k+" "+v).join(" · ")}<br>
+     Water temp: ${d.temp_source || "unknown"}<br>
      Bathymetry EMODnet · conditions Open-Meteo. Model output, not a chart. Check the
      rules and the protected areas before you get in.`;
 }
