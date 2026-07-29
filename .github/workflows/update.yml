@@ -35,11 +35,19 @@ jobs:
         run: pip install -r requirements.txt
 
       # Only pulled in if you have set up the Copernicus Marine secrets.
+      # The check is done in the shell, not in an `if:` expression: a step
+      # cannot reliably read its own step-level env in its own condition,
+      # which would make this skip silently even with the secrets set.
       - name: Install Copernicus Marine (optional)
-        if: env.CMEMS_USER != ''
         env:
           CMEMS_USER: ${{ secrets.COPERNICUSMARINE_SERVICE_USERNAME }}
-        run: pip install -r requirements-cmems.txt
+        run: |
+          if [ -n "$CMEMS_USER" ]; then
+            echo "CMEMS credentials found - installing toolbox"
+            pip install -r requirements-cmems.txt
+          else
+            echo "no CMEMS credentials - skipping (model will use the estimate)"
+          fi
 
       # Bathymetry never changes, so EMODnet is queried once and then reused.
       - name: Restore bathymetry cache
@@ -57,16 +65,17 @@ jobs:
       # Sentinel-2 passes every ~5 days and is often clouded out, so this
       # runs weekly and is allowed to find nothing without failing the job.
       - name: Sentinel-2 turbidity check (weekly, optional)
-        if: env.CDSE_CLIENT_ID != ''
         continue-on-error: true
         env:
           CDSE_CLIENT_ID: ${{ secrets.CDSE_CLIENT_ID }}
           CDSE_CLIENT_SECRET: ${{ secrets.CDSE_CLIENT_SECRET }}
         run: |
-          if [ "$(date -u +%u)" = "1" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          if [ -z "$CDSE_CLIENT_ID" ]; then
+            echo "no CDSE credentials - skipping"
+          elif [ "$(date -u +%u)" = "1" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             python s2_turbidity.py
           else
-            echo "not Monday, skipping"
+            echo "not Monday - skipping (runs weekly, or on a manual run)"
           fi
 
       - name: Commit outputs
