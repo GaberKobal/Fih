@@ -7,7 +7,8 @@
     "excluding water you could legally hunt costs you a spot, while missing a",
     "restricted zone costs you a fine. Replace it with the real boundary when you",
     "have it, and add any other protected areas, port limits or no-take zones.",
-    "Verify against the current rules at ribarstvo.mps.hr."
+    "Verify against the current rules at ribarstvo.mps.hr.",
+    "Croatian rules also prohibit fishing in ports and harbours, within 200 m of fish farms / 100 m of shellfish farms, and on beaches and swimming areas from 1 May to 1 October. The last one is seasonal and needs beach polygons - it is NOT encoded here. Watch for it yourself in summer."
   ],
   "features": [
     {
@@ -20,13 +21,66 @@
       },
       "geometry": {
         "type": "Polygon",
-        "coordinates": [[
-          [13.5600, 45.3250],
-          [13.6100, 45.3250],
-          [13.6100, 45.3050],
-          [13.5600, 45.3050],
-          [13.5600, 45.3250]
-        ]]
+        "coordinates": [
+          [
+            [
+              13.56,
+              45.325
+            ],
+            [
+              13.61,
+              45.325
+            ],
+            [
+              13.61,
+              45.305
+            ],
+            [
+              13.56,
+              45.305
+            ],
+            [
+              13.56,
+              45.325
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Novigrad harbour (approximate)",
+        "reason": "Fishing is prohibited in ports and harbours except at designated places",
+        "confidence": "approximate - verify and redraw",
+        "checked": "2026-07-29"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              13.553,
+              45.3215
+            ],
+            [
+              13.5605,
+              45.3215
+            ],
+            [
+              13.5605,
+              45.316
+            ],
+            [
+              13.553,
+              45.316
+            ],
+            [
+              13.553,
+              45.3215
+            ]
+          ]
+        ]
       }
     }
   ]

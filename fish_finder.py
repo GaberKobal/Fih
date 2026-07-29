@@ -67,7 +67,8 @@ from pathlib import Path
 
 import numpy as np
 from scipy.interpolate import RegularGridInterpolator
-from scipy.ndimage import gaussian_filter, maximum_filter
+from scipy.ndimage import (binary_opening, distance_transform_edt,
+                           gaussian_filter, maximum_filter)
 
 ROOT = Path(__file__).resolve().parent
 CACHE = ROOT / "cache"
@@ -246,6 +247,34 @@ def metric_gradient(field, lats, lons):
     dx = np.gradient(lons).mean() * 111320.0 * math.cos(math.radians(lat0))
     gy, gx = np.gradient(field, dy, dx)
     return np.hypot(gy, gx)
+
+
+def open_sea_mask(land, cfg):
+    """Drop water that is not open sea.
+
+    A negative elevation is not the same thing as somewhere you can hunt.
+    Marina basins, the Mirna channel and coastal lagoons are all "water" to
+    EMODnet, and at 100 m a cell straddling a 60 m river averages negative and
+    passes. A morphological opening removes any water body narrower than the
+    structuring disk, which is exactly the set of places you cannot dive.
+    """
+    r = int(cfg.get("water", {}).get("min_width_cells", 2))
+    if r < 1:
+        return land
+    yy, xx = np.ogrid[-r:r + 1, -r:r + 1]
+    disk = (yy ** 2 + xx ** 2) <= r * r
+    water = ~land
+    keep = binary_opening(water, structure=disk)
+    removed = int((water & ~keep).sum())
+    if removed:
+        log(f"water mask: dropped {removed} cells in channels, basins and "
+            f"inlets narrower than about {2 * r * cfg['grid_resolution_m']:.0f} m")
+    return ~keep
+
+
+def shore_clearance(land, cfg):
+    """Distance to the nearest land, in metres."""
+    return distance_transform_edt(~land) * cfg["grid_resolution_m"]
 
 
 def structure_terms(depth_m, land, lats, lons, cfg):
@@ -1134,6 +1163,7 @@ def run(cfg, selftest=False):
 
     elev_g = regrid(blats, blons, elev, lats, lons)
     land = ~np.isfinite(elev_g) | (elev_g >= 0)
+    land = open_sea_mask(land, cfg)
     depth_m = np.where(land, np.nan, -elev_g)
 
     water_frac = float((~land).mean())
@@ -1231,11 +1261,17 @@ def run(cfg, selftest=False):
     # ---- gates ----
     dfit = depth_fit(depth_m, land, cfg)
     afit = access_fit(lats, lons, cfg)
+
+    # A mark 30 m off the rocks is not a mark, it is the shoreline.
+    clear_min = cfg.get("water", {}).get("min_shore_clearance_m", 0)
+    cfit = np.ones_like(dfit)
+    if clear_min > 0:
+        cfit = np.clip(shore_clearance(land, cfg) / max(clear_min, 1e-6), 0, 1)
     excl = rasterize_polygons(ROOT / "exclusions.geojson", lats, lons)
     if excl.any():
         log(f"exclusions: {excl.mean():.1%} of the box masked out")
 
-    score = combine_score(terms, weights, [dfit, afit, (~excl).astype(float)])
+    score = combine_score(terms, weights, [dfit, afit, cfit, (~excl).astype(float)])
     score[land] = 0.0
 
     # ---- outputs ----
@@ -1253,7 +1289,7 @@ def run(cfg, selftest=False):
     if not np.isfinite(sea_temp):
         sea_temp = float(np.nanmedian(h["sea_surface_temperature"]))
     month = int(now_iso[5:7])
-    gates = [afit, (~excl).astype(float)]
+    gates = [afit, cfit, (~excl).astype(float)]
 
     profile = None if selftest else fetch_cmems_profile(clat, clon, cfg)
 
