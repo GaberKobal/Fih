@@ -130,20 +130,37 @@ def find_scene(token, bbox, days, max_cloud):
     """Most recent Sentinel-2 L2A pass over the box under the cloud limit."""
     end = dt.date.today()
     start = end - dt.timedelta(days=days)
+    # The CDSE catalog rejects the STAC `query` extension, so cloud filtering
+    # happens here instead. Over two weeks that is at most a handful of
+    # passes, so there is nothing to gain from server-side filtering anyway.
     res = post_json(CATALOG_URL, token, {
         "collections": ["sentinel-2-l2a"],
         "bbox": [bbox["lon_min"], bbox["lat_min"], bbox["lon_max"], bbox["lat_max"]],
         "datetime": f"{start}T00:00:00Z/{end}T23:59:59Z",
-        "limit": 50,
-        "query": {"eo:cloud_cover": {"lte": max_cloud}},
+        "limit": 100,
     })
-    feats = sorted(res.get("features", []),
-                   key=lambda f: f["properties"]["datetime"], reverse=True)
+    feats = res.get("features", [])
+    log(f"catalog: {len(feats)} passes in the last {days} days")
     if not feats:
         return None
-    f = feats[0]
-    return {"datetime": f["properties"]["datetime"],
-            "cloud": f["properties"].get("eo:cloud_cover")}
+
+    scored = []
+    for f in feats:
+        pr = f.get("properties", {})
+        cloud = pr.get("eo:cloud_cover")
+        if cloud is None or cloud > max_cloud:
+            continue
+        scored.append((pr["datetime"], cloud))
+    if not scored:
+        clouds = sorted(f.get("properties", {}).get("eo:cloud_cover", 100)
+                        for f in feats)
+        log(f"none under {max_cloud}% cloud - cleanest was {clouds[0]:.0f}%. "
+            "Raise --max-cloud or --days.")
+        return None
+
+    scored.sort(reverse=True)                 # most recent first
+    when, cloud = scored[0]
+    return {"datetime": when, "cloud": cloud}
 
 
 def fetch_scene(token, bbox, when, res_m=60):
