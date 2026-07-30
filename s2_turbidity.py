@@ -220,8 +220,24 @@ def scene_depth(bbox, shape, cfg):
     return -elev_g[::-1, :]                      # positive metres, north first
 
 
-def turbidity_from_red(red, scl, depth=None, min_depth_m=0.0):
-    """Nechad turbidity over deep, cloud-free water pixels only."""
+def turbidity_from_red(red, scl, depth=None, min_depth_m=0.0, dark_pct=1.0):
+    """Nechad turbidity over deep, cloud-free water, after a dark-pixel offset.
+
+    Sentinel-2 L2A is atmospherically corrected by Sen2Cor, which is tuned for
+    land. Over dark water it routinely leaves a large residual offset: measured
+    red reflectance here came out near 0.044 across deep water, where clear
+    water should be 0.001-0.005. Feeding that to Nechad gives 20-plus FNU
+    everywhere, which is an artefact, not turbidity.
+
+    Dark-pixel subtraction is the standard remedy: at 665 nm the clearest water
+    in a coastal scene is very nearly black, so the low percentile of red
+    reflectance over deep water is essentially all atmosphere. Subtracting it
+    leaves the water signal.
+
+    The consequence is honest and worth stating: turbidity becomes RELATIVE to
+    the clearest water in the scene. Spatial contrast (plume against offshore)
+    stays trustworthy; absolute values inherit the assumption.
+    """
     water = (scl == 6)
     bad = np.isin(scl, [3, 8, 9, 10, 11])          # shadow, cloud, cirrus, snow
     ok = water & ~bad & np.isfinite(red) & (red > 0) & (red < NECHAD_C * 0.95)
@@ -231,10 +247,18 @@ def turbidity_from_red(red, scl, depth=None, min_depth_m=0.0):
             f"pixels are deeper than {min_depth_m:.0f} m")
         ok = ok & deep
     if ok.sum() < 200:
-        return None, int(ok.sum())
+        return None, int(ok.sum()), None
+
     rho = red[ok]
+    offset = 0.0
+    if dark_pct > 0:
+        offset = float(np.percentile(rho, dark_pct))
+        log(f"dark-pixel offset: subtracting rho={offset:.4f} "
+            f"(p{dark_pct:g} of deep water red reflectance)")
+        rho = np.clip(rho - offset, 1e-5, None)
+
     t = NECHAD_A * rho / (1.0 - rho / NECHAD_C)
-    return t, int(ok.sum())
+    return t, int(ok.sum()), offset
 
 
 def turbidity_to_viz_m(t_fnu, k=15.0):
@@ -254,6 +278,9 @@ def main():
     ap.add_argument("--days", type=int, default=14)
     ap.add_argument("--max-cloud", type=float, default=20.0)
     ap.add_argument("--k", type=float, default=15.0)
+    ap.add_argument("--dark-pct", type=float, default=1.0,
+                    help="percentile of deep-water red reflectance treated as "
+                         "pure atmosphere and subtracted; 0 disables")
     ap.add_argument("--min-depth", type=float, default=15.0,
                     help="ignore pixels shallower than this; below about 15 m "
                          "seabed reflectance corrupts the retrieval")
@@ -282,38 +309,49 @@ def main():
     except Exception as e:
         log(f"no depth mask ({e.__class__.__name__}) - the number will be "
             "contaminated by seabed reflectance in shallow water")
-    t, n = turbidity_from_red(red, scl, depth, args.min_depth)
+    t, n, offset = turbidity_from_red(red, scl, depth, args.min_depth,
+                                      args.dark_pct)
     if t is None:
         log(f"only {n} usable water pixels - scene not worth using")
         return
 
     med = float(np.median(t))
     p10 = float(np.percentile(t, 10))
-    p25, p75 = (float(np.percentile(t, 25)), float(np.percentile(t, 75)))
+    p75 = float(np.percentile(t, 75))
+    p90 = float(np.percentile(t, 90))
+    # Contrast is the robust product here: it survives the offset assumption,
+    # because subtracting a constant does not change differences much.
+    contrast = p90 - p10
     out = {
         "scene_datetime": scene["datetime"],
         "cloud_cover_pct": scene["cloud"],
         "water_pixels": n,
-        "turbidity_fnu": {"median": round(med, 2), "p10": round(p10, 2),
-                          "p25": round(p25, 2), "p75": round(p75, 2)},
         "min_depth_m": args.min_depth,
-        # The clearest decile is the more useful figure: it describes the water
-        # you would actually choose to dive, not the box average.
-        "observed_viz_m": round(turbidity_to_viz_m(p10, args.k), 1),
-        "observed_viz_median_m": round(turbidity_to_viz_m(med, args.k), 1),
-        "viz_range_m": [round(turbidity_to_viz_m(p75, args.k), 1),
-                        round(turbidity_to_viz_m(p25, args.k), 1)],
+        "dark_pixel_offset_rho": round(offset, 5) if offset else 0,
+        "relative": bool(offset),
+        # Relative, not absolute. Track these across dates; do not read them
+        # as metres.
+        "turbidity_relative_fnu": {"median": round(med, 2),
+                                   "p10": round(p10, 2),
+                                   "p75": round(p75, 2),
+                                   "p90": round(p90, 2)},
+        "contrast_fnu": round(contrast, 2),
+        "dirty_fraction": round(float((t > med + contrast / 2).mean()), 3),
         "k": args.k,
         "method": "Nechad et al. 2009 single-band (B04 665 nm), SCL water pixels",
-        "caveat": ("Turbidity is measured; the conversion to metres of "
-                   "visibility is a rule of thumb. Tune k against the viz_m "
-                   "column in dive_log.csv."),
+        "caveat": ("Sen2Cor L2A leaves a large atmospheric residual over water, "
+                   "so a dark-pixel offset is subtracted and turbidity is "
+                   "RELATIVE to the clearest water in the scene. Spatial "
+                   "contrast is reliable; absolute metres are not. Tune k "
+                   "against the viz_m column in dive_log.csv."),
         "fetched": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
     }
     OUT.mkdir(parents=True, exist_ok=True)
     (OUT / "s2_turbidity.json").write_text(json.dumps(out, indent=1))
-    log(f"turbidity p10 {p10:.1f} / median {med:.1f} FNU -> clearest water "
-        f"about {out['observed_viz_m']} m ({n} deep water pixels)")
+    log(f"relative turbidity median {med:.2f}, p90 {p90:.2f}, "
+        f"contrast {contrast:.2f} FNU over {n} deep pixels")
+    log(f"{out['dirty_fraction'] * 100:.0f}% of deep water is in the murkier "
+        "half of the scene")
     log(f"wrote {OUT / 's2_turbidity.json'}")
 
 
