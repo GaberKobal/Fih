@@ -220,7 +220,7 @@ def scene_depth(bbox, shape, cfg):
     return -elev_g[::-1, :]                      # positive metres, north first
 
 
-def turbidity_from_red(red, scl, depth=None, min_depth_m=0.0, dark_pct=1.0):
+def turbidity_from_red(red, scl, depth=None, min_depth_m=0.0, dark_pct=5.0):
     """Nechad turbidity over deep, cloud-free water, after a dark-pixel offset.
 
     Sentinel-2 L2A is atmospherically corrected by Sen2Cor, which is tuned for
@@ -278,7 +278,7 @@ def main():
     ap.add_argument("--days", type=int, default=14)
     ap.add_argument("--max-cloud", type=float, default=20.0)
     ap.add_argument("--k", type=float, default=15.0)
-    ap.add_argument("--dark-pct", type=float, default=1.0,
+    ap.add_argument("--dark-pct", type=float, default=5.0,
                     help="percentile of deep-water red reflectance treated as "
                          "pure atmosphere and subtracted; 0 disables")
     ap.add_argument("--min-depth", type=float, default=15.0,
@@ -336,7 +336,6 @@ def main():
                                    "p75": round(p75, 2),
                                    "p90": round(p90, 2)},
         "contrast_fnu": round(contrast, 2),
-        "dirty_fraction": round(float((t > med + contrast / 2).mean()), 3),
         "k": args.k,
         "method": "Nechad et al. 2009 single-band (B04 665 nm), SCL water pixels",
         "caveat": ("Sen2Cor L2A leaves a large atmospheric residual over water, "
@@ -350,8 +349,8 @@ def main():
     (OUT / "s2_turbidity.json").write_text(json.dumps(out, indent=1))
     log(f"relative turbidity median {med:.2f}, p90 {p90:.2f}, "
         f"contrast {contrast:.2f} FNU over {n} deep pixels")
-    log(f"{out['dirty_fraction'] * 100:.0f}% of deep water is in the murkier "
-        "half of the scene")
+    log(f"spread p10 {p10:.2f} to p90 {p90:.2f} - watch this and the median "
+        "across dates rather than any single value")
     log(f"wrote {OUT / 's2_turbidity.json'}")
 
 

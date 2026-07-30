@@ -27,7 +27,8 @@
   "structure": {
     "background_scale_m": 600,
     "relief_scale_m": 3.0,
-    "slope_scale": 0.04
+    "slope_scale": 0.04,
+    "despeckle": true
   },
   "shelter": {
     "max_fetch_km": 20.0,
@@ -166,8 +167,10 @@
     "max_depth_m": 50.0
   },
   "water": {
-    "_note": "min_width_cells removes water narrower than about 2 x cells x grid_resolution_m - marina basins, river channels, lagoons. Raise it if inland water still gets marked; lower it if narrow coves you actually hunt are disappearing.",
-    "min_width_cells": 2,
+    "_note": "min_width_cells severs narrow channels; require_sea_connection then discards whatever is left inland. EMODnet carries the Mirna estuary several km up the valley and it was being scored as diveable sea.",
+    "min_width_cells": 3,
+    "require_sea_connection": true,
+    "open_edge": "west",
     "min_shore_clearance_m": 60
   }
 }

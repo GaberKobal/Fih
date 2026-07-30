@@ -68,7 +68,8 @@ from pathlib import Path
 import numpy as np
 from scipy.interpolate import RegularGridInterpolator
 from scipy.ndimage import (binary_opening, distance_transform_edt,
-                           gaussian_filter, maximum_filter)
+                           gaussian_filter, label, maximum_filter,
+                           median_filter)
 
 ROOT = Path(__file__).resolve().parent
 CACHE = ROOT / "cache"
@@ -258,17 +259,41 @@ def open_sea_mask(land, cfg):
     passes. A morphological opening removes any water body narrower than the
     structuring disk, which is exactly the set of places you cannot dive.
     """
-    r = int(cfg.get("water", {}).get("min_width_cells", 2))
-    if r < 1:
-        return land
-    yy, xx = np.ogrid[-r:r + 1, -r:r + 1]
-    disk = (yy ** 2 + xx ** 2) <= r * r
+    wcfg = cfg.get("water", {})
+    r = int(wcfg.get("min_width_cells", 3))
     water = ~land
-    keep = binary_opening(water, structure=disk)
-    removed = int((water & ~keep).sum())
-    if removed:
-        log(f"water mask: dropped {removed} cells in channels, basins and "
-            f"inlets narrower than about {2 * r * cfg['grid_resolution_m']:.0f} m")
+    keep = water.copy()
+
+    if r >= 1:
+        yy, xx = np.ogrid[-r:r + 1, -r:r + 1]
+        disk = (yy ** 2 + xx ** 2) <= r * r
+        keep = binary_opening(water, structure=disk)
+        n = int((water & ~keep).sum())
+        if n:
+            log(f"water mask: dropped {n} cells in channels and basins narrower "
+                f"than about {2 * r * cfg['grid_resolution_m']:.0f} m")
+
+    # Width alone is not enough. EMODnet carries estuaries inland, so the Mirna
+    # valley survives any opening wide enough to keep real coves. Once the
+    # opening has severed the narrow neck at the mouth, connectivity finishes
+    # the job: keep only water that reaches the open, offshore edge of the box.
+    if wcfg.get("require_sea_connection", True):
+        lab, n_comp = label(keep)
+        edge = wcfg.get("open_edge", "west")
+        touching = {"west": lab[:, 0], "east": lab[:, -1],
+                    "north": lab[-1, :], "south": lab[0, :]}[edge]
+        ids = sorted(set(int(v) for v in np.unique(touching)) - {0})
+        if ids:
+            connected = np.isin(lab, ids)
+            orphaned = int((keep & ~connected).sum())
+            if orphaned:
+                log(f"water mask: dropped {orphaned} cells of water not connected "
+                    f"to the open sea (inland valleys, lagoons, {n_comp - len(ids)} "
+                    "separate bodies)")
+            keep = connected
+        else:
+            log(f"water mask: nothing touches the {edge} edge - leaving "
+                "connectivity check off, check the bbox")
     return ~keep
 
 
@@ -295,6 +320,12 @@ def structure_terms(depth_m, land, lats, lons, cfg):
 
     # Relief: how far this cell rises above the local seabed. Positive for a
     # mound (tegnua, boulder field, wreck mound), negative for a hole.
+    # EMODnet is a composite of survey swaths, and the seams show up as
+    # one-cell-wide north-south stripes that the relief term happily reports as
+    # structure. A 3x3 median removes them and leaves a real 100 m mound intact.
+    if cfg["structure"].get("despeckle", True):
+        filled = median_filter(filled, size=3)
+
     bg_sigma_cells = max(2.0, cfg["structure"]["background_scale_m"] /
                          cfg["grid_resolution_m"])
     background = gaussian_filter(filled, sigma=bg_sigma_cells)
@@ -1134,13 +1165,20 @@ def synthetic_bathymetry(bbox, res_deg):
     lats = np.arange(bbox["lat_min"], bbox["lat_max"], res_deg)
     lons = np.arange(bbox["lon_min"], bbox["lon_max"], res_deg)
     gy, gx = np.meshgrid(lats, lons, indexing="ij")
-    shore = bbox["lon_min"] + 0.25 * (bbox["lon_max"] - bbox["lon_min"])
-    elev = -((gx - shore) * 260.0)          # deepens offshore
+    # Sea to the WEST, land to the east, matching this coast - so the
+    # sea-connectivity check is actually exercised by --selftest.
+    shore = bbox["lon_min"] + 0.60 * (bbox["lon_max"] - bbox["lon_min"])
+    elev = (gx - shore) * 260.0             # negative (deeper) to the west
     elev += 4.0 * np.sin(gy * 900) * np.cos(gx * 700)
     rng = np.random.default_rng(7)
+    # an inland valley the connectivity check should discard
+    inland = ((gy > bbox["lat_min"] + 0.45 * (bbox["lat_max"] - bbox["lat_min"])) &
+              (gy < bbox["lat_min"] + 0.52 * (bbox["lat_max"] - bbox["lat_min"])) &
+              (gx > shore))
+    elev[inland] = -6.0
     for _ in range(6):                       # tegnue-like mounds
         cy = rng.uniform(bbox["lat_min"], bbox["lat_max"])
-        cx = rng.uniform(shore, bbox["lon_max"])
+        cx = rng.uniform(bbox["lon_min"], shore)
         r = np.hypot((gy - cy) * 111.0, (gx - cx) * 78.0)
         elev += 3.5 * np.exp(-(r / 0.35) ** 2)
     return lats, lons, elev
