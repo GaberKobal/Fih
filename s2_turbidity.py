@@ -199,11 +199,37 @@ def fetch_scene(token, bbox, when, res_m=60):
     return red, scl
 
 
-def turbidity_from_red(red, scl):
-    """Nechad turbidity over water pixels only."""
+def scene_depth(bbox, shape, cfg):
+    """Water depth on the scene's own grid, from the cached EMODnet DTM.
+
+    Needed because Nechad assumes OPTICALLY DEEP water. Over shallow shelf
+    the seabed reflects red light back to the sensor and the retrieval cannot
+    separate that from suspended sediment, so clear shallow water reads as
+    violently turbid. Without this mask the number is meaningless here.
+    """
+    import fish_finder as ff
+    b = bbox
+    key = (f"{b['lon_min']}_{b['lat_min']}_{b['lon_max']}_{b['lat_max']}_"
+           f"{cfg['grid_resolution_m']}")
+    blats, blons, elev = ff.fetch_emodnet_bathymetry(
+        b, cfg["grid_resolution_m"] / 111320.0, key)
+    # scene rows run north -> south; regrid wants ascending latitude
+    lats = np.linspace(b["lat_min"], b["lat_max"], shape[0])
+    lons = np.linspace(b["lon_min"], b["lon_max"], shape[1])
+    elev_g = ff.regrid(blats, blons, elev, lats, lons)
+    return -elev_g[::-1, :]                      # positive metres, north first
+
+
+def turbidity_from_red(red, scl, depth=None, min_depth_m=0.0):
+    """Nechad turbidity over deep, cloud-free water pixels only."""
     water = (scl == 6)
     bad = np.isin(scl, [3, 8, 9, 10, 11])          # shadow, cloud, cirrus, snow
     ok = water & ~bad & np.isfinite(red) & (red > 0) & (red < NECHAD_C * 0.95)
+    if depth is not None and min_depth_m > 0:
+        deep = np.isfinite(depth) & (depth >= min_depth_m)
+        log(f"depth mask: {int((ok & deep).sum())} of {int(ok.sum())} water "
+            f"pixels are deeper than {min_depth_m:.0f} m")
+        ok = ok & deep
     if ok.sum() < 200:
         return None, int(ok.sum())
     rho = red[ok]
@@ -228,6 +254,9 @@ def main():
     ap.add_argument("--days", type=int, default=14)
     ap.add_argument("--max-cloud", type=float, default=20.0)
     ap.add_argument("--k", type=float, default=15.0)
+    ap.add_argument("--min-depth", type=float, default=15.0,
+                    help="ignore pixels shallower than this; below about 15 m "
+                         "seabed reflectance corrupts the retrieval")
     args = ap.parse_args()
 
     cid = os.environ.get("CDSE_CLIENT_ID")
@@ -247,20 +276,31 @@ def main():
     log(f"scene {scene['datetime'][:16]}, {scene['cloud']:.0f}% cloud")
 
     red, scl = fetch_scene(token, bbox, scene["datetime"])
-    t, n = turbidity_from_red(red, scl)
+    depth = None
+    try:
+        depth = scene_depth(bbox, red.shape, cfg)
+    except Exception as e:
+        log(f"no depth mask ({e.__class__.__name__}) - the number will be "
+            "contaminated by seabed reflectance in shallow water")
+    t, n = turbidity_from_red(red, scl, depth, args.min_depth)
     if t is None:
         log(f"only {n} usable water pixels - scene not worth using")
         return
 
     med = float(np.median(t))
+    p10 = float(np.percentile(t, 10))
     p25, p75 = (float(np.percentile(t, 25)), float(np.percentile(t, 75)))
     out = {
         "scene_datetime": scene["datetime"],
         "cloud_cover_pct": scene["cloud"],
         "water_pixels": n,
-        "turbidity_fnu": {"median": round(med, 2),
+        "turbidity_fnu": {"median": round(med, 2), "p10": round(p10, 2),
                           "p25": round(p25, 2), "p75": round(p75, 2)},
-        "observed_viz_m": round(turbidity_to_viz_m(med, args.k), 1),
+        "min_depth_m": args.min_depth,
+        # The clearest decile is the more useful figure: it describes the water
+        # you would actually choose to dive, not the box average.
+        "observed_viz_m": round(turbidity_to_viz_m(p10, args.k), 1),
+        "observed_viz_median_m": round(turbidity_to_viz_m(med, args.k), 1),
         "viz_range_m": [round(turbidity_to_viz_m(p75, args.k), 1),
                         round(turbidity_to_viz_m(p25, args.k), 1)],
         "k": args.k,
@@ -272,8 +312,8 @@ def main():
     }
     OUT.mkdir(parents=True, exist_ok=True)
     (OUT / "s2_turbidity.json").write_text(json.dumps(out, indent=1))
-    log(f"turbidity {med:.1f} FNU -> about {out['observed_viz_m']} m visibility "
-        f"({n} water pixels)")
+    log(f"turbidity p10 {p10:.1f} / median {med:.1f} FNU -> clearest water "
+        f"about {out['observed_viz_m']} m ({n} deep water pixels)")
     log(f"wrote {OUT / 's2_turbidity.json'}")
 
 

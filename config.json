@@ -59,7 +59,8 @@
     "wave_weight": 0.6,
     "rain_weight": 0.4,
     "viz_min_m": 1.0,
-    "viz_max_m": 18.0
+    "viz_max_m": 13.0,
+    "_note": "viz_max_m was 18, which the model hit on every calm day - a saturated ceiling, not a reading. 13 m is a realistic best day on this shelf. Tune against the Sentinel-2 check and dive_log viz_m."
   },
   "workability": {
     "hs_good_m": 0.25,
