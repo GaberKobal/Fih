@@ -39,12 +39,16 @@ jobs:
       # cannot reliably read its own step-level env in its own condition,
       # which would make this skip silently even with the secrets set.
       - name: Install Copernicus Marine (optional)
+        continue-on-error: true
         env:
           CMEMS_USER: ${{ secrets.COPERNICUSMARINE_SERVICE_USERNAME }}
         run: |
           if [ -n "$CMEMS_USER" ]; then
             echo "CMEMS credentials found - installing toolbox"
-            pip install -r requirements-cmems.txt
+            # An optional extra must never break the forecast. If the resolver
+            # fights with numpy 2.x, log it and carry on with the estimate.
+            pip install -r requirements-cmems.txt || \
+              echo "toolbox install failed - continuing without it"
           else
             echo "no CMEMS credentials - skipping (model will use the estimate)"
           fi
@@ -85,7 +89,27 @@ jobs:
           git add docs/data
           if git diff --staged --quiet; then
             echo "no change"
-          else
-            git commit -m "forecast $(date -u +%Y-%m-%dT%H:%MZ)"
-            git push
+            exit 0
           fi
+
+          # If you upload a file while this job is running, main moves under
+          # us and the push is rejected. These are generated files, so the
+          # freshest forecast always wins: fetch, replay our staged changes on
+          # top of whatever landed, and try again.
+          for attempt in 1 2 3; do
+            git commit -q -m "forecast $(date -u +%Y-%m-%dT%H:%MZ)"
+            if git push; then
+              echo "pushed on attempt $attempt"
+              exit 0
+            fi
+            echo "push rejected - main moved, replaying onto it (attempt $attempt)"
+            git fetch -q origin main
+            git reset -q --soft origin/main   # keep our files staged, drop our commit
+            git add docs/data
+            if git diff --staged --quiet; then
+              echo "nothing left to commit after refresh"
+              exit 0
+            fi
+          done
+          echo "could not push after 3 attempts"
+          exit 1
