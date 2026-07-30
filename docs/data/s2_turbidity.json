@@ -1,13 +1,16 @@
 {
  "scene_datetime": "2026-07-28T10:18:24.659Z",
  "cloud_cover_pct": 0.0,
- "water_pixels": 136278,
+ "water_pixels": 118369,
  "turbidity_fnu": {
-  "median": 25.66,
-  "p25": 23.74,
-  "p75": 26.69
+  "median": 25.73,
+  "p10": 21.03,
+  "p25": 24.07,
+  "p75": 26.62
  },
- "observed_viz_m": 2.1,
+ "min_depth_m": 15.0,
+ "observed_viz_m": 2.4,
+ "observed_viz_median_m": 2.1,
  "viz_range_m": [
   2.1,
   2.2
@@ -15,5 +18,5 @@
  "k": 15.0,
  "method": "Nechad et al. 2009 single-band (B04 665 nm), SCL water pixels",
  "caveat": "Turbidity is measured; the conversion to metres of visibility is a rule of thumb. Tune k against the viz_m column in dive_log.csv.",
- "fetched": "2026-07-30T10:21:23+00:00"
+ "fetched": "2026-07-30T10:32:14+00:00"
 }
