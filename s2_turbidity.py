@@ -69,13 +69,14 @@ NECHAD_C = 0.19563
 
 EVALSCRIPT = """//VERSION=3
 function setup() {
-  // Two input entries, not one: B04 is a physical reflectance, but SCL is a
-  // categorical class number and Sentinel Hub only serves it as raw DN.
+  // Per-band units go in a units ARRAY parallel to bands, inside a single
+  // input entry. Two separate entries mean two DATASOURCES to Sentinel Hub,
+  // which is why it went looking for "dataset with id: 1".
   return {
-    input: [
-      {bands: ["B04"], units: "REFLECTANCE"},
-      {bands: ["SCL"], units: "DN"}
-    ],
+    input: [{
+      bands: ["B04", "SCL"],
+      units: ["REFLECTANCE", "DN"]
+    }],
     output: {bands: 2, sampleType: "FLOAT32"}
   };
 }

@@ -17,31 +17,32 @@
         "name": "Mirna estuary (approximate)",
         "reason": "River mouths including the Mirna are special habitats where sport and recreational fishing is separately regulated",
         "confidence": "approximate - verify and redraw",
-        "checked": "2026-07-29"
+        "checked": "2026-07-29",
+        "note": "Tightened 2026-07-29 to the mouth and about 500 m of approach. The previous rectangle also excluded the open bay south of Novigrad."
       },
       "geometry": {
         "type": "Polygon",
         "coordinates": [
           [
             [
-              13.56,
-              45.325
+              13.576,
+              45.3235
             ],
             [
               13.61,
-              45.325
+              45.3235
             ],
             [
               13.61,
-              45.305
+              45.312
             ],
             [
-              13.56,
-              45.305
+              13.576,
+              45.312
             ],
             [
-              13.56,
-              45.325
+              13.576,
+              45.3235
             ]
           ]
         ]
