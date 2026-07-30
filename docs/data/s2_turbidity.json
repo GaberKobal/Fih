@@ -15,5 +15,5 @@
  "k": 15.0,
  "method": "Nechad et al. 2009 single-band (B04 665 nm), SCL water pixels",
  "caveat": "Turbidity is measured; the conversion to metres of visibility is a rule of thumb. Tune k against the viz_m column in dive_log.csv.",
- "fetched": "2026-07-30T10:08:15+00:00"
+ "fetched": "2026-07-30T10:21:23+00:00"
 }
