@@ -593,8 +593,7 @@ async function load(){
            Sentinel-2, ${when}: relative turbidity
            <b class="num" style="color:var(--buoy)">${T.median}</b>
            (spread <b class="num">${s2.contrast_fnu}</b>),
-           <b class="num">${Math.round((s2.dirty_fraction||0)*100)}%</b>
-           of deep water in the murkier half.
+           range <b class="num">${(s2.turbidity_relative_fnu||{}).p10}</b>–<b class="num">${(s2.turbidity_relative_fnu||{}).p90}</b>.
          </div>
          <div style="margin-top:5px;font-size:11.5px;color:var(--sound)">
            Relative, not metres. Sentinel-2 L2A leaves too much atmosphere over
