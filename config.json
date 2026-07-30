@@ -28,7 +28,9 @@
     "background_scale_m": 600,
     "relief_scale_m": 3.0,
     "slope_scale": 0.04,
-    "despeckle": true
+    "despeckle": true,
+    "destripe": true,
+    "destripe_sigma": 8.0
   },
   "shelter": {
     "max_fetch_km": 20.0,

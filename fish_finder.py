@@ -68,8 +68,8 @@ from pathlib import Path
 import numpy as np
 from scipy.interpolate import RegularGridInterpolator
 from scipy.ndimage import (binary_opening, distance_transform_edt,
-                           gaussian_filter, label, maximum_filter,
-                           median_filter)
+                           gaussian_filter, gaussian_filter1d, label,
+                           maximum_filter, median_filter)
 
 ROOT = Path(__file__).resolve().parent
 CACHE = ROOT / "cache"
@@ -267,7 +267,13 @@ def open_sea_mask(land, cfg):
     if r >= 1:
         yy, xx = np.ogrid[-r:r + 1, -r:r + 1]
         disk = (yy ** 2 + xx ** 2) <= r * r
-        keep = binary_opening(water, structure=disk)
+        # Pad with edge replication first. binary_opening treats everything
+        # outside the array as background, so without this it erodes the whole
+        # border of the water mask - which silently killed the connectivity
+        # anchor at the offshore edge.
+        pad = r + 1
+        padded = binary_opening(np.pad(water, pad, mode="edge"), structure=disk)
+        keep = padded[pad:-pad, pad:-pad]
         n = int((water & ~keep).sum())
         if n:
             log(f"water mask: dropped {n} cells in channels and basins narrower "
@@ -277,29 +283,48 @@ def open_sea_mask(land, cfg):
     # valley survives any opening wide enough to keep real coves. Once the
     # opening has severed the narrow neck at the mouth, connectivity finishes
     # the job: keep only water that reaches the open, offshore edge of the box.
-    if wcfg.get("require_sea_connection", True):
+    if wcfg.get("require_sea_connection", True) and keep.any():
         lab, n_comp = label(keep)
+        sizes = np.bincount(lab.ravel())
+        sizes[0] = 0
+        sea_id = int(np.argmax(sizes))            # the open sea is the biggest
+        connected = lab == sea_id
+
+        # Sanity-check the assumption rather than trusting it: the sea should
+        # also reach the offshore edge of the box.
         edge = wcfg.get("open_edge", "west")
-        touching = {"west": lab[:, 0], "east": lab[:, -1],
-                    "north": lab[-1, :], "south": lab[0, :]}[edge]
-        ids = sorted(set(int(v) for v in np.unique(touching)) - {0})
-        if ids:
-            connected = np.isin(lab, ids)
-            orphaned = int((keep & ~connected).sum())
-            if orphaned:
-                log(f"water mask: dropped {orphaned} cells of water not connected "
-                    f"to the open sea (inland valleys, lagoons, {n_comp - len(ids)} "
-                    "separate bodies)")
-            keep = connected
-        else:
-            log(f"water mask: nothing touches the {edge} edge - leaving "
-                "connectivity check off, check the bbox")
+        border = {"west": connected[:, 0], "east": connected[:, -1],
+                  "north": connected[-1, :], "south": connected[0, :]}[edge]
+        if not border.any():
+            log(f"water mask: largest water body does not reach the {edge} edge - "
+                "leaving connectivity off, check the bbox and open_edge")
+            return ~keep
+
+        orphaned = int((keep & ~connected).sum())
+        if orphaned:
+            log(f"water mask: dropped {orphaned} cells in {n_comp - 1} water "
+                "bodies not connected to the open sea (inland valleys, lagoons)")
+        keep = connected
     return ~keep
 
 
 def shore_clearance(land, cfg):
     """Distance to the nearest land, in metres."""
     return distance_transform_edt(~land) * cfg["grid_resolution_m"]
+
+
+def destripe(field, sigma=8.0):
+    """Remove per-column bias — the north-south survey seams in EMODnet.
+
+    A median filter is the wrong tool: the seams are two or three cells wide,
+    so killing them needs a kernel big enough to erase genuine 200 m mounds
+    too. The seams are a constant offset per column, though, which is exactly
+    what this removes: high-pass across the stripes, take each column's median
+    bias, subtract it. Isotropic features survive untouched because their bias
+    averages out over the column.
+    """
+    resid = field - gaussian_filter1d(field, sigma=sigma, axis=1, mode="nearest")
+    return field - np.median(resid, axis=0)[None, :]
 
 
 def structure_terms(depth_m, land, lats, lons, cfg):
@@ -323,6 +348,8 @@ def structure_terms(depth_m, land, lats, lons, cfg):
     # EMODnet is a composite of survey swaths, and the seams show up as
     # one-cell-wide north-south stripes that the relief term happily reports as
     # structure. A 3x3 median removes them and leaves a real 100 m mound intact.
+    if cfg["structure"].get("destripe", True):
+        filled = destripe(filled, sigma=cfg["structure"].get("destripe_sigma", 8.0))
     if cfg["structure"].get("despeckle", True):
         filled = median_filter(filled, size=3)
 
