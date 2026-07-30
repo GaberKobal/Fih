@@ -51,13 +51,22 @@
     flex:0 0 auto;
   }
   #vgrad{position:absolute; inset:0; opacity:.30}
+  #vnow{
+    position:absolute; top:0; bottom:0; width:1px;
+    background:var(--chart); opacity:.55;
+  }
+  #vnow::after{
+    content:""; position:absolute; top:0; left:-3px;
+    border-left:3.5px solid transparent; border-right:3.5px solid transparent;
+    border-top:5px solid var(--chart);
+  }
   #verdict > .row{position:relative}
   .row{display:flex; align-items:baseline; justify-content:space-between; gap:12px}
   #word{
     font-size:clamp(30px,10vw,44px); font-weight:300; letter-spacing:-.03em;
-    line-height:1;
+    line-height:1; text-transform:lowercase;
   }
-  #word[data-v="go"]{color:var(--kelp)}
+  #word[data-v="Go"]{color:var(--kelp)}
   #word[data-v="marginal"]{color:var(--buoy)}
   #word[data-v="poor"],#word[data-v="stay home"]{color:var(--flag)}
   #limit{font-size:13px; color:var(--sound); margin-top:6px}
@@ -109,6 +118,10 @@
     box-shadow:0 0 0 1px rgba(242,177,56,.55);
   }
   .mark.dim{background:var(--sound); box-shadow:none}
+  .entry{
+    width:12px;height:12px;border-radius:50%;
+    background:transparent;border:2px solid var(--chart);
+  }
 
   /* ---- bottom drawer ---- */
   #sheet{
@@ -139,7 +152,6 @@
   }
   #hours .hr span{display:block; width:100%; border-radius:1px 1px 0 0; min-height:2px}
   #hours .hr.dark span{opacity:.22}
-  #hours .hr.gone span{opacity:.13}
   #hours .hr.best::after{
     content:""; position:absolute; inset:-2px -1px; border:1px solid var(--buoy);
     border-radius:2px; pointer-events:none;
@@ -235,6 +247,7 @@
 <div id="left">
   <header id="verdict">
     <canvas id="vgrad" aria-hidden="true"></canvas>
+    <div id="vnow" aria-hidden="true"></div>
     <div class="row">
       <div>
         <div class="eyebrow" id="region">loading</div>
@@ -339,6 +352,7 @@ function drawVerdictGradient(series, nowIdx){
     g.addColorStop(i/(n-1), `rgb(${r},${gg},${b})`);
   }
   ctx.fillStyle=g; ctx.fillRect(0,0,w,h);
+  $("#vnow").style.left = (nowIdx/(n-1)*w) + "px";
 }
 
 function drawSpark(series, nowIdx){
@@ -370,6 +384,13 @@ function renderSpots(d, spots){
     ol.innerHTML='<li style="grid-template-columns:1fr;color:var(--sound)">'+
       'Nothing scores above the threshold for this target today.</li>';
   }
+
+  (d.entry_points||[]).forEach(p=>{
+    marks.push(L.marker([p.lat,p.lon],{
+      icon:L.divIcon({className:"",html:'<div class="entry"></div>',iconSize:[12,12]}),
+      title:p.name
+    }).addTo(map).bindTooltip(p.name));
+  });
 
   spots.forEach((s,i)=>{
     const m=L.marker([s.lat,s.lon],{
@@ -494,7 +515,7 @@ function renderHours(d){
   day.hours.forEach(h=>{
     const b=document.createElement("button");
     b.type="button";
-    b.className="hr"+(h.daylight?"":" dark")+(h.past?" gone":"")+(inBest(h)?" best":"");
+    b.className="hr"+(h.daylight?"":" dark")+(inBest(h)?" best":"");
     b.setAttribute("aria-pressed","false");
     b.title=`${String(h.hour).padStart(2,"0")}:00`;
     const [r,g,bl]=ramp(h.score);
@@ -513,21 +534,12 @@ function renderHours(d){
   });
 
   const b=day.best;
-  if(b){
-    $("#window").innerHTML =
-      `<span class="when">${b.start.slice(11,16)} – ${b.end.slice(11,16)}</span>
+  $("#window").innerHTML = b
+    ? `<span class="when">${b.start.slice(11,16)} – ${b.end.slice(11,16)}</span>
        <span style="color:var(--sound);font-size:13px">
-        viz ${b.viz_m} m · ${b.wave_m} m · ${b.wind_kmh} km/h</span>`;
-  }else{
-    // No window can mean two very different things. "Nothing diveable" on a
-    // flat calm day is just wrong: the day is simply over.
-    const anyLeft = day.hours.some(x=>!x.past && x.daylight);
-    $("#window").innerHTML = anyLeft
-      ? `<span class="when">nothing diveable</span>
-         <span style="color:var(--sound);font-size:13px">conditions rule this day out</span>`
-      : `<span class="when">day is over</span>
-         <span style="color:var(--sound);font-size:13px">no daylight left — try tomorrow</span>`;
-  }
+        viz ${b.viz_m} m · ${b.wave_m} m · ${b.wind_kmh} km/h</span>`
+    : `<span class="when">nothing diveable</span>
+       <span style="color:var(--sound);font-size:13px">on this day</span>`;
 }
 
 function renderSpecies(d){
@@ -570,8 +582,7 @@ async function load(){
   }
 
   $("#region").textContent = d.region;
-  const vw = d.now.verdict || "";
-  $("#word").textContent = vw.charAt(0).toUpperCase() + vw.slice(1);
+  $("#word").textContent = d.now.verdict;
   $("#word").dataset.v = d.now.verdict;
   $("#limit").textContent = d.now.limited_by === "nothing limiting"
     ? "nothing holding it back" : "limited by " + d.now.limited_by;
