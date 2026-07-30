@@ -384,8 +384,19 @@ def depth_fit(depth_m, land, cfg):
     lo = cfg["depth"]["min_m"]
     hi = cfg["depth"]["max_m"]
     edge = max(cfg["depth"]["soft_edge_m"], 1e-6)
-    up = np.clip((depth_m - (lo - edge)) / edge, 0, 1)
-    down = np.clip(((hi + edge) - depth_m) / edge, 0, 1)
+
+    # Relief and slope are naturally strongest right where the seabed falls
+    # away from shore, so a flat plateau over 4-24 m put almost every mark in
+    # 5 m of water. A trapezoid with its plateau over the depths you actually
+    # want to hunt spreads them across the band instead.
+    best = cfg["depth"].get("best_m")
+    if best:
+        blo, bhi = float(best[0]), float(best[1])
+        up = np.clip((depth_m - (lo - edge)) / max(blo - (lo - edge), 1e-6), 0, 1)
+        down = np.clip(((hi + edge) - depth_m) / max((hi + edge) - bhi, 1e-6), 0, 1)
+    else:
+        up = np.clip((depth_m - (lo - edge)) / edge, 0, 1)
+        down = np.clip(((hi + edge) - depth_m) / edge, 0, 1)
     fit = np.minimum(up, down)
     fit[land] = 0.0
     fit[~np.isfinite(depth_m)] = 0.0
@@ -410,7 +421,7 @@ def access_fit(lats, lons, cfg):
     return np.clip((max_m + taper - best) / taper, 0.0, 1.0)
 
 
-def upwind_shelter(land, lats, lons, wind_from_deg, cfg):
+def upwind_shelter(land, lats, lons, wind_from_deg, cfg, nodata=None):
     """Trace the upwind ray from every water cell until it hits land.
 
     Short fetch (land close upwind) = flat, workable, often clearer water.
@@ -431,9 +442,15 @@ def upwind_shelter(land, lats, lons, wind_from_deg, cfg):
     lon_step = lons[1] - lons[0]
     ny, nx = land.shape
 
+    # Cells with no bathymetry are not land. EMODnet's raster does not always
+    # reach the requested bbox, and treating that empty western band as a
+    # coastline made offshore cells read as sheltered from exactly the
+    # direction they are most exposed to.
+    blocks = land if nodata is None else (land & ~nodata)
+
     gy, gx = np.meshgrid(lats, lons, indexing="ij")
     fetch = np.full(gy.shape, max_km * 1000.0)
-    done = land.copy()
+    done = blocks.copy()
 
     cur_lat, cur_lon = gy.copy(), gx.copy()
     for s in range(1, n_steps + 1):
@@ -445,7 +462,7 @@ def upwind_shelter(land, lats, lons, wind_from_deg, cfg):
         iyc = np.clip(iy, 0, ny - 1)
         ixc = np.clip(ix, 0, nx - 1)
         # Outside the tile we cannot see land, so assume open water.
-        hit = land[iyc, ixc] & ~outside & ~done
+        hit = blocks[iyc, ixc] & ~outside & ~done
         fetch[hit] = s * step_m
         done |= hit
         if done.all():
@@ -1235,7 +1252,11 @@ def run(cfg, selftest=False):
         blats, blons, elev = fetch_emodnet_bathymetry(bbox, res_deg, key)
 
     elev_g = regrid(blats, blons, elev, lats, lons)
-    land = ~np.isfinite(elev_g) | (elev_g >= 0)
+    nodata = ~np.isfinite(elev_g)
+    land = nodata | (elev_g >= 0)
+    if nodata.any():
+        log(f"bathymetry: {nodata.mean():.0%} of the box has no EMODnet data "
+            "(raster does not reach the bbox) - treated as unusable, not as land")
     land = open_sea_mask(land, cfg)
     depth_m = np.where(land, np.nan, -elev_g)
 
@@ -1310,7 +1331,7 @@ def run(cfg, selftest=False):
     wind_from = float(h["wind_direction_10m"][now_i])
     if not np.isfinite(wind_from):
         wind_from = 0.0
-    shelter, fetch_m = upwind_shelter(land, lats, lons, wind_from, cfg)
+    shelter, fetch_m = upwind_shelter(land, lats, lons, wind_from, cfg, nodata)
 
     terms = {"relief": relief_s, "slope": slope_s, "shelter": shelter}
 
