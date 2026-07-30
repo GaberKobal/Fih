@@ -45,6 +45,10 @@
     position:relative; padding:14px 16px 12px;
     border-bottom:1px solid var(--line);
     background:var(--shelf); overflow:hidden;
+    /* Never let flex shrink this: #verdict has overflow:hidden, so if the
+       sheet competes for height the vitals get silently clipped. That is
+       what hid viz/swell/wind on the desktop layout. */
+    flex:0 0 auto;
   }
   #vgrad{position:absolute; inset:0; opacity:.30}
   #vnow{
