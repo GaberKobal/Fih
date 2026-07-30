@@ -289,15 +289,23 @@ def open_sea_mask(land, cfg):
         sizes[0] = 0
         sea_id = int(np.argmax(sizes))            # the open sea is the biggest
         connected = lab == sea_id
+        sea_frac = float(sizes[sea_id]) / float(keep.sum())
 
-        # Sanity-check the assumption rather than trusting it: the sea should
-        # also reach the offshore edge of the box.
-        edge = wcfg.get("open_edge", "west")
-        border = {"west": connected[:, 0], "east": connected[:, -1],
-                  "north": connected[-1, :], "south": connected[0, :]}[edge]
-        if not border.any():
-            log(f"water mask: largest water body does not reach the {edge} edge - "
-                "leaving connectivity off, check the bbox and open_edge")
+        touches = [name for name, arr in (
+            ("west", connected[:, 0]), ("east", connected[:, -1]),
+            ("north", connected[-1, :]), ("south", connected[0, :])) if arr.any()]
+        log(f"water mask: sea component is {sea_frac:.0%} of all water, "
+            f"{n_comp} bodies total, reaches the "
+            f"{', '.join(touches) if touches else 'no'} edge(s)")
+
+        # The only assumption worth guarding is that the biggest water body
+        # really is the sea. Requiring it to touch a NAMED edge was too
+        # brittle - EMODnet's raster need not reach the requested bbox corner,
+        # and the deepest offshore water can be masked out anyway.
+        floor = wcfg.get("min_sea_fraction", 0.5)
+        if sea_frac < floor:
+            log(f"water mask: largest body is only {sea_frac:.0%} of water - "
+                "too fragmented to trust as the sea, leaving connectivity off")
             return ~keep
 
         orphaned = int((keep & ~connected).sum())
@@ -1342,6 +1350,10 @@ def run(cfg, selftest=False):
     # ---- outputs ----
     spots = find_spots(score, lats, lons, depth_m, terms, cfg)
     stamp = dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
+    if spots:
+        deps = sorted(s["depth_m"] for s in spots)
+        log(f"spots: {len(spots)}, depth {deps[0]:.1f}-{deps[-1]:.1f} m "
+            f"(median {deps[len(deps) // 2]:.1f})")
 
     write_overlay_png(score, lats, lons, OUT / "score.png")
     write_geojson(spots, OUT / "spots.geojson", {"generated": stamp})

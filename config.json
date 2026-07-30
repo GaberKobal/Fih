@@ -172,7 +172,7 @@
     "_note": "min_width_cells severs narrow channels; require_sea_connection then discards whatever is left inland. EMODnet carries the Mirna estuary several km up the valley and it was being scored as diveable sea.",
     "min_width_cells": 3,
     "require_sea_connection": true,
-    "open_edge": "west",
-    "min_shore_clearance_m": 60
+    "min_shore_clearance_m": 60,
+    "min_sea_fraction": 0.5
   }
 }
