@@ -12,63 +12,7 @@
     "max_m": 24.0,
     "soft_edge_m": 3.0
   },
-  "entry_points": [
-    {
-      "name": "Savudrija",
-      "lat": 45.493,
-      "lon": 13.495
-    },
-    {
-      "name": "Umag",
-      "lat": 45.434,
-      "lon": 13.523
-    },
-    {
-      "name": "Lovre\u010dica",
-      "lat": 45.382,
-      "lon": 13.546
-    },
-    {
-      "name": "Dajla",
-      "lat": 45.352,
-      "lon": 13.549
-    },
-    {
-      "name": "Mareda",
-      "lat": 45.3345,
-      "lon": 13.549
-    },
-    {
-      "name": "Karpinjan",
-      "lat": 45.327,
-      "lon": 13.5545
-    },
-    {
-      "name": "Novigrad waterfront",
-      "lat": 45.3175,
-      "lon": 13.5583
-    },
-    {
-      "name": "Novigrad south bay",
-      "lat": 45.3145,
-      "lon": 13.564
-    },
-    {
-      "name": "Antenal",
-      "lat": 45.3155,
-      "lon": 13.58
-    },
-    {
-      "name": "Tar / \u010cervar",
-      "lat": 45.287,
-      "lon": 13.576
-    },
-    {
-      "name": "Pore\u010d",
-      "lat": 45.227,
-      "lon": 13.592
-    }
-  ],
+  "entry_points": [],
   "max_swim_km": 2.0,
   "swim_taper_km": 0.4,
   "top_spots": 30,
