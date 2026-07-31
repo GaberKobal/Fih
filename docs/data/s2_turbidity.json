@@ -1,19 +1,19 @@
 {
- "scene_datetime": "2026-07-28T10:18:24.659Z",
- "cloud_cover_pct": 0.0,
- "water_pixels": 118369,
+ "scene_datetime": "2026-07-31T10:18:07.169Z",
+ "cloud_cover_pct": 0.01,
+ "water_pixels": 115002,
  "min_depth_m": 15.0,
- "dark_pixel_offset_rho": 0.0396,
+ "dark_pixel_offset_rho": 0.0352,
  "relative": true,
  "turbidity_relative_fnu": {
-  "median": 4.72,
-  "p10": 1.8,
-  "p75": 5.27,
-  "p90": 5.82
+  "median": 3.7,
+  "p10": 0.78,
+  "p75": 4.56,
+  "p90": 5.06
  },
- "contrast_fnu": 4.02,
+ "contrast_fnu": 4.28,
  "k": 15.0,
  "method": "Nechad et al. 2009 single-band (B04 665 nm), SCL water pixels",
  "caveat": "Sen2Cor L2A leaves a large atmospheric residual over water, so a dark-pixel offset is subtracted and turbidity is RELATIVE to the clearest water in the scene. Spatial contrast is reliable; absolute metres are not. Tune k against the viz_m column in dive_log.csv.",
- "fetched": "2026-07-31T14:07:56+00:00"
+ "fetched": "2026-07-31T16:29:26+00:00"
 }
