@@ -1301,6 +1301,17 @@ def run(cfg, selftest=False):
                                for t in h["time"]]))
 
     viz, viz_m = visibility_series(h, cfg)
+
+    # A fitted correction from calibrate.py --fit-viz, if one exists. Written
+    # only when the model actually tracks reality, so its presence means the
+    # visibility number has been checked against real dives.
+    vzc = (json.loads((ROOT / "weights.json").read_text()).get("visibility_correction")
+           if (ROOT / "weights.json").exists() else None)
+    if vzc:
+        viz_m = np.clip(vzc["scale"] * viz_m + vzc["offset"], 0.3, 40.0)
+        log(f"visibility: applying fitted correction "
+            f"({vzc['scale']:.2f}x {vzc['offset']:+.1f} m, n={vzc['n']}, "
+            f"r={vzc['r']}, residual sd {vzc['residual_sd_m']} m)")
     work, sea_ok, air_ok = workability_series(h, cfg)
     move = movement_series(h, cfg)
     now_iso = h["time"][now_i]
@@ -1449,6 +1460,7 @@ def run(cfg, selftest=False):
         "depth_range_m": [cfg["depth"]["min_m"], cfg["depth"]["max_m"]],
         "entry_points": cfg.get("entry_points", []),
         "repo_edit_url": cfg.get("repo_edit_url"),
+        "repo_issue_url": cfg.get("repo_issue_url"),
         "series": {
             "time": h["time"][keep],
             "visibility_m": [round(float(v), 1) for v in viz_m[keep]],
@@ -1462,6 +1474,8 @@ def run(cfg, selftest=False):
         },
         "now_index": now_i - max(0, now_i - 24),
         "sea_temp_now_c": round(sea_temp, 1),
+        "visibility_calibrated": bool(vzc),
+        "visibility_correction": vzc,
         "temp_source": ("Copernicus Marine measured profile" if profile
                         else "estimated from SST + seasonal thermocline"),
         "temp_profile": profile,

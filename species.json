@@ -208,6 +208,9 @@
         3,
         4,
         5,
+        6,
+        7,
+        8,
         9,
         10,
         11,
@@ -215,7 +218,7 @@
       ],
       "viz_pref": "murky",
       "wary": 0.85,
-      "note": "The exception to everything else in this file. Hunts stirred, coloured water and river outflow — the conditions that make the day look bad. Best on the days you would otherwise stay home.",
+      "note": "Present year round here - a 40 cm fish was taken in August 2026, which killed the June-August closure this file used to claim. Still hunts stirred and coloured water.",
       "legal": {
         "closed_seasons": [],
         "min_size_cm": 25,
@@ -228,12 +231,12 @@
       "common": "zubatac / common dentex",
       "scientific": "Dentex dentex",
       "depth_m": [
-        5,
+        3,
         50
       ],
       "depth_best_m": [
-        15,
-        30
+        5,
+        22
       ],
       "relief_affinity": 0.75,
       "slope_affinity": 0.95,
@@ -260,7 +263,7 @@
       ],
       "viz_pref": "clear",
       "wary": 0.95,
-      "note": "Roaming predator that works drop-off edges rather than sitting on structure. Needs clear water and long, still waits. Rare in the shallow north Adriatic shelf — expect this one to score low here most days, and treat a high score as worth the drive.",
+      "note": "Observed repeatedly at 4-10 m off Novigrad in Aug 2026, so the textbook 15-30 m band does not describe this shelf. Still needs clear water and a still approach.",
       "legal": {
         "closed_seasons": [
           {

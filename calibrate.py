@@ -78,6 +78,50 @@ def fit_logistic(X, y, l2=1.0):
     return res.x, res
 
 
+def fit_visibility(rows, cfg):
+    """Fit a linear correction to the visibility model against logged dives.
+
+    The model output is compared with the viz_m you actually recorded, and a
+    simple a*model + b correction is fitted. That is deliberately modest: with
+    a handful of dives you can honestly correct scale and offset, and nothing
+    more. If the correlation is near zero the correction is refused, because
+    rescaling a number that carries no information just makes it wrong with
+    more confidence.
+    """
+    pairs = [(float(r["model_viz_m"]), float(r["viz_m"])) for r in rows
+             if r.get("model_viz_m") and r.get("viz_m")]
+    if len(pairs) < 4:
+        print(f"\nvisibility: only {len(pairs)} dives have both a model value and "
+              "an observed one - need at least 4 to fit anything")
+        return None
+
+    m = np.array([p[0] for p in pairs])
+    o = np.array([p[1] for p in pairs])
+    r = float(np.corrcoef(m, o)[0, 1]) if m.std() > 1e-9 else 0.0
+    bias = float((m - o).mean())
+    print(f"\nvisibility: {len(pairs)} paired dives")
+    print(f"  model  mean {m.mean():.1f} m (range {m.min():.0f}-{m.max():.0f})")
+    print(f"  actual mean {o.mean():.1f} m (range {o.min():.0f}-{o.max():.0f})")
+    print(f"  mean over-prediction {bias:+.1f} m, correlation r = {r:+.3f}")
+
+    if abs(r) < 0.3:
+        print("  correlation is near zero - the model is not tracking reality, so "
+              "no correction is written. Rescaling an uninformative number would "
+              "only make it confidently wrong. Keep logging.")
+        return None
+    if m.std() < 1e-6:
+        print("  model output has no variance across these dives - nothing to fit")
+        return None
+
+    a = float(np.cov(m, o, bias=True)[0, 1] / np.var(m))
+    b = float(o.mean() - a * m.mean())
+    resid = o - (a * m + b)
+    print(f"  fitted correction: viz = {a:.3f} x model {b:+.2f} m, "
+          f"residual sd {resid.std(ddof=1):.1f} m")
+    return {"scale": round(a, 4), "offset": round(b, 3), "n": len(pairs),
+            "r": round(r, 3), "residual_sd_m": round(float(resid.std(ddof=1)), 2)}
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", default=str(ROOT / "config.json"))
@@ -85,6 +129,9 @@ def main():
     ap.add_argument("--l2", type=float, default=1.0)
     ap.add_argument("--species", default=None,
                     help="fit one species only, using its id from species.json")
+    ap.add_argument("--fit-viz", action="store_true",
+                    help="also fit a correction to the visibility model, using "
+                         "the model_viz_m and viz_m columns of the log")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
 
@@ -99,6 +146,13 @@ def main():
 
     y = np.array([float(r["result"]) > 0 for r in rows], float)
     print(f"{len(rows)} dives, {int(y.sum())} positive, {int((1 - y).sum())} blank")
+    # Visibility is fitted from the log alone - it needs no bathymetry, so it
+    # runs before anything that touches the network.
+    viz_fit = fit_visibility(rows, cfg) if args.fit_viz else None
+    if args.fit_viz and viz_fit is None and len(rows) < MIN_DIVES:
+        print("\nSkipping the spatial fit as well - not enough dives yet.")
+        return
+
     if len(rows) < MIN_DIVES:
         print(f"WARNING: under {MIN_DIVES} dives. The fit will be unstable and "
               "will overfit whichever spot you happened to visit most. "
@@ -179,6 +233,9 @@ def main():
     if args.dry_run:
         print("(dry run, nothing written)")
         return
+    if viz_fit:
+        out["visibility_correction"] = viz_fit
+
     out["species"] = args.species
     name = f"weights_{args.species}.json" if args.species else "weights.json"
     (ROOT / name).write_text(json.dumps(out, indent=1))

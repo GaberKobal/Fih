@@ -1,16 +1,16 @@
-date,lat,lon,depth_m,viz_m,wind_from_deg,species,result,notes
-FILL-ME,45.3222334,13.5481790,6,8,,,0,dive 1 - no outcome recorded; depth estimated (no watch)
-FILL-ME,45.3397638,13.5380641,10,10,273,dentex,1,dive 2 - model predicted 12 m viz; swell 0.12 m wind 12 km/h water 28.7 C current 1.2 m/s
-FILL-ME,45.3397638,13.5380641,10,10,273,sargus,1,dive 2
-FILL-ME,45.3397638,13.5380641,10,10,273,vulgaris,1,dive 2
-FILL-ME,45.3397638,13.5380641,10,10,273,umbra,1,dive 2
-FILL-ME,45.3242044,13.5496315,4,10,207,dentex,1,dive 3 - model predicted 13 m viz; swell 0.22 m wind 15 km/h water 28.8 C current 1.2 m/s
-FILL-ME,45.3242044,13.5496315,4,10,207,sargus,1,dive 3
-FILL-ME,45.3242044,13.5496315,4,10,207,vulgaris,1,dive 3
-FILL-ME,45.3242044,13.5496315,4,10,207,labrax,1,dive 3 - brancin seen in AUGUST; species.json says out of season
-FILL-ME,45.3360995,13.5393938,5,10,192,,0,dive 4 - only small fish; predicted 13 m viz; swell 0.26 m wind 11 km/h water 28.8 C current 0.8 m/s
-FILL-ME,45.3237487,13.5494290,6,6,291,dentex,1,dive 5 - model predicted 12 m viz; swell 0.10 m wind 6 km/h water 28.2 C current 0.4 m/s
-FILL-ME,45.3237487,13.5494290,6,6,291,sargus,1,dive 5
-FILL-ME,45.3237487,13.5494290,6,6,291,vulgaris,1,dive 5
-FILL-ME,45.3237487,13.5494290,6,6,291,umbra,1,dive 5
-FILL-ME,45.3239672,13.5493156,4,5,236,labrax,1,dive 6 - TOOK 40 cm brancin; predicted 13 m viz; swell 0.18 m wind 10 km/h water 28.7 C current 0.8 m/s
+date,lat,lon,depth_m,viz_m,model_viz_m,wind_from_deg,species,result,notes
+FILL-ME,45.3222334,13.5481790,6,8,,,,0,dive 1 - no outcome recorded; depth estimated (no watch)
+FILL-ME,45.3397638,13.5380641,10,10,12,273,dentex,1,dive 2 - swell 0.12 m wind 12 km/h water 28.7 C current 1.2 m/s
+FILL-ME,45.3397638,13.5380641,10,10,12,273,sargus,1,dive 2
+FILL-ME,45.3397638,13.5380641,10,10,12,273,vulgaris,1,dive 2
+FILL-ME,45.3397638,13.5380641,10,10,12,273,umbra,1,dive 2
+FILL-ME,45.3242044,13.5496315,4,10,13,207,dentex,1,dive 3 - swell 0.22 m wind 15 km/h water 28.8 C current 1.2 m/s
+FILL-ME,45.3242044,13.5496315,4,10,13,207,sargus,1,dive 3
+FILL-ME,45.3242044,13.5496315,4,10,13,207,vulgaris,1,dive 3
+FILL-ME,45.3242044,13.5496315,4,10,13,207,labrax,1,dive 3 - brancin seen in August
+FILL-ME,45.3360995,13.5393938,5,10,13,192,,0,dive 4 - only small fish; swell 0.26 m wind 11 km/h water 28.8 C current 0.8 m/s
+FILL-ME,45.3237487,13.5494290,6,6,12,291,dentex,1,dive 5 - swell 0.10 m wind 6 km/h water 28.2 C current 0.4 m/s
+FILL-ME,45.3237487,13.5494290,6,6,12,291,sargus,1,dive 5
+FILL-ME,45.3237487,13.5494290,6,6,12,291,vulgaris,1,dive 5
+FILL-ME,45.3237487,13.5494290,6,6,12,291,umbra,1,dive 5
+FILL-ME,45.3239672,13.5493156,4,5,13,236,labrax,1,dive 6 - TOOK 40 cm brancin; swell 0.18 m wind 10 km/h water 28.7 C current 0.8 m/s

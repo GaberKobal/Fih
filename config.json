@@ -8,14 +8,14 @@
   },
   "grid_resolution_m": 100,
   "depth": {
-    "min_m": 4.0,
+    "min_m": 2.0,
     "max_m": 24.0,
     "soft_edge_m": 3.0,
     "best_m": [
-      8.0,
-      18.0
+      4.0,
+      10.0
     ],
-    "_note": "best_m is the plateau you actually want to hunt; the score ramps down from there to 0 at min_m/max_m. Without it, near-shore relief wins every time and the marks all land in 5 m of water."
+    "_note": "best_m set from 6 logged dives at 4-10 m - that is where you actually hunt, not the 8-18 m I guessed."
   },
   "entry_points": [],
   "max_swim_km": 2.0,
@@ -64,11 +64,11 @@
     "rain_tau_h": 40.0,
     "wave_ref_hs": 1.4,
     "rain_ref_mm_per_h": 1.2,
-    "wave_weight": 0.6,
-    "rain_weight": 0.4,
+    "wave_weight": 0.35,
+    "rain_weight": 0.65,
     "viz_min_m": 1.0,
-    "viz_max_m": 13.0,
-    "_note": "viz_max_m was 18, which the model hit on every calm day - a saturated ceiling, not a reading. 13 m is a realistic best day on this shelf. Tune against the Sentinel-2 check and dive_log viz_m."
+    "viz_max_m": 11.0,
+    "_note": "Checked against 6 logged dives Aug 2026: predicted 12-13 m while actual ran 5-10 m, correlation r=+0.07. This model is NOT yet predictive. viz_max lowered and the wave term demoted; the real fix is calibrate.py --fit-viz once ~15 dives are logged."
   },
   "workability": {
     "hs_good_m": 0.25,
@@ -179,5 +179,6 @@
     "require_sea_connection": true,
     "min_shore_clearance_m": 60,
     "min_sea_fraction": 0.5
-  }
+  },
+  "repo_issue_url": "https://github.com/GaberKobal/Fih/issues/new"
 }
