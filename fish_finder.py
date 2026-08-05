@@ -1486,6 +1486,7 @@ def run(cfg, selftest=False):
     keep = slice(max(0, now_i - 24), min(len(h["time"]), now_i + 60))
     payload = {
         "generated": stamp,
+        "schema_version": 3,
         "region": cfg["region_name"],
         "bounds": [[bbox["lat_min"], bbox["lon_min"]],
                    [bbox["lat_max"], bbox["lon_max"]]],
