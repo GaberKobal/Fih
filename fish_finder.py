@@ -1174,7 +1174,8 @@ def mercator_y(lat_deg):
     return np.log(np.tan(math.pi / 4 + lat / 2))
 
 
-def write_overlay_png(score, lats, lons, path, land=None):
+def write_overlay_png(score, lats, lons, path, land=None, cfg_overlay=None):
+    cfg_overlay = cfg_overlay or {}
     """Transparent PNG, rows resampled to equal Web Mercator spacing.
 
     Leaflet stretches an ImageOverlay linearly in Mercator y. A plate-carree
@@ -1184,13 +1185,20 @@ def write_overlay_png(score, lats, lons, path, land=None):
     import matplotlib
     matplotlib.use("Agg")
 
-    ny = len(lats)
+    # Supersample. The grid is 100 m, which at dive zoom is a block the size of
+    # a building; drawing it 1:1 with crisp edges is accurate and unreadable.
+    # Interpolating inside the water and masking the land with nearest-
+    # neighbour gives a smooth field with a coastline still exactly where the
+    # data puts it.
+    ss = max(1, int(cfg_overlay.get("supersample", 2)))
+    ny = len(lats) * ss
+    lons_hi = np.linspace(lons[0], lons[-1], len(lons) * ss)   # target only
     y_edges = np.linspace(mercator_y(lats[0]), mercator_y(lats[-1]), ny)
     lat_merc = np.degrees(2 * np.arctan(np.exp(y_edges)) - math.pi / 2)
     pts = None
     src = RegularGridInterpolator((lats, lons), score,
                                   bounds_error=False, fill_value=0.0)
-    gy, gx = np.meshgrid(lat_merc, lons, indexing="ij")
+    gy, gx = np.meshgrid(lat_merc, lons_hi, indexing="ij")
     pts = np.stack([gy.ravel(), gx.ravel()], -1)
     resampled = src(pts).reshape(gy.shape)
 
@@ -1205,9 +1213,15 @@ def write_overlay_png(score, lats, lons, path, land=None):
         resampled = np.where(lm(pts).reshape(gy.shape) > 0.5, 0.0, resampled)
 
     rgba = matplotlib.colormaps["viridis"](np.clip(resampled, 0, 1))
-    # fade out weak cells rather than painting the whole box
-    rgba[..., 3] = np.clip(resampled * 1.6, 0.0, 0.88)
-    rgba[resampled <= 0.02, 3] = 0.0
+
+    # Paint only water worth looking at. The old ramp made a 0.3 score almost
+    # as visible as a 0.9 one, so every bay read as promising and the chart
+    # underneath disappeared.
+    floor = float(cfg_overlay.get("alpha_floor_score", 0.35))
+    top = float(cfg_overlay.get("alpha_full_score", 0.80))
+    peak = float(cfg_overlay.get("alpha_max", 0.85))
+    rgba[..., 3] = np.clip((resampled - floor) / max(top - floor, 1e-6), 0, 1) * peak
+    rgba[resampled <= floor, 3] = 0.0
 
     arr = (np.flipud(rgba) * 255).astype(np.uint8)   # PNG rows run north to south
     try:
@@ -1215,8 +1229,10 @@ def write_overlay_png(score, lats, lons, path, land=None):
         # size. These get committed every day, so it adds up.
         from PIL import Image
         im = Image.fromarray(arr, mode="RGBA")
-        im.quantize(colors=64, method=Image.Quantize.FASTOCTREE).save(
-            path, optimize=True)
+        # Fewer palette entries: the field is mostly transparent and the
+        # visible band is narrow, so 32 is indistinguishable and much smaller.
+        im.quantize(colors=int(cfg_overlay.get("palette_colors", 32)),
+                    method=Image.Quantize.FASTOCTREE).save(path, optimize=True)
     except Exception:
         import matplotlib.pyplot as plt
         plt.imsave(path, np.flipud(rgba))
@@ -1452,7 +1468,8 @@ def run(cfg, selftest=False):
         score_d = combine_score(terms_d, w_d, gates)
         score_d[land] = 0.0
         spots_d = find_spots(score_d, lats, lons, depth_m, terms_d, cfg)
-        write_overlay_png(score_d, lats, lons, OUT / f"score_d{di}.png", land)
+        write_overlay_png(score_d, lats, lons, OUT / f"score_d{di}.png", land,
+                          cfg.get("overlay"))
         write_gpx(spots_d, OUT / f"spots_d{di}.gpx",
                   f"{cfg['region_name']} {day['date']}")
 
@@ -1470,7 +1487,8 @@ def run(cfg, selftest=False):
             smap[land] = 0.0
             ss = find_spots(smap, lats, lons, depth_m, terms_d, cfg, limit=sp_cap)
             write_overlay_png(smap, lats, lons,
-                              OUT / f"score_{sp['id']}_d{di}.png", land)
+                              OUT / f"score_{sp['id']}_d{di}.png", land,
+                              cfg.get("overlay"))
             write_gpx(ss, OUT / f"spots_{sp['id']}_d{di}.gpx",
                       f"{sp.get('name_en', sp['common'])} {day['date']}")
             sp_out.append({
