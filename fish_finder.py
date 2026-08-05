@@ -1398,6 +1398,7 @@ def run(cfg, selftest=False):
             log(f"habitat: unavailable ({e.__class__.__name__}), continuing without")
 
     stamp = dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
+    day_scores = []
     species_defs = load_species(cfg)
     sp_cap = cfg.get("species_top_spots", 12)
 
@@ -1439,9 +1440,11 @@ def run(cfg, selftest=False):
             write_overlay_png(smap, lats, lons,
                               OUT / f"score_{sp['id']}_d{di}.png")
             write_gpx(ss, OUT / f"spots_{sp['id']}_d{di}.gpx",
-                      f"{sp['common']} {day['date']}")
+                      f"{sp.get('name_en', sp['common'])} {day['date']}")
             sp_out.append({
                 "id": sp["id"], "common": sp["common"],
+                "name_en": sp.get("name_en", sp["common"]),
+                "name_local": sp.get("name_local", ""),
                 "scientific": sp["scientific"], "note": sp.get("note", ""),
                 "viz_pref": sp.get("viz_pref", "any"), "wary": sp.get("wary"),
                 "depth_best_m": sp["depth_best_m"], "legal": sp.get("legal", {}),
@@ -1456,9 +1459,20 @@ def run(cfg, selftest=False):
         day["at"] = h["time"][ri]
         day["spots"] = spots_d
         day["species"] = sp_out
+        day_scores.append(score_d)
         log(f"day {day['date']} (judged at {h['time'][ri][11:16]}, wind {wind_d:.0f} deg): "
-            + ", ".join(f"{x['common'].split(' /')[0]} {x['today']:.2f}"
-                        for x in sp_out[:3]))
+            + ", ".join(f"{x['name_en']} {x['today']:.2f}" for x in sp_out[:3]))
+
+    # Say plainly whether the days actually differ. Only shelter varies, and it
+    # is wind-driven - so if the wind holds, identical maps are the correct
+    # answer, not a broken one. Without this you cannot tell the two apart.
+    if len(day_scores) > 1:
+        water = ~land
+        for i in range(1, len(day_scores)):
+            d_abs = float(np.abs(day_scores[i] - day_scores[0])[water].mean())
+            same = "essentially identical" if d_abs < 0.01 else "different"
+            log(f"map day {i} vs day 0: mean score change {d_abs:.4f} - {same} "
+                f"(wind {days[0]['wind_from_deg']}deg -> {days[i]['wind_from_deg']}deg)")
 
     # today's maps are also the default ones the page loads first
     import shutil

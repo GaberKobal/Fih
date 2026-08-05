@@ -1,5 +1,6 @@
 {
   "_note": [
+    "name_en is shown in the app; name_local is the Croatian name.",
     "Habitat envelopes for the species worth hunting on this coast.",
     "These come from published depth/habitat/temperature ranges and general",
     "Mediterranean literature, NOT from Novigrad. They are a prior, not a",
@@ -22,7 +23,7 @@
   "species": [
     {
       "id": "sargus",
-      "common": "šarag / white seabream",
+      "common": "White seabream (šarag)",
       "scientific": "Diplodus sargus",
       "depth_m": [
         1,
@@ -74,11 +75,13 @@
         "min_size_cm": 23,
         "min_size_source": "EU Mediterranean MCRS - Croatian national rule may be STRICTER, verify",
         "must_tail_mark": true
-      }
+      },
+      "name_en": "White seabream",
+      "name_local": "šarag"
     },
     {
       "id": "vulgaris",
-      "common": "fratar / two-banded seabream",
+      "common": "Two-banded seabream (fratar)",
       "scientific": "Diplodus vulgaris",
       "depth_m": [
         1,
@@ -126,11 +129,13 @@
         "min_size_cm": 18,
         "min_size_source": "EU Mediterranean MCRS - Croatian national rule may be STRICTER, verify",
         "must_tail_mark": true
-      }
+      },
+      "name_en": "Two-banded seabream",
+      "name_local": "fratar"
     },
     {
       "id": "aurata",
-      "common": "orada / gilthead seabream",
+      "common": "Gilthead seabream (orada)",
       "scientific": "Sparus aurata",
       "depth_m": [
         1,
@@ -173,11 +178,13 @@
         "min_size_cm": 20,
         "min_size_source": "EU Mediterranean MCRS - Croatian national rule may be STRICTER, verify",
         "must_tail_mark": true
-      }
+      },
+      "name_en": "Gilthead seabream",
+      "name_local": "orada"
     },
     {
       "id": "labrax",
-      "common": "brancin / European seabass",
+      "common": "European seabass (brancin)",
       "scientific": "Dicentrarchus labrax",
       "depth_m": [
         1,
@@ -224,11 +231,13 @@
         "min_size_cm": 25,
         "min_size_source": "EU Mediterranean MCRS - Croatian national rule may be STRICTER, verify",
         "must_tail_mark": true
-      }
+      },
+      "name_en": "European seabass",
+      "name_local": "brancin"
     },
     {
       "id": "dentex",
-      "common": "zubatac / common dentex",
+      "common": "Common dentex (zubatac)",
       "scientific": "Dentex dentex",
       "depth_m": [
         3,
@@ -274,11 +283,13 @@
         "min_size_cm": 30,
         "min_size_source": "Croatian Pravilnik o zastiti riba",
         "must_tail_mark": true
-      }
+      },
+      "name_en": "Common dentex",
+      "name_local": "zubatac"
     },
     {
       "id": "umbra",
-      "common": "kavala / brown meagre",
+      "common": "Brown meagre (kavala)",
       "scientific": "Sciaena umbra",
       "depth_m": [
         5,
@@ -324,11 +335,13 @@
         "min_size_cm": 30,
         "min_size_source": "Croatian Pravilnik o zastiti riba",
         "must_tail_mark": true
-      }
+      },
+      "name_en": "Brown meagre",
+      "name_local": "kavala"
     },
     {
       "id": "octopus",
-      "common": "hobotnica / common octopus",
+      "common": "Common octopus (hobotnica)",
       "scientific": "Octopus vulgaris",
       "depth_m": [
         1,
@@ -373,11 +386,13 @@
         "min_size_source": "Croatian Pravilnik o zastiti riba",
         "must_tail_mark": false,
         "min_mass_g": 500
-      }
+      },
+      "name_en": "Common octopus",
+      "name_local": "hobotnica"
     },
     {
       "id": "sepia",
-      "common": "sipa / common cuttlefish",
+      "common": "Common cuttlefish (sipa)",
       "scientific": "Sepia officinalis",
       "depth_m": [
         1,
@@ -420,7 +435,9 @@
         "min_size_source": "EU Mediterranean MCRS - Croatian national rule may be STRICTER, verify",
         "must_tail_mark": false,
         "size_note": "mantle length"
-      }
+      },
+      "name_en": "Common cuttlefish",
+      "name_local": "sipa"
     }
   ],
   "_legal_note": [
