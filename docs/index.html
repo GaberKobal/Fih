@@ -60,6 +60,7 @@
   #word[data-v="go"]{color:var(--kelp)}
   #word[data-v="marginal"]{color:var(--buoy)}
   #word[data-v="poor"],#word[data-v="stay home"]{color:var(--flag)}
+  #word[data-v="not now"]{color:var(--sound)}
   #limit{font-size:13px; color:var(--sound); margin-top:6px}
   #vitals{display:flex; gap:16px; margin-top:12px; flex-wrap:wrap}
   #vitals div{min-width:56px}
@@ -98,6 +99,14 @@
   /* ---- map ---- */
   #map{flex:1 1 auto; min-height:44vh; background:var(--abyss)}
   .leaflet-container{background:var(--abyss); font-family:var(--sans)}
+  /* The score raster is 100 m per pixel stretched over 39 km. Browsers
+     smooth on upscale, which drags water colour visibly onto the shore.
+     Nearest-neighbour keeps the coastline where the data puts it - blockier,
+     but a mark that reads as "in the water" actually is. */
+  .leaflet-image-layer{
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+  }
   .leaflet-control-attribution{
     background:rgba(7,26,34,.82)!important; color:var(--sound)!important; font-size:9px
   }
@@ -301,7 +310,7 @@
 // Bumped whenever the page needs a matching fish_finder.py, and vice versa.
 // The two files live in different folders and get uploaded separately, so a
 // mismatch is easy to create and was previously invisible.
-const PAGE_VERSION = 3;
+const PAGE_VERSION = 4;
 
 const $ = s => document.querySelector(s);
 const fmt = (n,d=1) => (n===null||n===undefined||Number.isNaN(n)) ? "–" : Number(n).toFixed(d);
@@ -604,8 +613,15 @@ async function load(){
   const vw = d.now.verdict || "";
   $("#word").textContent = vw.charAt(0).toUpperCase() + vw.slice(1);
   $("#word").dataset.v = d.now.verdict;
-  $("#limit").textContent = d.now.limited_by === "nothing limiting"
-    ? "nothing holding it back" : "limited by " + d.now.limited_by;
+  if(d.now.verdict === "not now"){
+    const w = d.best_window;
+    const nxt = w ? new Date(w.start+"Z").toLocaleString([], {weekday:"short",
+                    hour:"2-digit", minute:"2-digit"}) : null;
+    $("#limit").textContent = d.now.limited_by + (nxt ? ` — next window ${nxt}` : "");
+  }else{
+    $("#limit").textContent = d.now.limited_by === "nothing limiting"
+      ? "nothing holding it back" : "limited by " + d.now.limited_by;
+  }
 
   // Satellite water clarity, if a recent scene was processed. Optional file:
   // absent until s2_turbidity.py has run successfully.
