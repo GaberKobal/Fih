@@ -57,7 +57,7 @@
     font-size:clamp(30px,10vw,44px); font-weight:300; letter-spacing:-.03em;
     line-height:1;
   }
-  #word[data-v="Go"]{color:var(--kelp)}
+  #word[data-v="go"]{color:var(--kelp)}
   #word[data-v="marginal"]{color:var(--buoy)}
   #word[data-v="poor"],#word[data-v="stay home"]{color:var(--flag)}
   #limit{font-size:13px; color:var(--sound); margin-top:6px}
@@ -86,7 +86,8 @@
   }
   .sp:hover{background:var(--shoal)}
   .sp[aria-pressed="true"]{border-color:var(--buoy); background:var(--shoal)}
-  .sp .nm{display:block; font-size:12.5px; font-weight:600; white-space:nowrap}
+  .sp .nm{display:block; font-size:12px; font-weight:600; line-height:1.25;
+    max-width:130px; white-space:normal}
   .sp .sc{
     display:block; font-family:var(--mono); font-size:15px; margin-top:3px;
   }
@@ -280,8 +281,8 @@
         <div id="rowout"></div>
         <span class="wide" style="display:flex;gap:8px;flex-wrap:wrap">
           <button type="button" class="sp" id="f_here" style="min-width:0">Use my location</button>
+          <button type="button" class="sp" id="f_submit" style="min-width:0;border-color:var(--buoy)">Submit dive</button>
           <button type="button" class="sp" id="f_copy" style="min-width:0">Copy row</button>
-          <a class="sp" id="f_open" style="min-width:0;display:inline-block" target="_blank" rel="noopener">Open dive_log.csv</a>
         </span>
       </div>
     </details>
@@ -297,6 +298,11 @@
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
+// Bumped whenever the page needs a matching fish_finder.py, and vice versa.
+// The two files live in different folders and get uploaded separately, so a
+// mismatch is easy to create and was previously invisible.
+const PAGE_VERSION = 3;
+
 const $ = s => document.querySelector(s);
 const fmt = (n,d=1) => (n===null||n===undefined||Number.isNaN(n)) ? "–" : Number(n).toFixed(d);
 
@@ -411,8 +417,9 @@ function renderSpots(d, spots){
 
 function selectTarget(id){
   sel = id;
-  const d = DATA;
-  const sp = id ? d.species.find(x=>x.id===id) : null;
+  const d = DATA, day = dayData(), suf = daySuffix();
+  const list = day.species || d.species || [];
+  const sp = id ? list.find(x=>x.id===id) : null;
 
   document.querySelectorAll(".sp").forEach(b=>
     b.setAttribute("aria-pressed", String(b.dataset.id===(id||"")) ));
@@ -432,24 +439,31 @@ function selectTarget(id){
     if(L.must_tail_mark) rules.push("must tail-mark if kept");
     $("#spnote").innerHTML =
       (rules.length?`<div style="margin-bottom:6px">${rules.join(" · ")}</div>`:"")
+      + (sp.name_local ? `<div style="font-size:11.5px;opacity:.8;margin-bottom:4px">`+
+         `${sp.scientific} · known locally as ${sp.name_local}</div>` : "")
       + `<div>${sp.note}</div>`
       + (L.min_size_source?`<div style="font-size:11px;margin-top:5px;opacity:.75">`+
          `Size: ${L.min_size_source}</div>`:"");
   }
 
-  $("#gpx").href = sp ? `data/spots_${sp.id}.gpx` : "data/spots.gpx";
+  $("#gpx").href = sp ? `data/spots_${sp.id}${suf}.gpx` : `data/spots${suf}.gpx`;
   $("#gpx").textContent = sp ? `GPX · ${sp.common.split(" /")[0]}` : "Download GPX";
 
   const b=L.latLngBounds(d.bounds);
   if(overlay) map.removeLayer(overlay);
-  const png = sp ? `data/score_${sp.id}.png` : "data/score.png";
+  const png = sp ? `data/score_${sp.id}${suf}.png` : `data/score${suf}.png`;
   overlay=L.imageOverlay(png+"?v="+encodeURIComponent(d.generated),b,{opacity:.75}).addTo(map);
 
-  renderSpots(d, sp ? sp.spots : d.spots);
+  renderSpots(d, sp ? sp.spots : (day.spots || d.spots || []));
   if(sp && $("#f_species").options.length){ $("#f_species").value=sp.id; buildRow(); }
 }
 
 let selDay=0;
+
+// Everything below reads the SELECTED day, not "now". Only shelter varies by
+// day, but it is wind-driven, so a change of wind moves the good water.
+function dayData(){ return ((DATA && DATA.days) || [])[selDay] || DATA || {}; }
+function daySuffix(){ return ((DATA && DATA.days) || []).length ? `_d${selDay}` : ""; }
 
 function renderDays(d){
   const host=$("#days"); host.innerHTML="";
@@ -462,9 +476,15 @@ function renderDays(d){
       ? day.best.start.slice(11,16)+"–"+day.best.end.slice(11,16)
       : "—";
     const col=day.peak_score>=.6?"var(--kelp)":day.peak_score>=.3?"var(--buoy)":"var(--flag)";
+    const extra = (day.wind_from_deg!==undefined)
+      ? `<span class="dl" style="margin-top:3px;letter-spacing:.1em">${day.wind_from_deg}° · ${day.viz_m} m</span>` : "";
     b.innerHTML=`<span class="dl">${label}</span>
-                 <span class="dt" style="color:${col}">${best}</span>`;
-    b.addEventListener("click",()=>{selDay=i; renderDays(d); renderHours(d);});
+                 <span class="dt" style="color:${col}">${best}</span>${extra}`;
+    b.addEventListener("click",()=>{
+      selDay=i; renderDays(d); renderHours(d);
+      renderSpecies(d);              // scores are per day
+      selectTarget(sel);             // and so is the map
+    });
     host.appendChild(b);
   });
 }
@@ -532,6 +552,7 @@ function renderHours(d){
 
 function renderSpecies(d){
   const host=$("#species"); host.innerHTML="";
+  const list = dayData().species || d.species || [];
   const mk=(id,name,score,why,out)=>{
     const b=document.createElement("button");
     b.type="button"; b.className="sp"+(out?" out":""); b.dataset.id=id||"";
@@ -545,14 +566,14 @@ function renderSpecies(d){
     host.appendChild(b);
   };
   mk(null,"Structure",null,"any target");
-  (d.species||[]).forEach(sp=>{
+  list.forEach(sp=>{
     const why = sp.legally_open===false ? "CLOSED SEASON"
               : !sp.in_season ? "out of season"
               : sp.temp_fit<.35 ? "water temp"
               : sp.viz_fit<.35  ? "needs clearer"
               : sp.viz_pref==="murky" ? "likes the murk"
               : "in season";
-    mk(sp.id, sp.common.split(" /")[0], sp.today, why,
+    mk(sp.id, sp.name_en || sp.common, sp.today, why,
        !sp.in_season || sp.legally_open===false);
   });
 }
@@ -567,6 +588,16 @@ async function load(){
     $("#err").style.display="block";
     $("#err").textContent="No forecast file yet. Run the Update dive forecast workflow in GitHub Actions, then reload.";
     return;
+  }
+
+  const dataV = d.schema_version || 1;
+  if(dataV !== PAGE_VERSION){
+    const stale = dataV < PAGE_VERSION ? "fish_finder.py" : "docs/index.html";
+    $("#err").style.display = "block";
+    $("#err").innerHTML =
+      `<b>Version mismatch.</b> This page is v${PAGE_VERSION}, the data is v${dataV}. ` +
+      `Upload the current <b>${stale}</b> and re-run the workflow — until then ` +
+      `some features (day switching, the submit button) will not work.`;
   }
 
   $("#region").textContent = d.region;
@@ -593,8 +624,7 @@ async function load(){
            Sentinel-2, ${when}: relative turbidity
            <b class="num" style="color:var(--buoy)">${T.median}</b>
            (spread <b class="num">${s2.contrast_fnu}</b>),
-           <b class="num">${Math.round((s2.dirty_fraction||0)*100)}%</b>
-           of deep water in the murkier half.
+           range <b class="num">${(s2.turbidity_relative_fnu||{}).p10}</b>–<b class="num">${(s2.turbidity_relative_fnu||{}).p90}</b>.
          </div>
          <div style="margin-top:5px;font-size:11.5px;color:var(--sound)">
            Relative, not metres. Sentinel-2 L2A leaves too much atmosphere over
@@ -658,13 +688,33 @@ $("#f_r1").addEventListener("click",()=>setResult(1));
 
 function buildRow(){
   const v=id=>($("#"+id).value||"").trim().replace(/,/g," ");
+  const modelViz = DATA ? Math.round(DATA.now.visibility_m) : "";
   const row=[v("f_date"),v("f_lat"),v("f_lon"),v("f_depth"),v("f_viz"),
-             v("f_wind"),v("f_species"),logResult,v("f_notes")].join(",");
+             modelViz,v("f_wind"),v("f_species"),logResult,v("f_notes")].join(",");
   $("#rowout").textContent=row;
   return row;
 }
 ["f_date","f_lat","f_lon","f_depth","f_viz","f_wind","f_species","f_notes"]
   .forEach(id=>$("#"+id).addEventListener("input",buildRow));
+
+// Submit by opening a prefilled GitHub issue. A workflow picks it up and
+// appends the row to dive_log.csv - so no write token is ever needed here.
+$("#f_submit").addEventListener("click",()=>{
+  const row = buildRow();
+  if(!$("#f_date").value || !$("#f_lat").value || !$("#f_viz").value){
+    $("#rowout").textContent = "Need at least a date, coordinates and visibility.";
+    return;
+  }
+  const base = (DATA && DATA.repo_issue_url) || "";
+  if(!base){ $("#rowout").textContent = "No repo_issue_url set in config.json."; return; }
+  const title = `Dive ${$("#f_date").value}` +
+                ($("#f_species").value ? ` - ${$("#f_species").value}` : "");
+  const body  = "Logged from the map.\n\n```csv\n" + row + "\n```\n";
+  const url = base + "?labels=dive-log"
+            + "&title=" + encodeURIComponent(title)
+            + "&body="  + encodeURIComponent(body);
+  window.open(url, "_blank", "noopener");
+});
 
 $("#f_copy").addEventListener("click",async()=>{
   const row=buildRow();
@@ -687,10 +737,8 @@ function initLog(d){
   $("#f_date").value=new Date().toISOString().slice(0,10);
   $("#f_viz").value=Math.round(d.now.visibility_m);
   $("#f_wind").value=d.now.wind_from_deg;
-  $("#f_species").innerHTML=(d.species||[])
-    .map(sp=>`<option value="${sp.id}">${sp.common.split(" /")[0]}</option>`).join("");
-  if(d.repo_edit_url) $("#f_open").href=d.repo_edit_url;
-  else $("#f_open").style.display="none";
+  $("#f_species").innerHTML=((d.days&&d.days[0]&&d.days[0].species)||d.species||[])
+    .map(sp=>`<option value="${sp.id}">${sp.name_en || sp.common}</option>`).join("");
   buildRow();
 }
 
