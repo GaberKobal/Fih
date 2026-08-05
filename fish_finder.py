@@ -1091,6 +1091,26 @@ def species_spatial_score(sp, terms, depth_m, land, gates, cfg):
     return np.clip(score, 0.0, 1.0)
 
 
+def representative_hour(day, times):
+    """The hour a day should be judged on.
+
+    The best window if there is one, because that is when you would actually
+    be in the water; otherwise the day's best remaining hour; otherwise midday.
+    """
+    if day.get("best"):
+        t = day["best"]["start"]
+    elif day.get("peak_hour"):
+        t = day["peak_hour"]
+    else:
+        t = f"{day['date']}T12:00"
+    for i, ts in enumerate(times):
+        if ts[:13] == t[:13]:
+            return i
+    return min(range(len(times)),
+               key=lambda i: abs(int(times[i][11:13]) - 12)
+               if times[i][:10] == day["date"] else 99)
+
+
 def combine_score(terms, weights, gates):
     total_w = sum(weights[k] for k in terms)
     if total_w <= 0:
@@ -1101,7 +1121,7 @@ def combine_score(terms, weights, gates):
     return np.clip(s, 0.0, 1.0)
 
 
-def find_spots(score, lats, lons, depth_m, terms, cfg):
+def find_spots(score, lats, lons, depth_m, terms, cfg, limit=None):
     """Local maxima with non-maximum suppression, so you get 12 distinct
     marks rather than 12 pixels of the same reef."""
     sep_cells = max(1, int(cfg["min_spot_separation_m"] / cfg["grid_resolution_m"]))
@@ -1111,9 +1131,10 @@ def find_spots(score, lats, lons, depth_m, terms, cfg):
     order = np.argsort(-score[ys, xs])
     ys, xs = ys[order], xs[order]
 
+    cap = limit or cfg["top_spots"]
     out = []
     for y, x in zip(ys, xs):
-        if len(out) >= cfg["top_spots"]:
+        if len(out) >= cap:
             break
         if any(haversine_m(lats[y], lons[x], s["lat"], s["lon"])
                < cfg["min_spot_separation_m"] for s in out):
@@ -1339,35 +1360,25 @@ def run(cfg, selftest=False):
     relief_s, slope_s, relief_raw, slope_raw = structure_terms(
         depth_m, land, lats, lons, cfg)
 
-    wind_from = float(h["wind_direction_10m"][now_i])
-    if not np.isfinite(wind_from):
-        wind_from = 0.0
-    shelter, fetch_m = upwind_shelter(land, lats, lons, wind_from, cfg, nodata)
+    profile = None if selftest else fetch_cmems_profile(clat, clon, cfg)
+    wind_from_now = float(h["wind_direction_10m"][now_i])
+    if not np.isfinite(wind_from_now):
+        wind_from_now = 0.0
+    sea_temp = float(h["sea_surface_temperature"][now_i])
+    if not np.isfinite(sea_temp):
+        sea_temp = float(np.nanmedian(h["sea_surface_temperature"]))
 
-    terms = {"relief": relief_s, "slope": slope_s, "shelter": shelter}
-
-    if cfg["habitat"]["enabled"] and not selftest:
-        try:
-            gj = fetch_seabed_habitat(bbox, cfg)
-            terms["habitat"] = habitat_edge_score(gj, lats, lons, cfg)
-            log("habitat: EUSeaMap edges included")
-        except Exception as e:
-            log(f"habitat: unavailable ({e.__class__.__name__}), continuing without it")
-
-    weights = dict(cfg["weights"])
+    weights_cfg = dict(cfg["weights"])
     wpath = ROOT / "weights.json"
     if wpath.exists():
         fitted = json.loads(wpath.read_text())
-        weights.update(fitted.get("weights", {}))
+        weights_cfg.update(fitted.get("weights", {}))
         log(f"weights: using fitted values from {wpath.name} "
             f"(n={fitted.get('n_dives', '?')}, auc={fitted.get('auc', '?')})")
-    weights = {k: weights.get(k, 0.0) for k in terms}
 
-    # ---- gates ----
+    # ---- gates: static, so computed once ----
     dfit = depth_fit(depth_m, land, cfg)
     afit = access_fit(lats, lons, cfg)
-
-    # A mark 30 m off the rocks is not a mark, it is the shoreline.
     clear_min = cfg.get("water", {}).get("min_shore_clearance_m", 0)
     cfit = np.ones_like(dfit)
     if clear_min > 0:
@@ -1375,60 +1386,88 @@ def run(cfg, selftest=False):
     excl = rasterize_polygons(ROOT / "exclusions.geojson", lats, lons)
     if excl.any():
         log(f"exclusions: {excl.mean():.1%} of the box masked out")
-
-    score = combine_score(terms, weights, [dfit, afit, cfit, (~excl).astype(float)])
-    score[land] = 0.0
-
-    # ---- outputs ----
-    spots = find_spots(score, lats, lons, depth_m, terms, cfg)
-    stamp = dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
-    if spots:
-        deps = sorted(s["depth_m"] for s in spots)
-        log(f"spots: {len(spots)}, depth {deps[0]:.1f}-{deps[-1]:.1f} m "
-            f"(median {deps[len(deps) // 2]:.1f})")
-
-    write_overlay_png(score, lats, lons, OUT / "score.png")
-    write_geojson(spots, OUT / "spots.geojson", {"generated": stamp})
-    write_gpx(spots, OUT / "spots.gpx", f"{cfg['region_name']} {stamp[:10]}")
-
-    # ---- per-species maps ----
-    # The generic map above answers "where is there structure you can reach".
-    # These answer "where is THIS animal likely to be, given today".
-    sea_temp = float(h["sea_surface_temperature"][now_i])
-    if not np.isfinite(sea_temp):
-        sea_temp = float(np.nanmedian(h["sea_surface_temperature"]))
-    month = int(now_iso[5:7])
     gates = [afit, cfit, (~excl).astype(float)]
 
-    profile = None if selftest else fetch_cmems_profile(clat, clon, cfg)
+    habitat = None
+    if cfg["habitat"]["enabled"] and not selftest:
+        try:
+            habitat = habitat_edge_score(fetch_seabed_habitat(bbox, cfg),
+                                         lats, lons, cfg)
+            log("habitat: EUSeaMap edges included")
+        except Exception as e:
+            log(f"habitat: unavailable ({e.__class__.__name__}), continuing without")
 
-    species_out = []
-    for sp in load_species(cfg):
-        day = species_day_factors(sp, sea_temp, float(viz[now_i]), month, cfg,
-                                  profile, dt.date.fromisoformat(now_iso[:10]))
-        smap = species_spatial_score(sp, terms, depth_m, land, gates, cfg)
-        smap[land] = 0.0
-        sspots = find_spots(smap, lats, lons, depth_m, terms, cfg)
-        write_overlay_png(smap, lats, lons, OUT / f"score_{sp['id']}.png")
-        write_gpx(sspots, OUT / f"spots_{sp['id']}.gpx",
-                  f"{sp['common']} {stamp[:10]}")
-        species_out.append({
-            "id": sp["id"],
-            "common": sp["common"],
-            "scientific": sp["scientific"],
-            "note": sp.get("note", ""),
-            "viz_pref": sp.get("viz_pref", "any"),
-            "wary": sp.get("wary"),
-            "depth_best_m": sp["depth_best_m"],
-            "in_season": bool(day["season_fit"]),
-            "legal": sp.get("legal", {}),
-            **day,
-            "spots": sspots,
-        })
-    species_out.sort(key=lambda x: -x["today"])
-    if species_out:
-        log("today's ranking: " + ", ".join(
-            f"{x['common'].split(' /')[0]} {x['today']:.2f}" for x in species_out[:4]))
+    stamp = dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
+    species_defs = load_species(cfg)
+    sp_cap = cfg.get("species_top_spots", 12)
+
+    # ---- one map per forecast day ----
+    # Only shelter varies with the day, but it varies a lot: it is driven by
+    # wind direction, so a jugo day and a bora day put the good water in
+    # completely different places. Relief, slope and the gates are static.
+    for di, day in enumerate(days):
+        ri = representative_hour(day, h["time"])
+        wind_d = float(h["wind_direction_10m"][ri])
+        if not np.isfinite(wind_d):
+            wind_d = 0.0
+        shelter_d, _ = upwind_shelter(land, lats, lons, wind_d, cfg, nodata)
+        terms_d = {"relief": relief_s, "slope": slope_s, "shelter": shelter_d}
+        if habitat is not None:
+            terms_d["habitat"] = habitat
+        w_d = {k: weights_cfg.get(k, 0.0) for k in terms_d}
+
+        score_d = combine_score(terms_d, w_d, gates)
+        score_d[land] = 0.0
+        spots_d = find_spots(score_d, lats, lons, depth_m, terms_d, cfg)
+        write_overlay_png(score_d, lats, lons, OUT / f"score_d{di}.png")
+        write_gpx(spots_d, OUT / f"spots_d{di}.gpx",
+                  f"{cfg['region_name']} {day['date']}")
+
+        temp_d = float(h["sea_surface_temperature"][ri])
+        if not np.isfinite(temp_d):
+            temp_d = sea_temp
+        month_d = int(day["date"][5:7])
+        date_d = dt.date.fromisoformat(day["date"])
+
+        sp_out = []
+        for sp in species_defs:
+            fac = species_day_factors(sp, temp_d, float(viz[ri]), month_d,
+                                      cfg, profile, date_d)
+            smap = species_spatial_score(sp, terms_d, depth_m, land, gates, cfg)
+            smap[land] = 0.0
+            ss = find_spots(smap, lats, lons, depth_m, terms_d, cfg, limit=sp_cap)
+            write_overlay_png(smap, lats, lons,
+                              OUT / f"score_{sp['id']}_d{di}.png")
+            write_gpx(ss, OUT / f"spots_{sp['id']}_d{di}.gpx",
+                      f"{sp['common']} {day['date']}")
+            sp_out.append({
+                "id": sp["id"], "common": sp["common"],
+                "scientific": sp["scientific"], "note": sp.get("note", ""),
+                "viz_pref": sp.get("viz_pref", "any"), "wary": sp.get("wary"),
+                "depth_best_m": sp["depth_best_m"], "legal": sp.get("legal", {}),
+                "in_season": bool(fac["season_fit"]), **fac, "spots": ss,
+            })
+        sp_out.sort(key=lambda x: -x["today"])
+
+        day["wind_from_deg"] = round(wind_d)
+        day["wind_regime"] = regimes[ri]
+        day["viz_m"] = round(float(viz_m[ri]), 1)
+        day["sea_temp_c"] = round(temp_d, 1)
+        day["at"] = h["time"][ri]
+        day["spots"] = spots_d
+        day["species"] = sp_out
+        log(f"day {day['date']} (judged at {h['time'][ri][11:16]}, wind {wind_d:.0f} deg): "
+            + ", ".join(f"{x['common'].split(' /')[0]} {x['today']:.2f}"
+                        for x in sp_out[:3]))
+
+    # today's maps are also the default ones the page loads first
+    import shutil
+    for src, dst in [("score_d0.png", "score.png"), ("spots_d0.gpx", "spots.gpx")]:
+        if (OUT / src).exists():
+            shutil.copyfile(OUT / src, OUT / dst)
+    spots = days[0]["spots"] if days else []
+    species_out = days[0]["species"] if days else []
+    write_geojson(spots, OUT / "spots.geojson", {"generated": stamp})
 
     keep = slice(max(0, now_i - 24), min(len(h["time"]), now_i + 60))
     payload = {
@@ -1444,10 +1483,11 @@ def run(cfg, selftest=False):
             "visibility_m": round(float(viz_m[now_i]), 1),
             "wave_height_m": round(float(h["wave_height"][now_i]), 2),
             "wind_speed_kmh": round(float(h["wind_speed_10m"][now_i]), 1),
-            "wind_from_deg": round(wind_from),
+            "wind_from_deg": round(wind_from_now if np.isfinite(wind_from_now) else 0),
             "sea_temp_c": round(float(h["sea_surface_temperature"][now_i]), 1),
             "current_ms": round(float(h["ocean_current_velocity"][now_i]), 2),
             "wind_regime": regimes[now_i],
+            "wind_from_deg_now": round(wind_from_now),
             "wind_regime_note": cfg.get("wind_regimes", {}).get(
                 regimes[now_i], {}).get("note", ""),
             "sun_elevation_deg": round(float(elev[now_i]), 1),
@@ -1456,7 +1496,7 @@ def run(cfg, selftest=False):
         "best_window": window,
         "days": days,
         "utc_offset_seconds": tz_offset,
-        "weights": weights,
+        "weights": weights_cfg,
         "depth_range_m": [cfg["depth"]["min_m"], cfg["depth"]["max_m"]],
         "entry_points": cfg.get("entry_points", []),
         "repo_edit_url": cfg.get("repo_edit_url"),
@@ -1474,12 +1514,13 @@ def run(cfg, selftest=False):
         },
         "now_index": now_i - max(0, now_i - 24),
         "sea_temp_now_c": round(sea_temp, 1),
+        "species_top_spots": sp_cap,
         "visibility_calibrated": bool(vzc),
         "visibility_correction": vzc,
         "temp_source": ("Copernicus Marine measured profile" if profile
                         else "estimated from SST + seasonal thermocline"),
         "temp_profile": profile,
-        "month": month,
+        "month": int(now_iso[5:7]),
         "spots": spots,
         "species": species_out,
     }
