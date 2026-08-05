@@ -1,5 +1,5 @@
 {
- "generated": "2026-08-05T17:04:07+00:00",
+ "generated": "2026-08-05T17:33:29+00:00",
  "region": "Novigrad, Istria",
  "bounds": [
   [
@@ -668,7 +668,9 @@
    "species": [
     {
      "id": "sargus",
-     "common": "\u0161arag / white seabream",
+     "common": "White seabream (\u0161arag)",
+     "name_en": "White seabream",
+     "name_local": "\u0161arag",
      "scientific": "Diplodus sargus",
      "note": "Resident on rocky edges year round. The bread-and-butter fish here; holds tight to structure and comes back to the same rock.",
      "viz_pref": "any",
@@ -810,7 +812,9 @@
     },
     {
      "id": "vulgaris",
-     "common": "fratar / two-banded seabream",
+     "common": "Two-banded seabream (fratar)",
+     "name_en": "Two-banded seabream",
+     "name_local": "fratar",
      "scientific": "Diplodus vulgaris",
      "note": "Schools more than sargus and less spooky. Often the first fish on a new mark, which makes it a decent test of whether a mark is real.",
      "viz_pref": "any",
@@ -947,7 +951,9 @@
     },
     {
      "id": "umbra",
-     "common": "kavala / brown meagre",
+     "common": "Brown meagre (kavala)",
+     "name_en": "Brown meagre",
+     "name_local": "kavala",
      "scientific": "Sciaena umbra",
      "note": "Lives in holes, caves and under overhangs \u2014 the highest relief affinity in this list. Protected or restricted in parts of the Adriatic; CHECK THE CURRENT RULES before targeting it.",
      "viz_pref": "any",
@@ -1089,7 +1095,9 @@
     },
     {
      "id": "dentex",
-     "common": "zubatac / common dentex",
+     "common": "Common dentex (zubatac)",
+     "name_en": "Common dentex",
+     "name_local": "zubatac",
      "scientific": "Dentex dentex",
      "note": "Observed repeatedly at 4-10 m off Novigrad in Aug 2026, so the textbook 15-30 m band does not describe this shelf. Still needs clear water and a still approach.",
      "viz_pref": "clear",
@@ -1231,7 +1239,9 @@
     },
     {
      "id": "aurata",
-     "common": "orada / gilthead seabream",
+     "common": "Gilthead seabream (orada)",
+     "name_en": "Gilthead seabream",
+     "name_local": "orada",
      "scientific": "Sparus aurata",
      "note": "Works soft bottom and seagrass, not rock \u2014 so it scores where the rest of the model scores low. Extremely wary in clear water; coloured water is your friend.",
      "viz_pref": "murky",
@@ -1368,7 +1378,9 @@
     },
     {
      "id": "labrax",
-     "common": "brancin / European seabass",
+     "common": "European seabass (brancin)",
+     "name_en": "European seabass",
+     "name_local": "brancin",
      "scientific": "Dicentrarchus labrax",
      "note": "Present year round here - a 40 cm fish was taken in August 2026, which killed the June-August closure this file used to claim. Still hunts stirred and coloured water.",
      "viz_pref": "murky",
@@ -1505,7 +1517,9 @@
     },
     {
      "id": "octopus",
-     "common": "hobotnica / common octopus",
+     "common": "Common octopus (hobotnica)",
+     "name_en": "Common octopus",
+     "name_local": "hobotnica",
      "scientific": "Octopus vulgaris",
      "note": "Rubble and rock edges, in holes. Barely cares about visibility and does not spook, so it salvages otherwise poor days. Best in the cooler months.",
      "viz_pref": "any",
@@ -1643,7 +1657,9 @@
     },
     {
      "id": "sepia",
-     "common": "sipa / common cuttlefish",
+     "common": "Common cuttlefish (sipa)",
+     "name_en": "Common cuttlefish",
+     "name_local": "sipa",
      "scientific": "Sepia officinalis",
      "note": "Seagrass and sand, strongly seasonal \u2014 the spring inshore spawning run is the window. Scores where rock-loving species do not.",
      "viz_pref": "any",
@@ -2412,7 +2428,9 @@
    "species": [
     {
      "id": "sargus",
-     "common": "\u0161arag / white seabream",
+     "common": "White seabream (\u0161arag)",
+     "name_en": "White seabream",
+     "name_local": "\u0161arag",
      "scientific": "Diplodus sargus",
      "note": "Resident on rocky edges year round. The bread-and-butter fish here; holds tight to structure and comes back to the same rock.",
      "viz_pref": "any",
@@ -2554,7 +2572,9 @@
     },
     {
      "id": "vulgaris",
-     "common": "fratar / two-banded seabream",
+     "common": "Two-banded seabream (fratar)",
+     "name_en": "Two-banded seabream",
+     "name_local": "fratar",
      "scientific": "Diplodus vulgaris",
      "note": "Schools more than sargus and less spooky. Often the first fish on a new mark, which makes it a decent test of whether a mark is real.",
      "viz_pref": "any",
@@ -2691,7 +2711,9 @@
     },
     {
      "id": "dentex",
-     "common": "zubatac / common dentex",
+     "common": "Common dentex (zubatac)",
+     "name_en": "Common dentex",
+     "name_local": "zubatac",
      "scientific": "Dentex dentex",
      "note": "Observed repeatedly at 4-10 m off Novigrad in Aug 2026, so the textbook 15-30 m band does not describe this shelf. Still needs clear water and a still approach.",
      "viz_pref": "clear",
@@ -2833,7 +2855,9 @@
     },
     {
      "id": "umbra",
-     "common": "kavala / brown meagre",
+     "common": "Brown meagre (kavala)",
+     "name_en": "Brown meagre",
+     "name_local": "kavala",
      "scientific": "Sciaena umbra",
      "note": "Lives in holes, caves and under overhangs \u2014 the highest relief affinity in this list. Protected or restricted in parts of the Adriatic; CHECK THE CURRENT RULES before targeting it.",
      "viz_pref": "any",
@@ -2975,7 +2999,9 @@
     },
     {
      "id": "aurata",
-     "common": "orada / gilthead seabream",
+     "common": "Gilthead seabream (orada)",
+     "name_en": "Gilthead seabream",
+     "name_local": "orada",
      "scientific": "Sparus aurata",
      "note": "Works soft bottom and seagrass, not rock \u2014 so it scores where the rest of the model scores low. Extremely wary in clear water; coloured water is your friend.",
      "viz_pref": "murky",
@@ -3112,7 +3138,9 @@
     },
     {
      "id": "labrax",
-     "common": "brancin / European seabass",
+     "common": "European seabass (brancin)",
+     "name_en": "European seabass",
+     "name_local": "brancin",
      "scientific": "Dicentrarchus labrax",
      "note": "Present year round here - a 40 cm fish was taken in August 2026, which killed the June-August closure this file used to claim. Still hunts stirred and coloured water.",
      "viz_pref": "murky",
@@ -3249,7 +3277,9 @@
     },
     {
      "id": "octopus",
-     "common": "hobotnica / common octopus",
+     "common": "Common octopus (hobotnica)",
+     "name_en": "Common octopus",
+     "name_local": "hobotnica",
      "scientific": "Octopus vulgaris",
      "note": "Rubble and rock edges, in holes. Barely cares about visibility and does not spook, so it salvages otherwise poor days. Best in the cooler months.",
      "viz_pref": "any",
@@ -3387,7 +3417,9 @@
     },
     {
      "id": "sepia",
-     "common": "sipa / common cuttlefish",
+     "common": "Common cuttlefish (sipa)",
+     "name_en": "Common cuttlefish",
+     "name_local": "sipa",
      "scientific": "Sepia officinalis",
      "note": "Seagrass and sand, strongly seasonal \u2014 the spring inshore spawning run is the window. Scores where rock-loving species do not.",
      "viz_pref": "any",
@@ -4156,7 +4188,9 @@
    "species": [
     {
      "id": "sargus",
-     "common": "\u0161arag / white seabream",
+     "common": "White seabream (\u0161arag)",
+     "name_en": "White seabream",
+     "name_local": "\u0161arag",
      "scientific": "Diplodus sargus",
      "note": "Resident on rocky edges year round. The bread-and-butter fish here; holds tight to structure and comes back to the same rock.",
      "viz_pref": "any",
@@ -4298,7 +4332,9 @@
     },
     {
      "id": "vulgaris",
-     "common": "fratar / two-banded seabream",
+     "common": "Two-banded seabream (fratar)",
+     "name_en": "Two-banded seabream",
+     "name_local": "fratar",
      "scientific": "Diplodus vulgaris",
      "note": "Schools more than sargus and less spooky. Often the first fish on a new mark, which makes it a decent test of whether a mark is real.",
      "viz_pref": "any",
@@ -4435,7 +4471,9 @@
     },
     {
      "id": "dentex",
-     "common": "zubatac / common dentex",
+     "common": "Common dentex (zubatac)",
+     "name_en": "Common dentex",
+     "name_local": "zubatac",
      "scientific": "Dentex dentex",
      "note": "Observed repeatedly at 4-10 m off Novigrad in Aug 2026, so the textbook 15-30 m band does not describe this shelf. Still needs clear water and a still approach.",
      "viz_pref": "clear",
@@ -4577,7 +4615,9 @@
     },
     {
      "id": "umbra",
-     "common": "kavala / brown meagre",
+     "common": "Brown meagre (kavala)",
+     "name_en": "Brown meagre",
+     "name_local": "kavala",
      "scientific": "Sciaena umbra",
      "note": "Lives in holes, caves and under overhangs \u2014 the highest relief affinity in this list. Protected or restricted in parts of the Adriatic; CHECK THE CURRENT RULES before targeting it.",
      "viz_pref": "any",
@@ -4719,7 +4759,9 @@
     },
     {
      "id": "aurata",
-     "common": "orada / gilthead seabream",
+     "common": "Gilthead seabream (orada)",
+     "name_en": "Gilthead seabream",
+     "name_local": "orada",
      "scientific": "Sparus aurata",
      "note": "Works soft bottom and seagrass, not rock \u2014 so it scores where the rest of the model scores low. Extremely wary in clear water; coloured water is your friend.",
      "viz_pref": "murky",
@@ -4856,7 +4898,9 @@
     },
     {
      "id": "labrax",
-     "common": "brancin / European seabass",
+     "common": "European seabass (brancin)",
+     "name_en": "European seabass",
+     "name_local": "brancin",
      "scientific": "Dicentrarchus labrax",
      "note": "Present year round here - a 40 cm fish was taken in August 2026, which killed the June-August closure this file used to claim. Still hunts stirred and coloured water.",
      "viz_pref": "murky",
@@ -4993,7 +5037,9 @@
     },
     {
      "id": "octopus",
-     "common": "hobotnica / common octopus",
+     "common": "Common octopus (hobotnica)",
+     "name_en": "Common octopus",
+     "name_local": "hobotnica",
      "scientific": "Octopus vulgaris",
      "note": "Rubble and rock edges, in holes. Barely cares about visibility and does not spook, so it salvages otherwise poor days. Best in the cooler months.",
      "viz_pref": "any",
@@ -5131,7 +5177,9 @@
     },
     {
      "id": "sepia",
-     "common": "sipa / common cuttlefish",
+     "common": "Common cuttlefish (sipa)",
+     "name_en": "Common cuttlefish",
+     "name_local": "sipa",
      "scientific": "Sepia officinalis",
      "note": "Seagrass and sand, strongly seasonal \u2014 the spring inshore spawning run is the window. Scores where rock-loving species do not.",
      "viz_pref": "any",
@@ -6309,7 +6357,9 @@
  "species": [
   {
    "id": "sargus",
-   "common": "\u0161arag / white seabream",
+   "common": "White seabream (\u0161arag)",
+   "name_en": "White seabream",
+   "name_local": "\u0161arag",
    "scientific": "Diplodus sargus",
    "note": "Resident on rocky edges year round. The bread-and-butter fish here; holds tight to structure and comes back to the same rock.",
    "viz_pref": "any",
@@ -6451,7 +6501,9 @@
   },
   {
    "id": "vulgaris",
-   "common": "fratar / two-banded seabream",
+   "common": "Two-banded seabream (fratar)",
+   "name_en": "Two-banded seabream",
+   "name_local": "fratar",
    "scientific": "Diplodus vulgaris",
    "note": "Schools more than sargus and less spooky. Often the first fish on a new mark, which makes it a decent test of whether a mark is real.",
    "viz_pref": "any",
@@ -6588,7 +6640,9 @@
   },
   {
    "id": "umbra",
-   "common": "kavala / brown meagre",
+   "common": "Brown meagre (kavala)",
+   "name_en": "Brown meagre",
+   "name_local": "kavala",
    "scientific": "Sciaena umbra",
    "note": "Lives in holes, caves and under overhangs \u2014 the highest relief affinity in this list. Protected or restricted in parts of the Adriatic; CHECK THE CURRENT RULES before targeting it.",
    "viz_pref": "any",
@@ -6730,7 +6784,9 @@
   },
   {
    "id": "dentex",
-   "common": "zubatac / common dentex",
+   "common": "Common dentex (zubatac)",
+   "name_en": "Common dentex",
+   "name_local": "zubatac",
    "scientific": "Dentex dentex",
    "note": "Observed repeatedly at 4-10 m off Novigrad in Aug 2026, so the textbook 15-30 m band does not describe this shelf. Still needs clear water and a still approach.",
    "viz_pref": "clear",
@@ -6872,7 +6928,9 @@
   },
   {
    "id": "aurata",
-   "common": "orada / gilthead seabream",
+   "common": "Gilthead seabream (orada)",
+   "name_en": "Gilthead seabream",
+   "name_local": "orada",
    "scientific": "Sparus aurata",
    "note": "Works soft bottom and seagrass, not rock \u2014 so it scores where the rest of the model scores low. Extremely wary in clear water; coloured water is your friend.",
    "viz_pref": "murky",
@@ -7009,7 +7067,9 @@
   },
   {
    "id": "labrax",
-   "common": "brancin / European seabass",
+   "common": "European seabass (brancin)",
+   "name_en": "European seabass",
+   "name_local": "brancin",
    "scientific": "Dicentrarchus labrax",
    "note": "Present year round here - a 40 cm fish was taken in August 2026, which killed the June-August closure this file used to claim. Still hunts stirred and coloured water.",
    "viz_pref": "murky",
@@ -7146,7 +7206,9 @@
   },
   {
    "id": "octopus",
-   "common": "hobotnica / common octopus",
+   "common": "Common octopus (hobotnica)",
+   "name_en": "Common octopus",
+   "name_local": "hobotnica",
    "scientific": "Octopus vulgaris",
    "note": "Rubble and rock edges, in holes. Barely cares about visibility and does not spook, so it salvages otherwise poor days. Best in the cooler months.",
    "viz_pref": "any",
@@ -7284,7 +7346,9 @@
   },
   {
    "id": "sepia",
-   "common": "sipa / common cuttlefish",
+   "common": "Common cuttlefish (sipa)",
+   "name_en": "Common cuttlefish",
+   "name_local": "sipa",
    "scientific": "Sepia officinalis",
    "note": "Seagrass and sand, strongly seasonal \u2014 the spring inshore spawning run is the window. Scores where rock-loving species do not.",
    "viz_pref": "any",
