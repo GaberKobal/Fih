@@ -875,9 +875,18 @@ def daily_breakdown(h, daily, viz, viz_m, work, move, cfg, now_iso,
     return days
 
 
-def verdict(viz_now, viz_m_now, work_now, sea_now, air_now, cfg):
+def verdict(viz_now, viz_m_now, work_now, sea_now, air_now, cfg,
+            light_now=1.0, daylight_left=True):
     """A single word plus the reason, because that is the actual decision."""
     day = min(viz_now, work_now)
+
+    # Conditions alone are not a verdict. "Go" at 22:00 is wrong however flat
+    # the sea is, and it contradicted the panel below saying the day was over.
+    if light_now <= 0:
+        return ("not now", "dark — no daylight", day)
+    if not daylight_left:
+        return ("not now", "no diveable light left today", day)
+
     if work_now < cfg["workability"]["hard_floor"]:
         limit = "sea state" if sea_now <= air_now else "wind"
         return "stay home", limit, day
@@ -1366,9 +1375,14 @@ def run(cfg, selftest=False):
     elev = solar_elevation_deg(h["time"], clat, clon, tz_offset)
     light = light_quality(elev, cfg)
 
+    today_str = now_iso[:10]
+    light_left = any(light[i] > 0 and work[i] > cfg["workability"]["hard_floor"]
+                     and h["time"][i] >= now_iso and h["time"][i][:10] == today_str
+                     for i in range(len(h["time"])))
     word, limiter, day_score = verdict(
         float(viz[now_i]), float(viz_m[now_i]), float(work[now_i]),
-        float(sea_ok[now_i]), float(air_ok[now_i]), cfg)
+        float(sea_ok[now_i]), float(air_ok[now_i]), cfg,
+        float(light[now_i]), light_left)
     window = best_window(h, daily, viz, work, move, cfg, now_iso, light)
     days = daily_breakdown(h, daily, viz, viz_m, work, move, cfg, now_iso,
                            light, regimes)
@@ -1504,7 +1518,7 @@ def run(cfg, selftest=False):
     keep = slice(max(0, now_i - 24), min(len(h["time"]), now_i + 60))
     payload = {
         "generated": stamp,
-        "schema_version": 3,
+        "schema_version": 4,
         "region": cfg["region_name"],
         "bounds": [[bbox["lat_min"], bbox["lon_min"]],
                    [bbox["lat_max"], bbox["lon_max"]]],
