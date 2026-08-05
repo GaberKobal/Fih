@@ -178,7 +178,8 @@
     "min_width_cells": 3,
     "require_sea_connection": true,
     "min_shore_clearance_m": 60,
-    "min_sea_fraction": 0.5
+    "min_sea_fraction": 0.5,
+    "bathy_min_valid": 0.9
   },
   "repo_issue_url": "https://github.com/GaberKobal/Fih/issues/new"
 }

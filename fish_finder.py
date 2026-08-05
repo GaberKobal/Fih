@@ -136,7 +136,8 @@ def build_target_grid(bbox: dict, res_m: float):
     return lats, lons
 
 
-def regrid(src_lats, src_lons, src, dst_lats, dst_lons, fill=np.nan):
+def regrid(src_lats, src_lons, src, dst_lats, dst_lons, fill=np.nan,
+           min_valid=0.5):
     """Coordinate-aware resampling.
 
     The original resample_to_shape() used array-shape ratios, which silently
@@ -165,8 +166,12 @@ def regrid(src_lats, src_lons, src, dst_lats, dst_lons, fill=np.nan):
         (src_lats, src_lons), valid, bounds_error=False, fill_value=0.0
     )(pts).reshape(gy.shape)
 
+    # min_valid is how much of a target cell's neighbourhood must be real
+    # data. At 0.5 a cell straddling the coast still gets a water value, which
+    # pushes the shoreline about one cell (100 m) inland. Raise it for
+    # bathymetry so a partly-covered cell becomes nodata instead.
     out = np.full(gy.shape, fill, dtype=float)
-    ok = fm > 0.5
+    ok = fm > min_valid
     out[ok] = fv[ok] / fm[ok]
     return out
 
@@ -1160,7 +1165,7 @@ def mercator_y(lat_deg):
     return np.log(np.tan(math.pi / 4 + lat / 2))
 
 
-def write_overlay_png(score, lats, lons, path):
+def write_overlay_png(score, lats, lons, path, land=None):
     """Transparent PNG, rows resampled to equal Web Mercator spacing.
 
     Leaflet stretches an ImageOverlay linearly in Mercator y. A plate-carree
@@ -1173,10 +1178,22 @@ def write_overlay_png(score, lats, lons, path):
     ny = len(lats)
     y_edges = np.linspace(mercator_y(lats[0]), mercator_y(lats[-1]), ny)
     lat_merc = np.degrees(2 * np.arctan(np.exp(y_edges)) - math.pi / 2)
+    pts = None
     src = RegularGridInterpolator((lats, lons), score,
                                   bounds_error=False, fill_value=0.0)
     gy, gx = np.meshgrid(lat_merc, lons, indexing="ij")
-    resampled = src(np.stack([gy.ravel(), gx.ravel()], -1)).reshape(gy.shape)
+    pts = np.stack([gy.ravel(), gx.ravel()], -1)
+    resampled = src(pts).reshape(gy.shape)
+
+    # The Mercator resample interpolates linearly, so a cell straddling the
+    # coast picks up a fraction of the neighbouring water score and paints it
+    # onto the shore. At 100 m cells that is a visible smear of colour on land.
+    # Carry the land mask through with NEAREST sampling and force it clear.
+    if land is not None:
+        lm = RegularGridInterpolator((lats, lons), land.astype(float),
+                                     method="nearest",
+                                     bounds_error=False, fill_value=1.0)
+        resampled = np.where(lm(pts).reshape(gy.shape) > 0.5, 0.0, resampled)
 
     rgba = matplotlib.colormaps["viridis"](np.clip(resampled, 0, 1))
     # fade out weak cells rather than painting the whole box
@@ -1272,7 +1289,8 @@ def run(cfg, selftest=False):
                f"{bbox['lat_max']}_{cfg['grid_resolution_m']}")
         blats, blons, elev = fetch_emodnet_bathymetry(bbox, res_deg, key)
 
-    elev_g = regrid(blats, blons, elev, lats, lons)
+    elev_g = regrid(blats, blons, elev, lats, lons,
+                    min_valid=cfg.get("water", {}).get("bathy_min_valid", 0.9))
     nodata = ~np.isfinite(elev_g)
     land = nodata | (elev_g >= 0)
     if nodata.any():
@@ -1420,7 +1438,7 @@ def run(cfg, selftest=False):
         score_d = combine_score(terms_d, w_d, gates)
         score_d[land] = 0.0
         spots_d = find_spots(score_d, lats, lons, depth_m, terms_d, cfg)
-        write_overlay_png(score_d, lats, lons, OUT / f"score_d{di}.png")
+        write_overlay_png(score_d, lats, lons, OUT / f"score_d{di}.png", land)
         write_gpx(spots_d, OUT / f"spots_d{di}.gpx",
                   f"{cfg['region_name']} {day['date']}")
 
@@ -1438,7 +1456,7 @@ def run(cfg, selftest=False):
             smap[land] = 0.0
             ss = find_spots(smap, lats, lons, depth_m, terms_d, cfg, limit=sp_cap)
             write_overlay_png(smap, lats, lons,
-                              OUT / f"score_{sp['id']}_d{di}.png")
+                              OUT / f"score_{sp['id']}_d{di}.png", land)
             write_gpx(ss, OUT / f"spots_{sp['id']}_d{di}.gpx",
                       f"{sp.get('name_en', sp['common'])} {day['date']}")
             sp_out.append({
