@@ -183,11 +183,11 @@
   },
   "repo_issue_url": "https://github.com/GaberKobal/Fih/issues/new",
   "overlay": {
-    "_note": "supersample sharpens the 100 m grid for display only. alpha_floor_score hides water below that score entirely, so the map shows candidate spots rather than washing out the whole bay.",
-    "supersample": 2,
-    "alpha_floor_score": 0.35,
-    "alpha_full_score": 0.8,
-    "alpha_max": 0.85,
-    "palette_colors": 32
+    "_note": "Defaults reproduce the original appearance. Knobs if you want to change it: supersample 2 halves the block size at 4x the file size; raising alpha_floor_score hides low-scoring water so only candidate spots are painted.",
+    "supersample": 1,
+    "alpha_floor_score": 0.02,
+    "alpha_full_score": 0.55,
+    "alpha_max": 0.88,
+    "palette_colors": 64
   }
 }
