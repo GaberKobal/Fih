@@ -98,14 +98,6 @@
   /* ---- map ---- */
   #map{flex:1 1 auto; min-height:44vh; background:var(--abyss)}
   .leaflet-container{background:var(--abyss); font-family:var(--sans)}
-  /* The score raster is 100 m per pixel stretched over 39 km. Browsers
-     smooth on upscale, which drags water colour visibly onto the shore.
-     Nearest-neighbour keeps the coastline where the data puts it - blockier,
-     but a mark that reads as "in the water" actually is. */
-  .leaflet-image-layer{
-    image-rendering: pixelated;
-    image-rendering: crisp-edges;
-  }
   .leaflet-control-attribution{
     background:rgba(7,26,34,.82)!important; color:var(--sound)!important; font-size:9px
   }
