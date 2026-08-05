@@ -99,14 +99,10 @@
   /* ---- map ---- */
   #map{flex:1 1 auto; min-height:44vh; background:var(--abyss)}
   .leaflet-container{background:var(--abyss); font-family:var(--sans)}
-  /* The score raster is 100 m per pixel stretched over 39 km. Browsers
-     smooth on upscale, which drags water colour visibly onto the shore.
-     Nearest-neighbour keeps the coastline where the data puts it - blockier,
-     but a mark that reads as "in the water" actually is. */
-  .leaflet-image-layer{
-    image-rendering: pixelated;
-    image-rendering: crisp-edges;
-  }
+  /* Deliberately left smooth. Nearest-neighbour rendering keeps the
+     coastline exact but turns the map into a wall of blocks at dive zoom,
+     which is a worse trade. The land mask baked into the PNG means any
+     remaining bleed fades to transparent rather than sitting solid on shore. */
   .leaflet-control-attribution{
     background:rgba(7,26,34,.82)!important; color:var(--sound)!important; font-size:9px
   }
@@ -310,7 +306,7 @@
 // Bumped whenever the page needs a matching fish_finder.py, and vice versa.
 // The two files live in different folders and get uploaded separately, so a
 // mismatch is easy to create and was previously invisible.
-const PAGE_VERSION = 4;
+const PAGE_VERSION = 5;
 
 const $ = s => document.querySelector(s);
 const fmt = (n,d=1) => (n===null||n===undefined||Number.isNaN(n)) ? "–" : Number(n).toFixed(d);
