@@ -1,6 +1,6 @@
 {
- "generated": "2026-08-05T20:14:26+00:00",
- "schema_version": 3,
+ "generated": "2026-08-05T20:38:16+00:00",
+ "schema_version": 4,
  "region": "Novigrad, Istria",
  "bounds": [
   [
@@ -14,8 +14,8 @@
  ],
  "now": {
   "time": "2026-08-05T22:00",
-  "verdict": "go",
-  "limited_by": "nothing limiting",
+  "verdict": "not now",
+  "limited_by": "dark \u2014 no daylight",
   "score": 1.0,
   "visibility_m": 11.0,
   "wave_height_m": 0.04,
