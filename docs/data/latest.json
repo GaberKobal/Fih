@@ -1,5 +1,5 @@
 {
- "generated": "2026-08-05T16:58:21+00:00",
+ "generated": "2026-08-05T17:04:07+00:00",
  "region": "Novigrad, Istria",
  "bounds": [
   [
@@ -12,21 +12,21 @@
   ]
  ],
  "now": {
-  "time": "2026-08-05T18:00",
+  "time": "2026-08-05T19:00",
   "verdict": "go",
   "limited_by": "nothing limiting",
   "score": 0.72,
   "visibility_m": 10.5,
-  "wave_height_m": 0.06,
-  "wind_speed_kmh": 8.3,
-  "wind_from_deg": 304,
+  "wave_height_m": 0.04,
+  "wind_speed_kmh": 6.2,
+  "wind_from_deg": 324,
   "sea_temp_c": 29.2,
   "current_ms": 1.3,
   "wind_regime": "maestral",
-  "wind_from_deg_now": 304,
+  "wind_from_deg_now": 324,
   "wind_regime_note": "Summer afternoon thermal. Builds from midday and dies at dusk, so morning and evening stay workable.",
-  "sun_elevation_deg": 24.7,
-  "light": 0.85
+  "sun_elevation_deg": 14.2,
+  "light": 0.97
  },
  "best_window": {
   "start": "2026-08-06T18:00",
@@ -41,12 +41,12 @@
    "date": "2026-08-05",
    "is_today": true,
    "best": {
-    "start": "2026-08-05T18:00",
-    "end": "2026-08-05T20:00",
-    "score": 0.831,
+    "start": "2026-08-05T19:00",
+    "end": "2026-08-05T21:00",
+    "score": 0.584,
     "viz_m": 10.7,
-    "wave_m": 0.05,
-    "wind_kmh": 6.5
+    "wave_m": 0.04,
+    "wind_kmh": 4.2
    },
    "peak_hour": "2026-08-05T20:00",
    "peak_score": 0.897,
@@ -315,7 +315,7 @@
      "light": 0.85,
      "wind_regime": "maestral",
      "workable": true,
-     "past": false
+     "past": true
     },
     {
      "t": "2026-08-05T19:00",
@@ -388,11 +388,11 @@
      "past": false
     }
    ],
-   "wind_from_deg": 304,
+   "wind_from_deg": 324,
    "wind_regime": "maestral",
    "viz_m": 10.5,
    "sea_temp_c": 29.2,
-   "at": "2026-08-05T18:00",
+   "at": "2026-08-05T19:00",
    "spots": [
     {
      "lat": 45.183238,
@@ -431,6 +431,15 @@
      "shelter": 0.993
     },
     {
+     "lat": 45.354815,
+     "lon": 13.550765,
+     "score": 0.987,
+     "depth_m": 0.4,
+     "relief": 1.0,
+     "slope": 1.0,
+     "shelter": 0.963
+    },
+    {
      "lat": 45.244323,
      "lon": 13.598039,
      "score": 0.986,
@@ -449,12 +458,48 @@
      "shelter": 0.985
     },
     {
-     "lat": 45.35751,
-     "lon": 13.550765,
-     "score": 0.973,
-     "depth_m": 4.6,
+     "lat": 45.454527,
+     "lon": 13.51499,
+     "score": 0.965,
+     "depth_m": 3.8,
      "relief": 1.0,
-     "slope": 0.919,
+     "slope": 0.884,
+     "shelter": 0.978
+    },
+    {
+     "lat": 45.466206,
+     "lon": 13.511157,
+     "score": 0.963,
+     "depth_m": 0.3,
+     "relief": 1.0,
+     "slope": 1.0,
+     "shelter": 0.895
+    },
+    {
+     "lat": 45.27756,
+     "lon": 13.595484,
+     "score": 0.96,
+     "depth_m": 8.2,
+     "relief": 1.0,
+     "slope": 0.895,
+     "shelter": 0.955
+    },
+    {
+     "lat": 45.399731,
+     "lon": 13.534156,
+     "score": 0.958,
+     "depth_m": 3.4,
+     "relief": 1.0,
+     "slope": 0.854,
+     "shelter": 0.978
+    },
+    {
+     "lat": 45.218272,
+     "lon": 13.591651,
+     "score": 0.946,
+     "depth_m": 5.8,
+     "relief": 1.0,
+     "slope": 0.804,
      "shelter": 0.978
     },
     {
@@ -485,40 +530,40 @@
      "shelter": 0.993
     },
     {
-     "lat": 45.323374,
-     "lon": 13.550765,
-     "score": 0.925,
-     "depth_m": 2.6,
+     "lat": 45.379968,
+     "lon": 13.539266,
+     "score": 0.937,
+     "depth_m": 0.1,
      "relief": 1.0,
-     "slope": 0.737,
-     "shelter": 0.963
-    },
-    {
-     "lat": 45.280255,
-     "lon": 13.595484,
-     "score": 0.925,
-     "depth_m": 3.6,
-     "relief": 1.0,
-     "slope": 0.736,
-     "shelter": 0.963
-    },
-    {
-     "lat": 45.21917,
-     "lon": 13.590373,
-     "score": 0.907,
-     "depth_m": 7.5,
-     "relief": 1.0,
-     "slope": 0.637,
+     "slope": 0.766,
      "shelter": 0.978
     },
     {
-     "lat": 45.456324,
-     "lon": 13.512435,
-     "score": 0.905,
-     "depth_m": 3.7,
+     "lat": 45.370985,
+     "lon": 13.541822,
+     "score": 0.93,
+     "depth_m": 4.9,
      "relief": 1.0,
-     "slope": 0.62,
-     "shelter": 0.985
+     "slope": 0.737,
+     "shelter": 0.978
+    },
+    {
+     "lat": 45.323374,
+     "lon": 13.550765,
+     "score": 0.93,
+     "depth_m": 2.6,
+     "relief": 1.0,
+     "slope": 0.737,
+     "shelter": 0.978
+    },
+    {
+     "lat": 45.29912,
+     "lon": 13.583985,
+     "score": 0.909,
+     "depth_m": 4.8,
+     "relief": 1.0,
+     "slope": 0.781,
+     "shelter": 0.887
     },
     {
      "lat": 45.192221,
@@ -530,13 +575,13 @@
      "shelter": 0.993
     },
     {
-     "lat": 45.300916,
-     "lon": 13.58654,
-     "score": 0.88,
-     "depth_m": 6.6,
+     "lat": 45.151797,
+     "lon": 13.598039,
+     "score": 0.878,
+     "depth_m": 4.8,
      "relief": 1.0,
-     "slope": 0.692,
-     "shelter": 0.865
+     "slope": 0.605,
+     "shelter": 0.917
     },
     {
      "lat": 45.42668,
@@ -548,58 +593,13 @@
      "shelter": 0.993
     },
     {
-     "lat": 45.395239,
-     "lon": 13.534156,
-     "score": 0.871,
-     "depth_m": 1.5,
-     "relief": 0.774,
-     "slope": 0.857,
-     "shelter": 0.993
-    },
-    {
-     "lat": 45.204797,
-     "lon": 13.583985,
-     "score": 0.843,
-     "depth_m": 9.8,
+     "lat": 45.203,
+     "lon": 13.585262,
+     "score": 0.861,
+     "depth_m": 9.5,
      "relief": 1.0,
-     "slope": 0.355,
-     "shelter": 0.985
-    },
-    {
-     "lat": 45.255102,
-     "lon": 13.577596,
-     "score": 0.836,
-     "depth_m": 0.8,
-     "relief": 1.0,
-     "slope": 0.315,
-     "shelter": 0.993
-    },
-    {
-     "lat": 45.156288,
-     "lon": 13.600594,
-     "score": 0.823,
-     "depth_m": 6.2,
-     "relief": 1.0,
-     "slope": 0.359,
-     "shelter": 0.925
-    },
-    {
-     "lat": 45.384459,
-     "lon": 13.534156,
-     "score": 0.809,
-     "depth_m": 0.2,
-     "relief": 0.756,
-     "slope": 0.626,
-     "shelter": 0.993
-    },
-    {
-     "lat": 45.372781,
-     "lon": 13.540544,
-     "score": 0.764,
-     "depth_m": 2.1,
-     "relief": 0.58,
-     "slope": 0.744,
-     "shelter": 0.993
+     "slope": 0.444,
+     "shelter": 0.978
     },
     {
      "lat": 45.498545,
@@ -611,15 +611,6 @@
      "shelter": 0.993
     },
     {
-     "lat": 45.466206,
-     "lon": 13.511157,
-     "score": 0.647,
-     "depth_m": 0.3,
-     "relief": 1.0,
-     "slope": 1.0,
-     "shelter": 0.0
-    },
-    {
      "lat": 45.230848,
      "lon": 13.596761,
      "score": 0.631,
@@ -627,15 +618,6 @@
      "relief": 1.0,
      "slope": 0.932,
      "shelter": 0.0
-    },
-    {
-     "lat": 45.291933,
-     "lon": 13.576319,
-     "score": 0.596,
-     "depth_m": 1.8,
-     "relief": 0.477,
-     "slope": 0.221,
-     "shelter": 0.985
     },
     {
      "lat": 45.34134,
@@ -662,6 +644,24 @@
      "depth_m": 13.2,
      "relief": 1.0,
      "slope": 0.693,
+     "shelter": 0.0
+    },
+    {
+     "lat": 45.447341,
+     "lon": 13.457495,
+     "score": 0.57,
+     "depth_m": 25.0,
+     "relief": 0.775,
+     "slope": 0.108,
+     "shelter": 0.64
+    },
+    {
+     "lat": 45.42129,
+     "lon": 13.511157,
+     "score": 0.547,
+     "depth_m": 11.1,
+     "relief": 1.0,
+     "slope": 0.573,
      "shelter": 0.0
     }
    ],
@@ -699,6 +699,15 @@
      "reopens": null,
      "spots": [
       {
+       "lat": 45.179644,
+       "lon": 13.599317,
+       "score": 0.989,
+       "depth_m": 4.1,
+       "relief": 1.0,
+       "slope": 1.0,
+       "shelter": 0.963
+      },
+      {
        "lat": 45.244323,
        "lon": 13.598039,
        "score": 0.983,
@@ -726,21 +735,30 @@
        "shelter": 0.985
       },
       {
-       "lat": 45.180543,
-       "lon": 13.599317,
-       "score": 0.97,
-       "depth_m": 4.4,
-       "relief": 1.0,
-       "slope": 0.95,
-       "shelter": 0.955
-      },
-      {
        "lat": 45.35751,
        "lon": 13.550765,
        "score": 0.966,
        "depth_m": 4.6,
        "relief": 1.0,
        "slope": 0.919,
+       "shelter": 0.978
+      },
+      {
+       "lat": 45.27756,
+       "lon": 13.595484,
+       "score": 0.952,
+       "depth_m": 8.2,
+       "relief": 1.0,
+       "slope": 0.895,
+       "shelter": 0.955
+      },
+      {
+       "lat": 45.218272,
+       "lon": 13.591651,
+       "score": 0.929,
+       "depth_m": 5.8,
+       "relief": 1.0,
+       "slope": 0.804,
        "shelter": 0.978
       },
       {
@@ -762,49 +780,31 @@
        "shelter": 0.978
       },
       {
-       "lat": 45.21917,
-       "lon": 13.590373,
-       "score": 0.874,
-       "depth_m": 7.5,
+       "lat": 45.400629,
+       "lon": 13.532878,
+       "score": 0.913,
+       "depth_m": 5.9,
        "relief": 1.0,
-       "slope": 0.637,
+       "slope": 0.755,
        "shelter": 0.978
       },
       {
-       "lat": 45.324272,
-       "lon": 13.549488,
-       "score": 0.869,
-       "depth_m": 6.2,
+       "lat": 45.455426,
+       "lon": 13.513713,
+       "score": 0.912,
+       "depth_m": 4.8,
        "relief": 1.0,
-       "slope": 0.623,
+       "slope": 0.754,
        "shelter": 0.978
       },
       {
-       "lat": 45.281153,
-       "lon": 13.594206,
-       "score": 0.863,
-       "depth_m": 10.9,
+       "lat": 45.370985,
+       "lon": 13.541822,
+       "score": 0.907,
+       "depth_m": 4.9,
        "relief": 1.0,
-       "slope": 0.605,
+       "slope": 0.737,
        "shelter": 0.978
-      },
-      {
-       "lat": 45.300916,
-       "lon": 13.58654,
-       "score": 0.858,
-       "depth_m": 6.6,
-       "relief": 1.0,
-       "slope": 0.692,
-       "shelter": 0.865
-      },
-      {
-       "lat": 45.313493,
-       "lon": 13.56993,
-       "score": 0.855,
-       "depth_m": 4.7,
-       "relief": 1.0,
-       "slope": 0.572,
-       "shelter": 0.985
       }
      ]
     },
@@ -845,6 +845,33 @@
        "shelter": 0.985
       },
       {
+       "lat": 45.27756,
+       "lon": 13.595484,
+       "score": 0.953,
+       "depth_m": 8.2,
+       "relief": 1.0,
+       "slope": 0.895,
+       "shelter": 0.955
+      },
+      {
+       "lat": 45.243424,
+       "lon": 13.598039,
+       "score": 0.944,
+       "depth_m": 5.1,
+       "relief": 1.0,
+       "slope": 0.843,
+       "shelter": 0.978
+      },
+      {
+       "lat": 45.218272,
+       "lon": 13.591651,
+       "score": 0.931,
+       "depth_m": 5.8,
+       "relief": 1.0,
+       "slope": 0.804,
+       "shelter": 0.978
+      },
+      {
        "lat": 45.261391,
        "lon": 13.578874,
        "score": 0.929,
@@ -872,76 +899,49 @@
        "shelter": 0.985
       },
       {
-       "lat": 45.184136,
-       "lon": 13.595484,
-       "score": 0.908,
-       "depth_m": 5.0,
+       "lat": 45.178746,
+       "lon": 13.598039,
+       "score": 0.922,
+       "depth_m": 4.9,
        "relief": 1.0,
-       "slope": 0.715,
-       "shelter": 0.993
+       "slope": 0.905,
+       "shelter": 0.955
       },
       {
-       "lat": 45.21917,
-       "lon": 13.590373,
-       "score": 0.878,
-       "depth_m": 7.5,
+       "lat": 45.400629,
+       "lon": 13.532878,
+       "score": 0.916,
+       "depth_m": 5.9,
        "relief": 1.0,
-       "slope": 0.637,
+       "slope": 0.755,
        "shelter": 0.978
       },
       {
-       "lat": 45.324272,
-       "lon": 13.549488,
-       "score": 0.874,
-       "depth_m": 6.2,
+       "lat": 45.472494,
+       "lon": 13.508602,
+       "score": 0.913,
+       "depth_m": 5.1,
        "relief": 1.0,
-       "slope": 0.623,
+       "slope": 0.747,
        "shelter": 0.978
       },
       {
-       "lat": 45.281153,
-       "lon": 13.594206,
-       "score": 0.868,
-       "depth_m": 10.9,
+       "lat": 45.300018,
+       "lon": 13.585262,
+       "score": 0.888,
+       "depth_m": 8.1,
        "relief": 1.0,
-       "slope": 0.605,
+       "slope": 0.739,
+       "shelter": 0.902
+      },
+      {
+       "lat": 45.371883,
+       "lon": 13.540544,
+       "score": 0.877,
+       "depth_m": 5.9,
+       "relief": 1.0,
+       "slope": 0.633,
        "shelter": 0.978
-      },
-      {
-       "lat": 45.300916,
-       "lon": 13.58654,
-       "score": 0.862,
-       "depth_m": 6.6,
-       "relief": 1.0,
-       "slope": 0.692,
-       "shelter": 0.865
-      },
-      {
-       "lat": 45.192221,
-       "lon": 13.582707,
-       "score": 0.858,
-       "depth_m": 6.1,
-       "relief": 1.0,
-       "slope": 0.558,
-       "shelter": 0.993
-      },
-      {
-       "lat": 45.313493,
-       "lon": 13.568653,
-       "score": 0.843,
-       "depth_m": 6.2,
-       "relief": 1.0,
-       "slope": 0.51,
-       "shelter": 0.993
-      },
-      {
-       "lat": 45.204797,
-       "lon": 13.583985,
-       "score": 0.791,
-       "depth_m": 9.8,
-       "relief": 1.0,
-       "slope": 0.355,
-       "shelter": 0.985
       }
      ]
     },
@@ -987,22 +987,49 @@
        "shelter": 0.978
       },
       {
-       "lat": 45.251509,
-       "lon": 13.587818,
-       "score": 0.816,
-       "depth_m": 12.6,
+       "lat": 45.247018,
+       "lon": 13.589095,
+       "score": 0.87,
+       "depth_m": 10.7,
        "relief": 1.0,
-       "slope": 0.337,
-       "shelter": 0.985
+       "slope": 0.578,
+       "shelter": 0.948
       },
       {
-       "lat": 45.170661,
-       "lon": 13.594206,
-       "score": 0.812,
-       "depth_m": 10.8,
+       "lat": 45.161678,
+       "lon": 13.599317,
+       "score": 0.832,
+       "depth_m": 11.0,
        "relief": 1.0,
-       "slope": 0.321,
-       "shelter": 0.985
+       "slope": 0.414,
+       "shelter": 0.97
+      },
+      {
+       "lat": 45.169763,
+       "lon": 13.595484,
+       "score": 0.832,
+       "depth_m": 10.4,
+       "relief": 1.0,
+       "slope": 0.404,
+       "shelter": 0.978
+      },
+      {
+       "lat": 45.218272,
+       "lon": 13.587818,
+       "score": 0.819,
+       "depth_m": 12.7,
+       "relief": 1.0,
+       "slope": 0.375,
+       "shelter": 0.963
+      },
+      {
+       "lat": 45.323374,
+       "lon": 13.546932,
+       "score": 0.812,
+       "depth_m": 10.5,
+       "relief": 1.0,
+       "slope": 0.332,
+       "shelter": 0.978
       },
       {
        "lat": 45.205695,
@@ -1014,31 +1041,22 @@
        "shelter": 0.993
       },
       {
-       "lat": 45.220068,
-       "lon": 13.587818,
-       "score": 0.79,
-       "depth_m": 11.0,
+       "lat": 45.188627,
+       "lon": 13.58654,
+       "score": 0.754,
+       "depth_m": 10.6,
        "relief": 1.0,
-       "slope": 0.24,
-       "shelter": 0.985
-      },
-      {
-       "lat": 45.16078,
-       "lon": 13.591651,
-       "score": 0.71,
-       "depth_m": 11.5,
-       "relief": 0.796,
-       "slope": 0.284,
+       "slope": 0.124,
        "shelter": 0.97
       },
       {
-       "lat": 45.188627,
-       "lon": 13.587818,
-       "score": 0.68,
-       "depth_m": 9.1,
-       "relief": 1.0,
-       "slope": 0.398,
-       "shelter": 0.963
+       "lat": 45.300916,
+       "lon": 13.578874,
+       "score": 0.688,
+       "depth_m": 9.5,
+       "relief": 0.971,
+       "slope": 0.275,
+       "shelter": 0.91
       },
       {
        "lat": 45.41051,
@@ -1059,31 +1077,13 @@
        "shelter": 0.0
       },
       {
-       "lat": 45.289238,
-       "lon": 13.568653,
-       "score": 0.596,
-       "depth_m": 10.2,
-       "relief": 0.984,
-       "slope": 0.641,
-       "shelter": 0.0
-      },
-      {
-       "lat": 45.264984,
-       "lon": 13.571208,
-       "score": 0.591,
-       "depth_m": 10.4,
+       "lat": 45.373679,
+       "lon": 13.532878,
+       "score": 0.613,
+       "depth_m": 11.5,
        "relief": 1.0,
-       "slope": 0.598,
-       "shelter": 0.0
-      },
-      {
-       "lat": 45.274865,
-       "lon": 13.563542,
-       "score": 0.588,
-       "depth_m": 10.1,
-       "relief": 1.0,
-       "slope": 0.587,
-       "shelter": 0.0
+       "slope": 0.526,
+       "shelter": 0.137
       }
      ]
     },
@@ -1129,6 +1129,33 @@
        "shelter": 0.985
       },
       {
+       "lat": 45.27756,
+       "lon": 13.595484,
+       "score": 0.946,
+       "depth_m": 8.2,
+       "relief": 1.0,
+       "slope": 0.895,
+       "shelter": 0.955
+      },
+      {
+       "lat": 45.243424,
+       "lon": 13.598039,
+       "score": 0.932,
+       "depth_m": 5.1,
+       "relief": 1.0,
+       "slope": 0.843,
+       "shelter": 0.978
+      },
+      {
+       "lat": 45.218272,
+       "lon": 13.591651,
+       "score": 0.916,
+       "depth_m": 5.8,
+       "relief": 1.0,
+       "slope": 0.804,
+       "shelter": 0.978
+      },
+      {
        "lat": 45.261391,
        "lon": 13.578874,
        "score": 0.914,
@@ -1156,76 +1183,49 @@
        "shelter": 0.985
       },
       {
-       "lat": 45.184136,
-       "lon": 13.595484,
-       "score": 0.886,
-       "depth_m": 5.0,
+       "lat": 45.178746,
+       "lon": 13.598039,
+       "score": 0.898,
+       "depth_m": 4.9,
        "relief": 1.0,
-       "slope": 0.715,
-       "shelter": 0.993
+       "slope": 0.905,
+       "shelter": 0.955
       },
       {
-       "lat": 45.21917,
-       "lon": 13.590373,
-       "score": 0.851,
-       "depth_m": 7.5,
+       "lat": 45.400629,
+       "lon": 13.532878,
+       "score": 0.897,
+       "depth_m": 5.9,
        "relief": 1.0,
-       "slope": 0.637,
+       "slope": 0.755,
        "shelter": 0.978
       },
       {
-       "lat": 45.324272,
-       "lon": 13.549488,
-       "score": 0.846,
-       "depth_m": 6.2,
+       "lat": 45.472494,
+       "lon": 13.508602,
+       "score": 0.894,
+       "depth_m": 5.1,
        "relief": 1.0,
-       "slope": 0.623,
+       "slope": 0.747,
        "shelter": 0.978
       },
       {
-       "lat": 45.300916,
-       "lon": 13.58654,
-       "score": 0.839,
-       "depth_m": 6.6,
+       "lat": 45.300018,
+       "lon": 13.585262,
+       "score": 0.869,
+       "depth_m": 8.1,
        "relief": 1.0,
-       "slope": 0.692,
-       "shelter": 0.865
+       "slope": 0.739,
+       "shelter": 0.902
       },
       {
-       "lat": 45.281153,
-       "lon": 13.594206,
-       "score": 0.839,
-       "depth_m": 10.9,
+       "lat": 45.371883,
+       "lon": 13.540544,
+       "score": 0.85,
+       "depth_m": 5.9,
        "relief": 1.0,
-       "slope": 0.605,
+       "slope": 0.633,
        "shelter": 0.978
-      },
-      {
-       "lat": 45.192221,
-       "lon": 13.582707,
-       "score": 0.825,
-       "depth_m": 6.1,
-       "relief": 1.0,
-       "slope": 0.558,
-       "shelter": 0.993
-      },
-      {
-       "lat": 45.313493,
-       "lon": 13.568653,
-       "score": 0.806,
-       "depth_m": 6.2,
-       "relief": 1.0,
-       "slope": 0.51,
-       "shelter": 0.993
-      },
-      {
-       "lat": 45.204797,
-       "lon": 13.583985,
-       "score": 0.743,
-       "depth_m": 9.8,
-       "relief": 1.0,
-       "slope": 0.355,
-       "shelter": 0.985
       }
      ]
     },
@@ -1266,6 +1266,15 @@
        "shelter": 0.985
       },
       {
+       "lat": 45.179644,
+       "lon": 13.599317,
+       "score": 0.989,
+       "depth_m": 4.1,
+       "relief": 1.0,
+       "slope": 1.0,
+       "shelter": 0.963
+      },
+      {
        "lat": 45.244323,
        "lon": 13.598039,
        "score": 0.981,
@@ -1273,15 +1282,6 @@
        "relief": 1.0,
        "slope": 0.961,
        "shelter": 0.985
-      },
-      {
-       "lat": 45.181441,
-       "lon": 13.599317,
-       "score": 0.976,
-       "depth_m": 3.1,
-       "relief": 1.0,
-       "slope": 0.967,
-       "shelter": 0.963
       },
       {
        "lat": 45.164373,
@@ -1311,57 +1311,57 @@
        "shelter": 0.978
       },
       {
+       "lat": 45.454527,
+       "lon": 13.51499,
+       "score": 0.95,
+       "depth_m": 3.8,
+       "relief": 1.0,
+       "slope": 0.884,
+       "shelter": 0.978
+      },
+      {
+       "lat": 45.27756,
+       "lon": 13.595484,
+       "score": 0.947,
+       "depth_m": 8.2,
+       "relief": 1.0,
+       "slope": 0.895,
+       "shelter": 0.955
+      },
+      {
+       "lat": 45.434765,
+       "lon": 13.517546,
+       "score": 0.945,
+       "depth_m": 3.0,
+       "relief": 1.0,
+       "slope": 0.926,
+       "shelter": 0.955
+      },
+      {
+       "lat": 45.399731,
+       "lon": 13.534156,
+       "score": 0.939,
+       "depth_m": 3.4,
+       "relief": 1.0,
+       "slope": 0.854,
+       "shelter": 0.978
+      },
+      {
+       "lat": 45.218272,
+       "lon": 13.591651,
+       "score": 0.92,
+       "depth_m": 5.8,
+       "relief": 1.0,
+       "slope": 0.804,
+       "shelter": 0.978
+      },
+      {
        "lat": 45.261391,
        "lon": 13.578874,
        "score": 0.917,
        "depth_m": 5.0,
        "relief": 1.0,
        "slope": 0.797,
-       "shelter": 0.978
-      },
-      {
-       "lat": 45.252407,
-       "lon": 13.591651,
-       "score": 0.912,
-       "depth_m": 8.7,
-       "relief": 1.0,
-       "slope": 0.783,
-       "shelter": 0.978
-      },
-      {
-       "lat": 45.280255,
-       "lon": 13.595484,
-       "score": 0.89,
-       "depth_m": 3.6,
-       "relief": 1.0,
-       "slope": 0.736,
-       "shelter": 0.963
-      },
-      {
-       "lat": 45.21917,
-       "lon": 13.590373,
-       "score": 0.858,
-       "depth_m": 7.5,
-       "relief": 1.0,
-       "slope": 0.637,
-       "shelter": 0.978
-      },
-      {
-       "lat": 45.456324,
-       "lon": 13.512435,
-       "score": 0.854,
-       "depth_m": 3.7,
-       "relief": 1.0,
-       "slope": 0.62,
-       "shelter": 0.985
-      },
-      {
-       "lat": 45.324272,
-       "lon": 13.549488,
-       "score": 0.853,
-       "depth_m": 6.2,
-       "relief": 1.0,
-       "slope": 0.623,
        "shelter": 0.978
       }
      ]
@@ -1403,6 +1403,15 @@
        "shelter": 0.978
       },
       {
+       "lat": 45.179644,
+       "lon": 13.599317,
+       "score": 0.989,
+       "depth_m": 4.1,
+       "relief": 1.0,
+       "slope": 1.0,
+       "shelter": 0.963
+      },
+      {
        "lat": 45.244323,
        "lon": 13.598039,
        "score": 0.98,
@@ -1419,15 +1428,6 @@
        "relief": 1.0,
        "slope": 0.951,
        "shelter": 0.993
-      },
-      {
-       "lat": 45.181441,
-       "lon": 13.599317,
-       "score": 0.976,
-       "depth_m": 3.1,
-       "relief": 1.0,
-       "slope": 0.967,
-       "shelter": 0.963
       },
       {
        "lat": 45.164373,
@@ -1457,48 +1457,48 @@
        "shelter": 0.978
       },
       {
+       "lat": 45.454527,
+       "lon": 13.51499,
+       "score": 0.949,
+       "depth_m": 3.8,
+       "relief": 1.0,
+       "slope": 0.884,
+       "shelter": 0.978
+      },
+      {
+       "lat": 45.27756,
+       "lon": 13.595484,
+       "score": 0.946,
+       "depth_m": 8.2,
+       "relief": 1.0,
+       "slope": 0.895,
+       "shelter": 0.955
+      },
+      {
+       "lat": 45.399731,
+       "lon": 13.534156,
+       "score": 0.937,
+       "depth_m": 3.4,
+       "relief": 1.0,
+       "slope": 0.854,
+       "shelter": 0.978
+      },
+      {
+       "lat": 45.218272,
+       "lon": 13.591651,
+       "score": 0.918,
+       "depth_m": 5.8,
+       "relief": 1.0,
+       "slope": 0.804,
+       "shelter": 0.978
+      },
+      {
        "lat": 45.261391,
        "lon": 13.578874,
        "score": 0.915,
        "depth_m": 5.0,
        "relief": 1.0,
        "slope": 0.797,
-       "shelter": 0.978
-      },
-      {
-       "lat": 45.252407,
-       "lon": 13.591651,
-       "score": 0.91,
-       "depth_m": 8.7,
-       "relief": 1.0,
-       "slope": 0.783,
-       "shelter": 0.978
-      },
-      {
-       "lat": 45.323374,
-       "lon": 13.550765,
-       "score": 0.888,
-       "depth_m": 2.6,
-       "relief": 1.0,
-       "slope": 0.737,
-       "shelter": 0.963
-      },
-      {
-       "lat": 45.280255,
-       "lon": 13.595484,
-       "score": 0.887,
-       "depth_m": 3.6,
-       "relief": 1.0,
-       "slope": 0.736,
-       "shelter": 0.963
-      },
-      {
-       "lat": 45.21917,
-       "lon": 13.590373,
-       "score": 0.853,
-       "depth_m": 7.5,
-       "relief": 1.0,
-       "slope": 0.637,
        "shelter": 0.978
       }
      ]
@@ -1541,6 +1541,15 @@
        "shelter": 0.985
       },
       {
+       "lat": 45.179644,
+       "lon": 13.599317,
+       "score": 0.989,
+       "depth_m": 4.1,
+       "relief": 1.0,
+       "slope": 1.0,
+       "shelter": 0.963
+      },
+      {
        "lat": 45.244323,
        "lon": 13.598039,
        "score": 0.986,
@@ -1557,15 +1566,6 @@
        "relief": 1.0,
        "slope": 0.946,
        "shelter": 0.985
-      },
-      {
-       "lat": 45.181441,
-       "lon": 13.599317,
-       "score": 0.98,
-       "depth_m": 3.1,
-       "relief": 1.0,
-       "slope": 0.967,
-       "shelter": 0.963
       },
       {
        "lat": 45.473392,
@@ -1586,57 +1586,57 @@
        "shelter": 0.978
       },
       {
+       "lat": 45.454527,
+       "lon": 13.51499,
+       "score": 0.964,
+       "depth_m": 3.8,
+       "relief": 1.0,
+       "slope": 0.884,
+       "shelter": 0.978
+      },
+      {
+       "lat": 45.27756,
+       "lon": 13.595484,
+       "score": 0.96,
+       "depth_m": 8.2,
+       "relief": 1.0,
+       "slope": 0.895,
+       "shelter": 0.955
+      },
+      {
+       "lat": 45.399731,
+       "lon": 13.534156,
+       "score": 0.956,
+       "depth_m": 3.4,
+       "relief": 1.0,
+       "slope": 0.854,
+       "shelter": 0.978
+      },
+      {
+       "lat": 45.434765,
+       "lon": 13.517546,
+       "score": 0.954,
+       "depth_m": 3.0,
+       "relief": 1.0,
+       "slope": 0.926,
+       "shelter": 0.955
+      },
+      {
+       "lat": 45.218272,
+       "lon": 13.591651,
+       "score": 0.944,
+       "depth_m": 5.8,
+       "relief": 1.0,
+       "slope": 0.804,
+       "shelter": 0.978
+      },
+      {
        "lat": 45.261391,
        "lon": 13.578874,
        "score": 0.942,
        "depth_m": 5.0,
        "relief": 1.0,
        "slope": 0.797,
-       "shelter": 0.978
-      },
-      {
-       "lat": 45.252407,
-       "lon": 13.591651,
-       "score": 0.938,
-       "depth_m": 8.7,
-       "relief": 1.0,
-       "slope": 0.783,
-       "shelter": 0.978
-      },
-      {
-       "lat": 45.280255,
-       "lon": 13.595484,
-       "score": 0.922,
-       "depth_m": 3.6,
-       "relief": 1.0,
-       "slope": 0.736,
-       "shelter": 0.963
-      },
-      {
-       "lat": 45.21917,
-       "lon": 13.590373,
-       "score": 0.902,
-       "depth_m": 7.5,
-       "relief": 1.0,
-       "slope": 0.637,
-       "shelter": 0.978
-      },
-      {
-       "lat": 45.456324,
-       "lon": 13.512435,
-       "score": 0.9,
-       "depth_m": 3.7,
-       "relief": 1.0,
-       "slope": 0.62,
-       "shelter": 0.985
-      },
-      {
-       "lat": 45.324272,
-       "lon": 13.549488,
-       "score": 0.898,
-       "depth_m": 6.2,
-       "relief": 1.0,
-       "slope": 0.623,
        "shelter": 0.978
       }
      ]
@@ -1679,6 +1679,15 @@
        "shelter": 0.985
       },
       {
+       "lat": 45.179644,
+       "lon": 13.599317,
+       "score": 0.989,
+       "depth_m": 4.1,
+       "relief": 1.0,
+       "slope": 1.0,
+       "shelter": 0.963
+      },
+      {
        "lat": 45.244323,
        "lon": 13.598039,
        "score": 0.981,
@@ -1686,15 +1695,6 @@
        "relief": 1.0,
        "slope": 0.961,
        "shelter": 0.985
-      },
-      {
-       "lat": 45.181441,
-       "lon": 13.599317,
-       "score": 0.976,
-       "depth_m": 3.1,
-       "relief": 1.0,
-       "slope": 0.967,
-       "shelter": 0.963
       },
       {
        "lat": 45.164373,
@@ -1724,57 +1724,57 @@
        "shelter": 0.978
       },
       {
+       "lat": 45.454527,
+       "lon": 13.51499,
+       "score": 0.949,
+       "depth_m": 3.8,
+       "relief": 1.0,
+       "slope": 0.884,
+       "shelter": 0.978
+      },
+      {
+       "lat": 45.27756,
+       "lon": 13.595484,
+       "score": 0.947,
+       "depth_m": 8.2,
+       "relief": 1.0,
+       "slope": 0.895,
+       "shelter": 0.955
+      },
+      {
+       "lat": 45.434765,
+       "lon": 13.517546,
+       "score": 0.945,
+       "depth_m": 3.0,
+       "relief": 1.0,
+       "slope": 0.926,
+       "shelter": 0.955
+      },
+      {
+       "lat": 45.399731,
+       "lon": 13.534156,
+       "score": 0.937,
+       "depth_m": 3.4,
+       "relief": 1.0,
+       "slope": 0.854,
+       "shelter": 0.978
+      },
+      {
+       "lat": 45.218272,
+       "lon": 13.591651,
+       "score": 0.918,
+       "depth_m": 5.8,
+       "relief": 1.0,
+       "slope": 0.804,
+       "shelter": 0.978
+      },
+      {
        "lat": 45.261391,
        "lon": 13.578874,
        "score": 0.916,
        "depth_m": 5.0,
        "relief": 1.0,
        "slope": 0.797,
-       "shelter": 0.978
-      },
-      {
-       "lat": 45.252407,
-       "lon": 13.591651,
-       "score": 0.91,
-       "depth_m": 8.7,
-       "relief": 1.0,
-       "slope": 0.783,
-       "shelter": 0.978
-      },
-      {
-       "lat": 45.280255,
-       "lon": 13.595484,
-       "score": 0.888,
-       "depth_m": 3.6,
-       "relief": 1.0,
-       "slope": 0.736,
-       "shelter": 0.963
-      },
-      {
-       "lat": 45.21917,
-       "lon": 13.590373,
-       "score": 0.854,
-       "depth_m": 7.5,
-       "relief": 1.0,
-       "slope": 0.637,
-       "shelter": 0.978
-      },
-      {
-       "lat": 45.456324,
-       "lon": 13.512435,
-       "score": 0.851,
-       "depth_m": 3.7,
-       "relief": 1.0,
-       "slope": 0.62,
-       "shelter": 0.985
-      },
-      {
-       "lat": 45.324272,
-       "lon": 13.549488,
-       "score": 0.849,
-       "depth_m": 6.2,
-       "relief": 1.0,
-       "slope": 0.623,
        "shelter": 0.978
       }
      ]
@@ -5286,7 +5286,6 @@
  "repo_issue_url": "https://github.com/GaberKobal/Fih/issues/new",
  "series": {
   "time": [
-   "2026-08-04T18:00",
    "2026-08-04T19:00",
    "2026-08-04T20:00",
    "2026-08-04T21:00",
@@ -5367,7 +5366,6 @@
   ],
   "visibility_m": [
    11.0,
-   11.0,
    10.5,
    11.0,
    11.0,
@@ -5447,7 +5445,6 @@
   ],
   "wave_height_m": [
    0.16,
-   0.16,
    0.14,
    0.14,
    0.12,
@@ -5526,7 +5523,6 @@
    0.26
   ],
   "wind_speed_kmh": [
-   7.2,
    3.8,
    3.1,
    1.8,
@@ -5682,11 +5678,9 @@
    0.0,
    0.0,
    0.0,
-   0.0,
    0.0
   ],
   "sea_level_m": [
-   -0.51,
    -0.59,
    -0.63,
    -0.62,
@@ -5767,7 +5761,6 @@
   ],
   "workability": [
    0.8,
-   0.8,
    0.72,
    0.95,
    0.85,
@@ -5846,7 +5839,6 @@
    0.67
   ],
   "light": [
-   0.84,
    0.97,
    1.0,
    0.0,
@@ -5926,7 +5918,6 @@
    0.0
   ],
   "wind_regime": [
-   "other",
    "other",
    "maestral",
    "tramontana",
@@ -6081,6 +6072,15 @@
    "shelter": 0.993
   },
   {
+   "lat": 45.354815,
+   "lon": 13.550765,
+   "score": 0.987,
+   "depth_m": 0.4,
+   "relief": 1.0,
+   "slope": 1.0,
+   "shelter": 0.963
+  },
+  {
    "lat": 45.244323,
    "lon": 13.598039,
    "score": 0.986,
@@ -6099,12 +6099,48 @@
    "shelter": 0.985
   },
   {
-   "lat": 45.35751,
-   "lon": 13.550765,
-   "score": 0.973,
-   "depth_m": 4.6,
+   "lat": 45.454527,
+   "lon": 13.51499,
+   "score": 0.965,
+   "depth_m": 3.8,
    "relief": 1.0,
-   "slope": 0.919,
+   "slope": 0.884,
+   "shelter": 0.978
+  },
+  {
+   "lat": 45.466206,
+   "lon": 13.511157,
+   "score": 0.963,
+   "depth_m": 0.3,
+   "relief": 1.0,
+   "slope": 1.0,
+   "shelter": 0.895
+  },
+  {
+   "lat": 45.27756,
+   "lon": 13.595484,
+   "score": 0.96,
+   "depth_m": 8.2,
+   "relief": 1.0,
+   "slope": 0.895,
+   "shelter": 0.955
+  },
+  {
+   "lat": 45.399731,
+   "lon": 13.534156,
+   "score": 0.958,
+   "depth_m": 3.4,
+   "relief": 1.0,
+   "slope": 0.854,
+   "shelter": 0.978
+  },
+  {
+   "lat": 45.218272,
+   "lon": 13.591651,
+   "score": 0.946,
+   "depth_m": 5.8,
+   "relief": 1.0,
+   "slope": 0.804,
    "shelter": 0.978
   },
   {
@@ -6135,40 +6171,40 @@
    "shelter": 0.993
   },
   {
-   "lat": 45.323374,
-   "lon": 13.550765,
-   "score": 0.925,
-   "depth_m": 2.6,
+   "lat": 45.379968,
+   "lon": 13.539266,
+   "score": 0.937,
+   "depth_m": 0.1,
    "relief": 1.0,
-   "slope": 0.737,
-   "shelter": 0.963
-  },
-  {
-   "lat": 45.280255,
-   "lon": 13.595484,
-   "score": 0.925,
-   "depth_m": 3.6,
-   "relief": 1.0,
-   "slope": 0.736,
-   "shelter": 0.963
-  },
-  {
-   "lat": 45.21917,
-   "lon": 13.590373,
-   "score": 0.907,
-   "depth_m": 7.5,
-   "relief": 1.0,
-   "slope": 0.637,
+   "slope": 0.766,
    "shelter": 0.978
   },
   {
-   "lat": 45.456324,
-   "lon": 13.512435,
-   "score": 0.905,
-   "depth_m": 3.7,
+   "lat": 45.370985,
+   "lon": 13.541822,
+   "score": 0.93,
+   "depth_m": 4.9,
    "relief": 1.0,
-   "slope": 0.62,
-   "shelter": 0.985
+   "slope": 0.737,
+   "shelter": 0.978
+  },
+  {
+   "lat": 45.323374,
+   "lon": 13.550765,
+   "score": 0.93,
+   "depth_m": 2.6,
+   "relief": 1.0,
+   "slope": 0.737,
+   "shelter": 0.978
+  },
+  {
+   "lat": 45.29912,
+   "lon": 13.583985,
+   "score": 0.909,
+   "depth_m": 4.8,
+   "relief": 1.0,
+   "slope": 0.781,
+   "shelter": 0.887
   },
   {
    "lat": 45.192221,
@@ -6180,13 +6216,13 @@
    "shelter": 0.993
   },
   {
-   "lat": 45.300916,
-   "lon": 13.58654,
-   "score": 0.88,
-   "depth_m": 6.6,
+   "lat": 45.151797,
+   "lon": 13.598039,
+   "score": 0.878,
+   "depth_m": 4.8,
    "relief": 1.0,
-   "slope": 0.692,
-   "shelter": 0.865
+   "slope": 0.605,
+   "shelter": 0.917
   },
   {
    "lat": 45.42668,
@@ -6198,58 +6234,13 @@
    "shelter": 0.993
   },
   {
-   "lat": 45.395239,
-   "lon": 13.534156,
-   "score": 0.871,
-   "depth_m": 1.5,
-   "relief": 0.774,
-   "slope": 0.857,
-   "shelter": 0.993
-  },
-  {
-   "lat": 45.204797,
-   "lon": 13.583985,
-   "score": 0.843,
-   "depth_m": 9.8,
+   "lat": 45.203,
+   "lon": 13.585262,
+   "score": 0.861,
+   "depth_m": 9.5,
    "relief": 1.0,
-   "slope": 0.355,
-   "shelter": 0.985
-  },
-  {
-   "lat": 45.255102,
-   "lon": 13.577596,
-   "score": 0.836,
-   "depth_m": 0.8,
-   "relief": 1.0,
-   "slope": 0.315,
-   "shelter": 0.993
-  },
-  {
-   "lat": 45.156288,
-   "lon": 13.600594,
-   "score": 0.823,
-   "depth_m": 6.2,
-   "relief": 1.0,
-   "slope": 0.359,
-   "shelter": 0.925
-  },
-  {
-   "lat": 45.384459,
-   "lon": 13.534156,
-   "score": 0.809,
-   "depth_m": 0.2,
-   "relief": 0.756,
-   "slope": 0.626,
-   "shelter": 0.993
-  },
-  {
-   "lat": 45.372781,
-   "lon": 13.540544,
-   "score": 0.764,
-   "depth_m": 2.1,
-   "relief": 0.58,
-   "slope": 0.744,
-   "shelter": 0.993
+   "slope": 0.444,
+   "shelter": 0.978
   },
   {
    "lat": 45.498545,
@@ -6261,15 +6252,6 @@
    "shelter": 0.993
   },
   {
-   "lat": 45.466206,
-   "lon": 13.511157,
-   "score": 0.647,
-   "depth_m": 0.3,
-   "relief": 1.0,
-   "slope": 1.0,
-   "shelter": 0.0
-  },
-  {
    "lat": 45.230848,
    "lon": 13.596761,
    "score": 0.631,
@@ -6277,15 +6259,6 @@
    "relief": 1.0,
    "slope": 0.932,
    "shelter": 0.0
-  },
-  {
-   "lat": 45.291933,
-   "lon": 13.576319,
-   "score": 0.596,
-   "depth_m": 1.8,
-   "relief": 0.477,
-   "slope": 0.221,
-   "shelter": 0.985
   },
   {
    "lat": 45.34134,
@@ -6312,6 +6285,24 @@
    "depth_m": 13.2,
    "relief": 1.0,
    "slope": 0.693,
+   "shelter": 0.0
+  },
+  {
+   "lat": 45.447341,
+   "lon": 13.457495,
+   "score": 0.57,
+   "depth_m": 25.0,
+   "relief": 0.775,
+   "slope": 0.108,
+   "shelter": 0.64
+  },
+  {
+   "lat": 45.42129,
+   "lon": 13.511157,
+   "score": 0.547,
+   "depth_m": 11.1,
+   "relief": 1.0,
+   "slope": 0.573,
    "shelter": 0.0
   }
  ],
@@ -6349,6 +6340,15 @@
    "reopens": null,
    "spots": [
     {
+     "lat": 45.179644,
+     "lon": 13.599317,
+     "score": 0.989,
+     "depth_m": 4.1,
+     "relief": 1.0,
+     "slope": 1.0,
+     "shelter": 0.963
+    },
+    {
      "lat": 45.244323,
      "lon": 13.598039,
      "score": 0.983,
@@ -6376,21 +6376,30 @@
      "shelter": 0.985
     },
     {
-     "lat": 45.180543,
-     "lon": 13.599317,
-     "score": 0.97,
-     "depth_m": 4.4,
-     "relief": 1.0,
-     "slope": 0.95,
-     "shelter": 0.955
-    },
-    {
      "lat": 45.35751,
      "lon": 13.550765,
      "score": 0.966,
      "depth_m": 4.6,
      "relief": 1.0,
      "slope": 0.919,
+     "shelter": 0.978
+    },
+    {
+     "lat": 45.27756,
+     "lon": 13.595484,
+     "score": 0.952,
+     "depth_m": 8.2,
+     "relief": 1.0,
+     "slope": 0.895,
+     "shelter": 0.955
+    },
+    {
+     "lat": 45.218272,
+     "lon": 13.591651,
+     "score": 0.929,
+     "depth_m": 5.8,
+     "relief": 1.0,
+     "slope": 0.804,
      "shelter": 0.978
     },
     {
@@ -6412,49 +6421,31 @@
      "shelter": 0.978
     },
     {
-     "lat": 45.21917,
-     "lon": 13.590373,
-     "score": 0.874,
-     "depth_m": 7.5,
+     "lat": 45.400629,
+     "lon": 13.532878,
+     "score": 0.913,
+     "depth_m": 5.9,
      "relief": 1.0,
-     "slope": 0.637,
+     "slope": 0.755,
      "shelter": 0.978
     },
     {
-     "lat": 45.324272,
-     "lon": 13.549488,
-     "score": 0.869,
-     "depth_m": 6.2,
+     "lat": 45.455426,
+     "lon": 13.513713,
+     "score": 0.912,
+     "depth_m": 4.8,
      "relief": 1.0,
-     "slope": 0.623,
+     "slope": 0.754,
      "shelter": 0.978
     },
     {
-     "lat": 45.281153,
-     "lon": 13.594206,
-     "score": 0.863,
-     "depth_m": 10.9,
+     "lat": 45.370985,
+     "lon": 13.541822,
+     "score": 0.907,
+     "depth_m": 4.9,
      "relief": 1.0,
-     "slope": 0.605,
+     "slope": 0.737,
      "shelter": 0.978
-    },
-    {
-     "lat": 45.300916,
-     "lon": 13.58654,
-     "score": 0.858,
-     "depth_m": 6.6,
-     "relief": 1.0,
-     "slope": 0.692,
-     "shelter": 0.865
-    },
-    {
-     "lat": 45.313493,
-     "lon": 13.56993,
-     "score": 0.855,
-     "depth_m": 4.7,
-     "relief": 1.0,
-     "slope": 0.572,
-     "shelter": 0.985
     }
    ]
   },
@@ -6495,6 +6486,33 @@
      "shelter": 0.985
     },
     {
+     "lat": 45.27756,
+     "lon": 13.595484,
+     "score": 0.953,
+     "depth_m": 8.2,
+     "relief": 1.0,
+     "slope": 0.895,
+     "shelter": 0.955
+    },
+    {
+     "lat": 45.243424,
+     "lon": 13.598039,
+     "score": 0.944,
+     "depth_m": 5.1,
+     "relief": 1.0,
+     "slope": 0.843,
+     "shelter": 0.978
+    },
+    {
+     "lat": 45.218272,
+     "lon": 13.591651,
+     "score": 0.931,
+     "depth_m": 5.8,
+     "relief": 1.0,
+     "slope": 0.804,
+     "shelter": 0.978
+    },
+    {
      "lat": 45.261391,
      "lon": 13.578874,
      "score": 0.929,
@@ -6522,76 +6540,49 @@
      "shelter": 0.985
     },
     {
-     "lat": 45.184136,
-     "lon": 13.595484,
-     "score": 0.908,
-     "depth_m": 5.0,
+     "lat": 45.178746,
+     "lon": 13.598039,
+     "score": 0.922,
+     "depth_m": 4.9,
      "relief": 1.0,
-     "slope": 0.715,
-     "shelter": 0.993
+     "slope": 0.905,
+     "shelter": 0.955
     },
     {
-     "lat": 45.21917,
-     "lon": 13.590373,
-     "score": 0.878,
-     "depth_m": 7.5,
+     "lat": 45.400629,
+     "lon": 13.532878,
+     "score": 0.916,
+     "depth_m": 5.9,
      "relief": 1.0,
-     "slope": 0.637,
+     "slope": 0.755,
      "shelter": 0.978
     },
     {
-     "lat": 45.324272,
-     "lon": 13.549488,
-     "score": 0.874,
-     "depth_m": 6.2,
+     "lat": 45.472494,
+     "lon": 13.508602,
+     "score": 0.913,
+     "depth_m": 5.1,
      "relief": 1.0,
-     "slope": 0.623,
+     "slope": 0.747,
      "shelter": 0.978
     },
     {
-     "lat": 45.281153,
-     "lon": 13.594206,
-     "score": 0.868,
-     "depth_m": 10.9,
+     "lat": 45.300018,
+     "lon": 13.585262,
+     "score": 0.888,
+     "depth_m": 8.1,
      "relief": 1.0,
-     "slope": 0.605,
+     "slope": 0.739,
+     "shelter": 0.902
+    },
+    {
+     "lat": 45.371883,
+     "lon": 13.540544,
+     "score": 0.877,
+     "depth_m": 5.9,
+     "relief": 1.0,
+     "slope": 0.633,
      "shelter": 0.978
-    },
-    {
-     "lat": 45.300916,
-     "lon": 13.58654,
-     "score": 0.862,
-     "depth_m": 6.6,
-     "relief": 1.0,
-     "slope": 0.692,
-     "shelter": 0.865
-    },
-    {
-     "lat": 45.192221,
-     "lon": 13.582707,
-     "score": 0.858,
-     "depth_m": 6.1,
-     "relief": 1.0,
-     "slope": 0.558,
-     "shelter": 0.993
-    },
-    {
-     "lat": 45.313493,
-     "lon": 13.568653,
-     "score": 0.843,
-     "depth_m": 6.2,
-     "relief": 1.0,
-     "slope": 0.51,
-     "shelter": 0.993
-    },
-    {
-     "lat": 45.204797,
-     "lon": 13.583985,
-     "score": 0.791,
-     "depth_m": 9.8,
-     "relief": 1.0,
-     "slope": 0.355,
-     "shelter": 0.985
     }
    ]
   },
@@ -6637,22 +6628,49 @@
      "shelter": 0.978
     },
     {
-     "lat": 45.251509,
-     "lon": 13.587818,
-     "score": 0.816,
-     "depth_m": 12.6,
+     "lat": 45.247018,
+     "lon": 13.589095,
+     "score": 0.87,
+     "depth_m": 10.7,
      "relief": 1.0,
-     "slope": 0.337,
-     "shelter": 0.985
+     "slope": 0.578,
+     "shelter": 0.948
     },
     {
-     "lat": 45.170661,
-     "lon": 13.594206,
-     "score": 0.812,
-     "depth_m": 10.8,
+     "lat": 45.161678,
+     "lon": 13.599317,
+     "score": 0.832,
+     "depth_m": 11.0,
      "relief": 1.0,
-     "slope": 0.321,
-     "shelter": 0.985
+     "slope": 0.414,
+     "shelter": 0.97
+    },
+    {
+     "lat": 45.169763,
+     "lon": 13.595484,
+     "score": 0.832,
+     "depth_m": 10.4,
+     "relief": 1.0,
+     "slope": 0.404,
+     "shelter": 0.978
+    },
+    {
+     "lat": 45.218272,
+     "lon": 13.587818,
+     "score": 0.819,
+     "depth_m": 12.7,
+     "relief": 1.0,
+     "slope": 0.375,
+     "shelter": 0.963
+    },
+    {
+     "lat": 45.323374,
+     "lon": 13.546932,
+     "score": 0.812,
+     "depth_m": 10.5,
+     "relief": 1.0,
+     "slope": 0.332,
+     "shelter": 0.978
     },
     {
      "lat": 45.205695,
@@ -6664,31 +6682,22 @@
      "shelter": 0.993
     },
     {
-     "lat": 45.220068,
-     "lon": 13.587818,
-     "score": 0.79,
-     "depth_m": 11.0,
+     "lat": 45.188627,
+     "lon": 13.58654,
+     "score": 0.754,
+     "depth_m": 10.6,
      "relief": 1.0,
-     "slope": 0.24,
-     "shelter": 0.985
-    },
-    {
-     "lat": 45.16078,
-     "lon": 13.591651,
-     "score": 0.71,
-     "depth_m": 11.5,
-     "relief": 0.796,
-     "slope": 0.284,
+     "slope": 0.124,
      "shelter": 0.97
     },
     {
-     "lat": 45.188627,
-     "lon": 13.587818,
-     "score": 0.68,
-     "depth_m": 9.1,
-     "relief": 1.0,
-     "slope": 0.398,
-     "shelter": 0.963
+     "lat": 45.300916,
+     "lon": 13.578874,
+     "score": 0.688,
+     "depth_m": 9.5,
+     "relief": 0.971,
+     "slope": 0.275,
+     "shelter": 0.91
     },
     {
      "lat": 45.41051,
@@ -6709,31 +6718,13 @@
      "shelter": 0.0
     },
     {
-     "lat": 45.289238,
-     "lon": 13.568653,
-     "score": 0.596,
-     "depth_m": 10.2,
-     "relief": 0.984,
-     "slope": 0.641,
-     "shelter": 0.0
-    },
-    {
-     "lat": 45.264984,
-     "lon": 13.571208,
-     "score": 0.591,
-     "depth_m": 10.4,
+     "lat": 45.373679,
+     "lon": 13.532878,
+     "score": 0.613,
+     "depth_m": 11.5,
      "relief": 1.0,
-     "slope": 0.598,
-     "shelter": 0.0
-    },
-    {
-     "lat": 45.274865,
-     "lon": 13.563542,
-     "score": 0.588,
-     "depth_m": 10.1,
-     "relief": 1.0,
-     "slope": 0.587,
-     "shelter": 0.0
+     "slope": 0.526,
+     "shelter": 0.137
     }
    ]
   },
@@ -6779,6 +6770,33 @@
      "shelter": 0.985
     },
     {
+     "lat": 45.27756,
+     "lon": 13.595484,
+     "score": 0.946,
+     "depth_m": 8.2,
+     "relief": 1.0,
+     "slope": 0.895,
+     "shelter": 0.955
+    },
+    {
+     "lat": 45.243424,
+     "lon": 13.598039,
+     "score": 0.932,
+     "depth_m": 5.1,
+     "relief": 1.0,
+     "slope": 0.843,
+     "shelter": 0.978
+    },
+    {
+     "lat": 45.218272,
+     "lon": 13.591651,
+     "score": 0.916,
+     "depth_m": 5.8,
+     "relief": 1.0,
+     "slope": 0.804,
+     "shelter": 0.978
+    },
+    {
      "lat": 45.261391,
      "lon": 13.578874,
      "score": 0.914,
@@ -6806,76 +6824,49 @@
      "shelter": 0.985
     },
     {
-     "lat": 45.184136,
-     "lon": 13.595484,
-     "score": 0.886,
-     "depth_m": 5.0,
+     "lat": 45.178746,
+     "lon": 13.598039,
+     "score": 0.898,
+     "depth_m": 4.9,
      "relief": 1.0,
-     "slope": 0.715,
-     "shelter": 0.993
+     "slope": 0.905,
+     "shelter": 0.955
     },
     {
-     "lat": 45.21917,
-     "lon": 13.590373,
-     "score": 0.851,
-     "depth_m": 7.5,
+     "lat": 45.400629,
+     "lon": 13.532878,
+     "score": 0.897,
+     "depth_m": 5.9,
      "relief": 1.0,
-     "slope": 0.637,
+     "slope": 0.755,
      "shelter": 0.978
     },
     {
-     "lat": 45.324272,
-     "lon": 13.549488,
-     "score": 0.846,
-     "depth_m": 6.2,
+     "lat": 45.472494,
+     "lon": 13.508602,
+     "score": 0.894,
+     "depth_m": 5.1,
      "relief": 1.0,
-     "slope": 0.623,
+     "slope": 0.747,
      "shelter": 0.978
     },
     {
-     "lat": 45.300916,
-     "lon": 13.58654,
-     "score": 0.839,
-     "depth_m": 6.6,
+     "lat": 45.300018,
+     "lon": 13.585262,
+     "score": 0.869,
+     "depth_m": 8.1,
      "relief": 1.0,
-     "slope": 0.692,
-     "shelter": 0.865
+     "slope": 0.739,
+     "shelter": 0.902
     },
     {
-     "lat": 45.281153,
-     "lon": 13.594206,
-     "score": 0.839,
-     "depth_m": 10.9,
+     "lat": 45.371883,
+     "lon": 13.540544,
+     "score": 0.85,
+     "depth_m": 5.9,
      "relief": 1.0,
-     "slope": 0.605,
+     "slope": 0.633,
      "shelter": 0.978
-    },
-    {
-     "lat": 45.192221,
-     "lon": 13.582707,
-     "score": 0.825,
-     "depth_m": 6.1,
-     "relief": 1.0,
-     "slope": 0.558,
-     "shelter": 0.993
-    },
-    {
-     "lat": 45.313493,
-     "lon": 13.568653,
-     "score": 0.806,
-     "depth_m": 6.2,
-     "relief": 1.0,
-     "slope": 0.51,
-     "shelter": 0.993
-    },
-    {
-     "lat": 45.204797,
-     "lon": 13.583985,
-     "score": 0.743,
-     "depth_m": 9.8,
-     "relief": 1.0,
-     "slope": 0.355,
-     "shelter": 0.985
     }
    ]
   },
@@ -6916,6 +6907,15 @@
      "shelter": 0.985
     },
     {
+     "lat": 45.179644,
+     "lon": 13.599317,
+     "score": 0.989,
+     "depth_m": 4.1,
+     "relief": 1.0,
+     "slope": 1.0,
+     "shelter": 0.963
+    },
+    {
      "lat": 45.244323,
      "lon": 13.598039,
      "score": 0.981,
@@ -6923,15 +6923,6 @@
      "relief": 1.0,
      "slope": 0.961,
      "shelter": 0.985
-    },
-    {
-     "lat": 45.181441,
-     "lon": 13.599317,
-     "score": 0.976,
-     "depth_m": 3.1,
-     "relief": 1.0,
-     "slope": 0.967,
-     "shelter": 0.963
     },
     {
      "lat": 45.164373,
@@ -6961,57 +6952,57 @@
      "shelter": 0.978
     },
     {
+     "lat": 45.454527,
+     "lon": 13.51499,
+     "score": 0.95,
+     "depth_m": 3.8,
+     "relief": 1.0,
+     "slope": 0.884,
+     "shelter": 0.978
+    },
+    {
+     "lat": 45.27756,
+     "lon": 13.595484,
+     "score": 0.947,
+     "depth_m": 8.2,
+     "relief": 1.0,
+     "slope": 0.895,
+     "shelter": 0.955
+    },
+    {
+     "lat": 45.434765,
+     "lon": 13.517546,
+     "score": 0.945,
+     "depth_m": 3.0,
+     "relief": 1.0,
+     "slope": 0.926,
+     "shelter": 0.955
+    },
+    {
+     "lat": 45.399731,
+     "lon": 13.534156,
+     "score": 0.939,
+     "depth_m": 3.4,
+     "relief": 1.0,
+     "slope": 0.854,
+     "shelter": 0.978
+    },
+    {
+     "lat": 45.218272,
+     "lon": 13.591651,
+     "score": 0.92,
+     "depth_m": 5.8,
+     "relief": 1.0,
+     "slope": 0.804,
+     "shelter": 0.978
+    },
+    {
      "lat": 45.261391,
      "lon": 13.578874,
      "score": 0.917,
      "depth_m": 5.0,
      "relief": 1.0,
      "slope": 0.797,
-     "shelter": 0.978
-    },
-    {
-     "lat": 45.252407,
-     "lon": 13.591651,
-     "score": 0.912,
-     "depth_m": 8.7,
-     "relief": 1.0,
-     "slope": 0.783,
-     "shelter": 0.978
-    },
-    {
-     "lat": 45.280255,
-     "lon": 13.595484,
-     "score": 0.89,
-     "depth_m": 3.6,
-     "relief": 1.0,
-     "slope": 0.736,
-     "shelter": 0.963
-    },
-    {
-     "lat": 45.21917,
-     "lon": 13.590373,
-     "score": 0.858,
-     "depth_m": 7.5,
-     "relief": 1.0,
-     "slope": 0.637,
-     "shelter": 0.978
-    },
-    {
-     "lat": 45.456324,
-     "lon": 13.512435,
-     "score": 0.854,
-     "depth_m": 3.7,
-     "relief": 1.0,
-     "slope": 0.62,
-     "shelter": 0.985
-    },
-    {
-     "lat": 45.324272,
-     "lon": 13.549488,
-     "score": 0.853,
-     "depth_m": 6.2,
-     "relief": 1.0,
-     "slope": 0.623,
      "shelter": 0.978
     }
    ]
@@ -7053,6 +7044,15 @@
      "shelter": 0.978
     },
     {
+     "lat": 45.179644,
+     "lon": 13.599317,
+     "score": 0.989,
+     "depth_m": 4.1,
+     "relief": 1.0,
+     "slope": 1.0,
+     "shelter": 0.963
+    },
+    {
      "lat": 45.244323,
      "lon": 13.598039,
      "score": 0.98,
@@ -7069,15 +7069,6 @@
      "relief": 1.0,
      "slope": 0.951,
      "shelter": 0.993
-    },
-    {
-     "lat": 45.181441,
-     "lon": 13.599317,
-     "score": 0.976,
-     "depth_m": 3.1,
-     "relief": 1.0,
-     "slope": 0.967,
-     "shelter": 0.963
     },
     {
      "lat": 45.164373,
@@ -7107,48 +7098,48 @@
      "shelter": 0.978
     },
     {
+     "lat": 45.454527,
+     "lon": 13.51499,
+     "score": 0.949,
+     "depth_m": 3.8,
+     "relief": 1.0,
+     "slope": 0.884,
+     "shelter": 0.978
+    },
+    {
+     "lat": 45.27756,
+     "lon": 13.595484,
+     "score": 0.946,
+     "depth_m": 8.2,
+     "relief": 1.0,
+     "slope": 0.895,
+     "shelter": 0.955
+    },
+    {
+     "lat": 45.399731,
+     "lon": 13.534156,
+     "score": 0.937,
+     "depth_m": 3.4,
+     "relief": 1.0,
+     "slope": 0.854,
+     "shelter": 0.978
+    },
+    {
+     "lat": 45.218272,
+     "lon": 13.591651,
+     "score": 0.918,
+     "depth_m": 5.8,
+     "relief": 1.0,
+     "slope": 0.804,
+     "shelter": 0.978
+    },
+    {
      "lat": 45.261391,
      "lon": 13.578874,
      "score": 0.915,
      "depth_m": 5.0,
      "relief": 1.0,
      "slope": 0.797,
-     "shelter": 0.978
-    },
-    {
-     "lat": 45.252407,
-     "lon": 13.591651,
-     "score": 0.91,
-     "depth_m": 8.7,
-     "relief": 1.0,
-     "slope": 0.783,
-     "shelter": 0.978
-    },
-    {
-     "lat": 45.323374,
-     "lon": 13.550765,
-     "score": 0.888,
-     "depth_m": 2.6,
-     "relief": 1.0,
-     "slope": 0.737,
-     "shelter": 0.963
-    },
-    {
-     "lat": 45.280255,
-     "lon": 13.595484,
-     "score": 0.887,
-     "depth_m": 3.6,
-     "relief": 1.0,
-     "slope": 0.736,
-     "shelter": 0.963
-    },
-    {
-     "lat": 45.21917,
-     "lon": 13.590373,
-     "score": 0.853,
-     "depth_m": 7.5,
-     "relief": 1.0,
-     "slope": 0.637,
      "shelter": 0.978
     }
    ]
@@ -7191,6 +7182,15 @@
      "shelter": 0.985
     },
     {
+     "lat": 45.179644,
+     "lon": 13.599317,
+     "score": 0.989,
+     "depth_m": 4.1,
+     "relief": 1.0,
+     "slope": 1.0,
+     "shelter": 0.963
+    },
+    {
      "lat": 45.244323,
      "lon": 13.598039,
      "score": 0.986,
@@ -7207,15 +7207,6 @@
      "relief": 1.0,
      "slope": 0.946,
      "shelter": 0.985
-    },
-    {
-     "lat": 45.181441,
-     "lon": 13.599317,
-     "score": 0.98,
-     "depth_m": 3.1,
-     "relief": 1.0,
-     "slope": 0.967,
-     "shelter": 0.963
     },
     {
      "lat": 45.473392,
@@ -7236,57 +7227,57 @@
      "shelter": 0.978
     },
     {
+     "lat": 45.454527,
+     "lon": 13.51499,
+     "score": 0.964,
+     "depth_m": 3.8,
+     "relief": 1.0,
+     "slope": 0.884,
+     "shelter": 0.978
+    },
+    {
+     "lat": 45.27756,
+     "lon": 13.595484,
+     "score": 0.96,
+     "depth_m": 8.2,
+     "relief": 1.0,
+     "slope": 0.895,
+     "shelter": 0.955
+    },
+    {
+     "lat": 45.399731,
+     "lon": 13.534156,
+     "score": 0.956,
+     "depth_m": 3.4,
+     "relief": 1.0,
+     "slope": 0.854,
+     "shelter": 0.978
+    },
+    {
+     "lat": 45.434765,
+     "lon": 13.517546,
+     "score": 0.954,
+     "depth_m": 3.0,
+     "relief": 1.0,
+     "slope": 0.926,
+     "shelter": 0.955
+    },
+    {
+     "lat": 45.218272,
+     "lon": 13.591651,
+     "score": 0.944,
+     "depth_m": 5.8,
+     "relief": 1.0,
+     "slope": 0.804,
+     "shelter": 0.978
+    },
+    {
      "lat": 45.261391,
      "lon": 13.578874,
      "score": 0.942,
      "depth_m": 5.0,
      "relief": 1.0,
      "slope": 0.797,
-     "shelter": 0.978
-    },
-    {
-     "lat": 45.252407,
-     "lon": 13.591651,
-     "score": 0.938,
-     "depth_m": 8.7,
-     "relief": 1.0,
-     "slope": 0.783,
-     "shelter": 0.978
-    },
-    {
-     "lat": 45.280255,
-     "lon": 13.595484,
-     "score": 0.922,
-     "depth_m": 3.6,
-     "relief": 1.0,
-     "slope": 0.736,
-     "shelter": 0.963
-    },
-    {
-     "lat": 45.21917,
-     "lon": 13.590373,
-     "score": 0.902,
-     "depth_m": 7.5,
-     "relief": 1.0,
-     "slope": 0.637,
-     "shelter": 0.978
-    },
-    {
-     "lat": 45.456324,
-     "lon": 13.512435,
-     "score": 0.9,
-     "depth_m": 3.7,
-     "relief": 1.0,
-     "slope": 0.62,
-     "shelter": 0.985
-    },
-    {
-     "lat": 45.324272,
-     "lon": 13.549488,
-     "score": 0.898,
-     "depth_m": 6.2,
-     "relief": 1.0,
-     "slope": 0.623,
      "shelter": 0.978
     }
    ]
@@ -7329,6 +7320,15 @@
      "shelter": 0.985
     },
     {
+     "lat": 45.179644,
+     "lon": 13.599317,
+     "score": 0.989,
+     "depth_m": 4.1,
+     "relief": 1.0,
+     "slope": 1.0,
+     "shelter": 0.963
+    },
+    {
      "lat": 45.244323,
      "lon": 13.598039,
      "score": 0.981,
@@ -7336,15 +7336,6 @@
      "relief": 1.0,
      "slope": 0.961,
      "shelter": 0.985
-    },
-    {
-     "lat": 45.181441,
-     "lon": 13.599317,
-     "score": 0.976,
-     "depth_m": 3.1,
-     "relief": 1.0,
-     "slope": 0.967,
-     "shelter": 0.963
     },
     {
      "lat": 45.164373,
@@ -7374,57 +7365,57 @@
      "shelter": 0.978
     },
     {
+     "lat": 45.454527,
+     "lon": 13.51499,
+     "score": 0.949,
+     "depth_m": 3.8,
+     "relief": 1.0,
+     "slope": 0.884,
+     "shelter": 0.978
+    },
+    {
+     "lat": 45.27756,
+     "lon": 13.595484,
+     "score": 0.947,
+     "depth_m": 8.2,
+     "relief": 1.0,
+     "slope": 0.895,
+     "shelter": 0.955
+    },
+    {
+     "lat": 45.434765,
+     "lon": 13.517546,
+     "score": 0.945,
+     "depth_m": 3.0,
+     "relief": 1.0,
+     "slope": 0.926,
+     "shelter": 0.955
+    },
+    {
+     "lat": 45.399731,
+     "lon": 13.534156,
+     "score": 0.937,
+     "depth_m": 3.4,
+     "relief": 1.0,
+     "slope": 0.854,
+     "shelter": 0.978
+    },
+    {
+     "lat": 45.218272,
+     "lon": 13.591651,
+     "score": 0.918,
+     "depth_m": 5.8,
+     "relief": 1.0,
+     "slope": 0.804,
+     "shelter": 0.978
+    },
+    {
      "lat": 45.261391,
      "lon": 13.578874,
      "score": 0.916,
      "depth_m": 5.0,
      "relief": 1.0,
      "slope": 0.797,
-     "shelter": 0.978
-    },
-    {
-     "lat": 45.252407,
-     "lon": 13.591651,
-     "score": 0.91,
-     "depth_m": 8.7,
-     "relief": 1.0,
-     "slope": 0.783,
-     "shelter": 0.978
-    },
-    {
-     "lat": 45.280255,
-     "lon": 13.595484,
-     "score": 0.888,
-     "depth_m": 3.6,
-     "relief": 1.0,
-     "slope": 0.736,
-     "shelter": 0.963
-    },
-    {
-     "lat": 45.21917,
-     "lon": 13.590373,
-     "score": 0.854,
-     "depth_m": 7.5,
-     "relief": 1.0,
-     "slope": 0.637,
-     "shelter": 0.978
-    },
-    {
-     "lat": 45.456324,
-     "lon": 13.512435,
-     "score": 0.851,
-     "depth_m": 3.7,
-     "relief": 1.0,
-     "slope": 0.62,
-     "shelter": 0.985
-    },
-    {
-     "lat": 45.324272,
-     "lon": 13.549488,
-     "score": 0.849,
-     "depth_m": 6.2,
-     "relief": 1.0,
-     "slope": 0.623,
      "shelter": 0.978
     }
    ]
