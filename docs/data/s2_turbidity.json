@@ -15,5 +15,5 @@
  "k": 15.0,
  "method": "Nechad et al. 2009 single-band (B04 665 nm), SCL water pixels",
  "caveat": "Sen2Cor L2A leaves a large atmospheric residual over water, so a dark-pixel offset is subtracted and turbidity is RELATIVE to the clearest water in the scene. Spatial contrast is reliable; absolute metres are not. Tune k against the viz_m column in dive_log.csv.",
- "fetched": "2026-08-05T20:48:57+00:00"
+ "fetched": "2026-08-05T20:58:58+00:00"
 }
