@@ -57,7 +57,7 @@
     font-size:clamp(30px,10vw,44px); font-weight:300; letter-spacing:-.03em;
     line-height:1;
   }
-  #word[data-v="go"]{color:var(--kelp)}
+  #word[data-v="Go"]{color:var(--kelp)}
   #word[data-v="marginal"]{color:var(--buoy)}
   #word[data-v="poor"],#word[data-v="stay home"]{color:var(--flag)}
   #limit{font-size:13px; color:var(--sound); margin-top:6px}
@@ -280,8 +280,8 @@
         <div id="rowout"></div>
         <span class="wide" style="display:flex;gap:8px;flex-wrap:wrap">
           <button type="button" class="sp" id="f_here" style="min-width:0">Use my location</button>
-          <button type="button" class="sp" id="f_submit" style="min-width:0;border-color:var(--buoy)">Submit dive</button>
           <button type="button" class="sp" id="f_copy" style="min-width:0">Copy row</button>
+          <a class="sp" id="f_open" style="min-width:0;display:inline-block" target="_blank" rel="noopener">Open dive_log.csv</a>
         </span>
       </div>
     </details>
@@ -593,7 +593,8 @@ async function load(){
            Sentinel-2, ${when}: relative turbidity
            <b class="num" style="color:var(--buoy)">${T.median}</b>
            (spread <b class="num">${s2.contrast_fnu}</b>),
-           range <b class="num">${(s2.turbidity_relative_fnu||{}).p10}</b>–<b class="num">${(s2.turbidity_relative_fnu||{}).p90}</b>.
+           <b class="num">${Math.round((s2.dirty_fraction||0)*100)}%</b>
+           of deep water in the murkier half.
          </div>
          <div style="margin-top:5px;font-size:11.5px;color:var(--sound)">
            Relative, not metres. Sentinel-2 L2A leaves too much atmosphere over
@@ -657,33 +658,13 @@ $("#f_r1").addEventListener("click",()=>setResult(1));
 
 function buildRow(){
   const v=id=>($("#"+id).value||"").trim().replace(/,/g," ");
-  const modelViz = DATA ? Math.round(DATA.now.visibility_m) : "";
   const row=[v("f_date"),v("f_lat"),v("f_lon"),v("f_depth"),v("f_viz"),
-             modelViz,v("f_wind"),v("f_species"),logResult,v("f_notes")].join(",");
+             v("f_wind"),v("f_species"),logResult,v("f_notes")].join(",");
   $("#rowout").textContent=row;
   return row;
 }
 ["f_date","f_lat","f_lon","f_depth","f_viz","f_wind","f_species","f_notes"]
   .forEach(id=>$("#"+id).addEventListener("input",buildRow));
-
-// Submit by opening a prefilled GitHub issue. A workflow picks it up and
-// appends the row to dive_log.csv - so no write token is ever needed here.
-$("#f_submit").addEventListener("click",()=>{
-  const row = buildRow();
-  if(!$("#f_date").value || !$("#f_lat").value || !$("#f_viz").value){
-    $("#rowout").textContent = "Need at least a date, coordinates and visibility.";
-    return;
-  }
-  const base = (DATA && DATA.repo_issue_url) || "";
-  if(!base){ $("#rowout").textContent = "No repo_issue_url set in config.json."; return; }
-  const title = `Dive ${$("#f_date").value}` +
-                ($("#f_species").value ? ` - ${$("#f_species").value}` : "");
-  const body  = "Logged from the map.\n\n```csv\n" + row + "\n```\n";
-  const url = base + "?labels=dive-log"
-            + "&title=" + encodeURIComponent(title)
-            + "&body="  + encodeURIComponent(body);
-  window.open(url, "_blank", "noopener");
-});
 
 $("#f_copy").addEventListener("click",async()=>{
   const row=buildRow();
@@ -708,6 +689,8 @@ function initLog(d){
   $("#f_wind").value=d.now.wind_from_deg;
   $("#f_species").innerHTML=(d.species||[])
     .map(sp=>`<option value="${sp.id}">${sp.common.split(" /")[0]}</option>`).join("");
+  if(d.repo_edit_url) $("#f_open").href=d.repo_edit_url;
+  else $("#f_open").style.display="none";
   buildRow();
 }
 
