@@ -70,14 +70,40 @@ function parseAsciiGrid(text){
     elev.set(vals.subarray((ny - 1 - y) * nx, (ny - y) * nx), y * nx);
 
   const x0 = hdr.xllcorner ?? hdr.xllcenter, y0 = hdr.yllcorner ?? hdr.yllcenter;
-  return {nx, ny, elev, lon0: x0 + cs / 2, lat0: y0 + cs / 2, cell: cs};
+
+  // GMRT defaults to Mercator, so the grid can arrive in projected metres
+  // rather than degrees. Detect that from the magnitude of the corner and
+  // resample onto a uniform lat/lon grid, which is what everything downstream
+  // assumes.
+  if(Math.abs(x0) > 360){
+    const R = 20037508.34;
+    const toLon = x => x / R * 180;
+    const toLat = y => Math.atan(Math.exp(y / R * Math.PI)) * 360 / Math.PI - 90;
+    const latS = toLat(y0), latN = toLat(y0 + (ny - 1) * cs);
+    const lonW = toLon(x0), lonE = toLon(x0 + (nx - 1) * cs);
+    const cellDeg = (latN - latS) / (ny - 1);
+    const out = new Float32Array(nx * ny);
+    for(let j = 0; j < ny; j++){
+      const lat = latS + j * cellDeg;
+      const my = Math.log(Math.tan(Math.PI / 4 + lat * Math.PI / 360)) * R / Math.PI;
+      const sy = (my - y0) / cs;
+      const y1 = Math.max(0, Math.min(ny - 1, Math.floor(sy)));
+      const y2 = Math.min(ny - 1, y1 + 1), f = sy - y1;
+      for(let i = 0; i < nx; i++)
+        out[j * nx + i] = elev[y1 * nx + i] * (1 - f) + elev[y2 * nx + i] * f;
+    }
+    return {nx, ny, elev: out, lon0: lonW, lat0: latS, cell: cellDeg,
+            cellLon: (lonE - lonW) / (nx - 1), projected: true};
+  }
+  return {nx, ny, elev, lon0: x0 + cs / 2, lat0: y0 + cs / 2, cell: cs,
+          cellLon: cs, projected: false};
 }
 
 export async function fetchBathymetry(box, opts = {}){
   const q = new URLSearchParams({
     north: box.lat_max.toFixed(5), south: box.lat_min.toFixed(5),
     west: box.lon_min.toFixed(5), east: box.lon_max.toFixed(5),
-    layer: "topo", format: "arcascii",
+    layer: "topo", format: "esriascii",
     resolution: opts.resolution || "high",
   });
   const url = `${GMRT}?${q}`;
@@ -97,7 +123,9 @@ export async function fetchBathymetry(box, opts = {}){
     throw new Error("GMRT could not be reached from the browser. If this is a "
       + "CORS block there is no client-side fix — use a precomputed region.");
   }
-  if(!res.ok) throw new Error(`GMRT returned HTTP ${res.status}`);
+  if(!res.ok) throw new Error(
+    `GMRT returned HTTP ${res.status}. 404 means the request parameters are `
+    + `wrong; 413 means the box is too big — try a smaller radius.`);
   const text = await res.text();
   if(/<html|<\?xml/i.test(text.slice(0, 200)))
     throw new Error("GMRT returned an error page rather than a grid");
@@ -161,8 +189,10 @@ function openSea(land, nx, ny, depth){
 /** Static half: everything derivable from bathymetry alone. */
 export function buildTerrain(grid, o = defaults){
   const {nx, ny, elev, cell, lat0, lon0} = grid;
+  const cellLon = grid.cellLon ?? cell;
   const latMid = lat0 + (ny / 2) * cell;
-  const dyM = cell * 111320, dxM = cell * 111320 * Math.cos(latMid * Math.PI / 180);
+  const dyM = cell * 111320;
+  const dxM = cellLon * 111320 * Math.cos(latMid * Math.PI / 180);
 
   const land = new Uint8Array(nx * ny), depth = new Float32Array(nx * ny);
   for(let i = 0; i < nx * ny; i++){
@@ -207,7 +237,7 @@ export function buildTerrain(grid, o = defaults){
       Math.min(1, (d - o.depth_min_m) / Math.max(bLo - o.depth_min_m, 1e-6)),
       Math.min(1, (o.depth_max_m - d) / Math.max(o.depth_max_m - bHi, 1e-6))));
   }
-  return {...grid, land, depth, relief, slope, dfit, dyM, dxM, latMid};
+  return {...grid, cellLon, land, depth, relief, slope, dfit, dyM, dxM, latMid};
 }
 
 /** Dynamic half: fetch traced from wherever the wind and swell are today. */
@@ -215,7 +245,8 @@ export function shelterFrom(T, fromDeg, o = defaults){
   const {nx, ny, land, cell} = T;
   const th = ((fromDeg % 360) + 360) % 360 * Math.PI / 180;
   const stepLat = Math.cos(th) * o.fetch_step_m / 111320 / cell;
-  const stepLon = Math.sin(th) * o.fetch_step_m / (111320 * Math.cos(T.latMid*Math.PI/180)) / cell;
+  const stepLon = Math.sin(th) * o.fetch_step_m
+                / (111320 * Math.cos(T.latMid*Math.PI/180)) / (T.cellLon ?? cell);
   const maxSteps = Math.round(o.fetch_max_km * 1000 / o.fetch_step_m);
   const out = new Float32Array(nx * ny);
 
@@ -272,7 +303,7 @@ export function findSpots(T, s, o = defaults){
     if(out.some(p => Math.hypot(p.y - c.y, p.x - c.x) < sep)) continue;
     out.push({...c,
       lat: +(lat0 + c.y * cell).toFixed(5),
-      lon: +(lon0 + c.x * cell).toFixed(5),
+      lon: +(lon0 + c.x * (T.cellLon ?? cell)).toFixed(5),
       score: +c.v.toFixed(3),
       depth_m: +(depth[c.i] || 0).toFixed(1),
       relief: +T.relief[c.i].toFixed(3), slope: +T.slope[c.i].toFixed(3)});
@@ -306,5 +337,6 @@ export function toDataURL(T, s, alphaFloor = 0.35, alphaFull = 0.80){
 
 export function bounds(T){
   return [[T.lat0, T.lon0],
-          [T.lat0 + (T.ny - 1) * T.cell, T.lon0 + (T.nx - 1) * T.cell]];
+          [T.lat0 + (T.ny - 1) * T.cell,
+           T.lon0 + (T.nx - 1) * (T.cellLon ?? T.cell)]];
 }
