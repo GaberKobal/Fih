@@ -15,6 +15,7 @@ on:
       - "exclusions.geojson"
       - "docs/index.html"
       - "docs/anywhere.js"
+      - "docs/structure.js"
       - "docs/sw.js"
 
 # Pages is published from a build artifact rather than committed files. With
