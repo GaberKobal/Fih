@@ -171,6 +171,21 @@ def build_target_grid(bbox: dict, res_m: float):
     return lats, lons
 
 
+def raster_bounds(lats, lons):
+    """Geographic OUTER edges of a centre-sampled raster.
+
+    Scores and spot coordinates live at cell centres.  Leaflet ImageOverlay,
+    on the other hand, maps the outer pixels to its supplied bounds.  Giving
+    it the requested bbox shifts the whole image by roughly half a cell (and
+    can put the coastal score band visibly on land).  Publish the true raster
+    edges so the PNG, contours and point coordinates share one reference.
+    """
+    dlat = float(np.median(np.diff(lats)))
+    dlon = float(np.median(np.diff(lons)))
+    return [[float(lats[0] - dlat / 2), float(lons[0] - dlon / 2)],
+            [float(lats[-1] + dlat / 2), float(lons[-1] + dlon / 2)]]
+
+
 def regrid(src_lats, src_lons, src, dst_lats, dst_lons, fill=np.nan,
            min_valid=0.5):
     """Coordinate-aware resampling.
@@ -1761,6 +1776,7 @@ def run(cfg, selftest=False, out_dir=None):
             "(raster does not reach the bbox) - treated as unusable, not as land")
     land = open_sea_mask(land, cfg)
     depth_m = np.where(land, np.nan, -elev_g)
+    image_bounds = raster_bounds(lats, lons)
 
     water_frac = float((~land).mean())
     if water_frac < 0.05:
@@ -2017,7 +2033,7 @@ def run(cfg, selftest=False, out_dir=None):
     keep = slice(max(0, now_i - 24), min(len(h["time"]), now_i + 60))
     payload = {
         "generated": stamp,
-        "schema_version": 15,
+        "schema_version": 16,
         "region": cfg["region_name"],
         "region_id": cfg.get("region_id", "default"),
         "country": cfg.get("country", ""),
@@ -2031,8 +2047,7 @@ def run(cfg, selftest=False, out_dir=None):
         "has_species": bool(cfg.get("species_file")),
         "legal_pack": load_legal(cfg),
         "has_exclusions": bool(cfg.get("exclusions_file")),
-        "bounds": [[bbox["lat_min"], bbox["lon_min"]],
-                   [bbox["lat_max"], bbox["lon_max"]]],
+        "bounds": image_bounds,
         "now": {
             "time": now_iso,
             "verdict": word,
@@ -2182,7 +2197,7 @@ def main():
             model["legal"][f.stem] = json.loads(f.read_text())
         except Exception:
             pass
-    model["schema_version"] = 15
+    model["schema_version"] = 16
     mpath = ROOT / "docs" / "data" / "model.json"
     mpath.parent.mkdir(parents=True, exist_ok=True)
     mpath.write_text(json.dumps(model, indent=1))
@@ -2191,7 +2206,7 @@ def main():
     idx_path = ROOT / "docs" / "data" / "index.json"
     idx_path.parent.mkdir(parents=True, exist_ok=True)
     idx_path.write_text(json.dumps({
-        "schema_version": 15,
+        "schema_version": 16,
         "generated": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
         "regions": index,
         "failed": failed,
