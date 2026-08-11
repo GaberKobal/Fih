@@ -1140,13 +1140,10 @@ def best_window(h, daily, viz, work, move, cfg, now_iso, light=None):
     kern = np.ones(win) / win
     rolled = np.convolve(hourly, kern, mode="valid")
     if rolled.max() <= 0:
-        # Every future daylight hour was vetoed. Fall back to ignoring
-        # daylight rather than reporting "no window" and hiding the reason.
-        hourly = np.where(future, base * (work > cfg["workability"]["hard_floor"]), -1.0)
-        rolled = np.convolve(hourly, kern, mode="valid")
-    i = int(np.argmax(rolled))
-    if rolled[i] <= 0:
+        # Do not manufacture a night-time "best" window just because the
+        # weather is calm. A zero is useful: no daylight dive window remains.
         return None
+    i = int(np.argmax(rolled))
     return {
         "start": times[i],
         "end": times[i + win - 1],
@@ -1303,8 +1300,11 @@ def load_legal(cfg):
     Croatian closed season in Greek water is worse than showing nothing.
     """
     cc = (cfg.get("jurisdiction") or "").upper()
-    path = ROOT / "legal" / f"{cc}.json"
-    if not cc or not path.exists():
+    # Prefer the documented legal/ directory, but accept country packs at the
+    # repository root too. Older exports used the latter layout.
+    candidates = [ROOT / "legal" / f"{cc}.json", ROOT / f"{cc}.json"]
+    path = next((p for p in candidates if cc and p.exists()), None)
+    if path is None:
         log(f"legal: no rules pack for jurisdiction {cc or '(none)'} - "
             "sizes and seasons will not be shown")
         return {}
@@ -2017,7 +2017,7 @@ def run(cfg, selftest=False, out_dir=None):
     keep = slice(max(0, now_i - 24), min(len(h["time"]), now_i + 60))
     payload = {
         "generated": stamp,
-        "schema_version": 12,
+        "schema_version": 15,
         "region": cfg["region_name"],
         "region_id": cfg.get("region_id", "default"),
         "country": cfg.get("country", ""),
@@ -2171,12 +2171,18 @@ def main():
     except Exception:
         model["species"] = []
     model["legal"] = {}
-    for f in sorted((ROOT / "legal").glob("*.json")) if (ROOT / "legal").exists() else []:
+    legal_files = list((ROOT / "legal").glob("*.json")) if (ROOT / "legal").exists() else []
+    for r in regions:
+        cc = (r.get("jurisdiction") or "").upper()
+        root_pack = ROOT / f"{cc}.json"
+        if cc and root_pack.exists() and root_pack not in legal_files:
+            legal_files.append(root_pack)
+    for f in sorted(legal_files):
         try:
             model["legal"][f.stem] = json.loads(f.read_text())
         except Exception:
             pass
-    model["schema_version"] = 12
+    model["schema_version"] = 15
     mpath = ROOT / "docs" / "data" / "model.json"
     mpath.parent.mkdir(parents=True, exist_ok=True)
     mpath.write_text(json.dumps(model, indent=1))
@@ -2185,7 +2191,7 @@ def main():
     idx_path = ROOT / "docs" / "data" / "index.json"
     idx_path.parent.mkdir(parents=True, exist_ok=True)
     idx_path.write_text(json.dumps({
-        "schema_version": 12,
+        "schema_version": 15,
         "generated": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
         "regions": index,
         "failed": failed,

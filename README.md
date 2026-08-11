@@ -90,6 +90,7 @@ region-specific and do not travel:
 | `jurisdiction` | Picks `legal/<CC>.json`. Law does **not** travel, so this is separate from biology. |
 | `exclusions_file` | Protected areas, port limits. Only Novigrad has one. Every other region shows an amber warning telling you to check for yourself. |
 | `thermocline` | Monthly temperature drops estimated for the north Adriatic. Deeper, clearer regions need their own. |
+| `docs/region-species.json` | A five-species identification guide for every configured coast. It is display-only: it does not score a fish or claim it is legal to take. |
 
 The visibility model was tuned on a turbid shallow shelf and will understate
 clarity badly in Sardinia or the Cyclades. It is uncalibrated everywhere,
@@ -206,6 +207,10 @@ Mediterranean, so every Mediterranean region shares it.
 `legal/<CC>.json` holds **law**, one file per jurisdiction, merged in at run
 time by the region's `jurisdiction` field. A closed season in Croatia means
 nothing in Slovenia, so these are kept strictly apart.
+
+`docs/region-species.json` is a separate, display-only guide for every
+configured coast. It makes an unfamiliar region less opaque without turning a
+likely encounter into a model score or legal recommendation.
 
 ### Three tiers of confidence, and the app shows which is which
 
