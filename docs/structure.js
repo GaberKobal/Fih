@@ -69,7 +69,13 @@ function parseAsciiGrid(text){
   for(let y = 0; y < ny; y++)
     elev.set(vals.subarray((ny - 1 - y) * nx, (ny - y) * nx), y * nx);
 
-  const x0 = hdr.xllcorner ?? hdr.xllcenter, y0 = hdr.yllcorner ?? hdr.yllcenter;
+  // ArcInfo may give its lower-left value as a cell corner or centre.  The
+  // score array is cell-centred, so preserve that distinction before turning
+  // a projected grid back into WGS84.  Treating a corner as a centre shifts
+  // an otherwise correct 200 m grid half a cell onto the shore.
+  const xIsCorner = hdr.xllcorner != null, yIsCorner = hdr.yllcorner != null;
+  const x0 = (xIsCorner ? hdr.xllcorner : hdr.xllcenter) + (xIsCorner ? cs / 2 : 0);
+  const y0 = (yIsCorner ? hdr.yllcorner : hdr.yllcenter) + (yIsCorner ? cs / 2 : 0);
 
   // GMRT defaults to Mercator, so the grid can arrive in projected metres
   // rather than degrees. Detect that from the magnitude of the corner and
@@ -95,7 +101,7 @@ function parseAsciiGrid(text){
     return {nx, ny, elev: out, lon0: lonW, lat0: latS, cell: cellDeg,
             cellLon: (lonE - lonW) / (nx - 1), projected: true};
   }
-  return {nx, ny, elev, lon0: x0 + cs / 2, lat0: y0 + cs / 2, cell: cs,
+  return {nx, ny, elev, lon0: x0, lat0: y0, cell: cs,
           cellLon: cs, projected: false};
 }
 

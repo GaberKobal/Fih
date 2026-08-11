@@ -255,7 +255,7 @@ export async function forecastPoint(lat, lon, cfg, legalPack){
 
   const keep = (a) => a.slice(Math.max(0, nowI-24), Math.min(a.length, nowI+60));
   return {
-    schema_version: 15, point: true,
+    schema_version: 16, point: true,
     region: `${lat.toFixed(3)}, ${lon.toFixed(3)}`,
     generated: new Date().toISOString(),
     bounds: [[lat-0.001, lon-0.001],[lat+0.001, lon+0.001]],
