@@ -22,9 +22,12 @@ permissions:
   pages: write
   id-token: write
 
+# A queued forecast is a stale forecast, and two runs racing collide on the
+# Pages deployment API ("due to in progress deployment"). Let the newer run
+# supersede the older one rather than wait behind it.
 concurrency:
   group: pages
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   build:
