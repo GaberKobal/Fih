@@ -10,9 +10,12 @@ on:
       - "config.json"
       - "regions.json"
       - "species.json"
+      - "docs/region-species.json"
       - "weights.json"
       - "exclusions.geojson"
       - "docs/index.html"
+      - "docs/anywhere.js"
+      - "docs/sw.js"
 
 # Pages is published from a build artifact rather than committed files. With
 # several regions the output is a few MB a day, which would bloat the repo
