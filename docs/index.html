@@ -382,7 +382,7 @@
 // Bumped whenever the page needs a matching fish_finder.py, and vice versa.
 // The two files live in different folders and get uploaded separately, so a
 // mismatch is easy to create and was previously invisible.
-const PAGE_VERSION = 11;
+const PAGE_VERSION = 12;
 
 // Offline: the app must open in a car park with one bar.
 if("serviceWorker" in navigator)
@@ -402,10 +402,63 @@ L.tileLayer("https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png", {
 
 let overlay=null, marks=[], DATA=null, sel=null;   // sel: null = structure map
 let INDEX=null, REGION=null, contours=null, wreckLayer=null, meMarker=null;
+let MODEL=null, POINT=null, ptMarker=null;      // POINT set = "anywhere" mode
 let overlayOpacity=0.75;
 
 // Every data file now lives under its region's folder.
 const dataUrl = f => `data/${REGION}/${f}`;
+
+// ---- anywhere mode -------------------------------------------------------
+// Conditions do not need precomputing: Open-Meteo is global, free and
+// CORS-enabled, so the browser can score any point on Earth directly. Only
+// the structure map needs a configured region.
+function regionContaining(lat, lon){
+  return (INDEX?.regions || []).find(r => r.bbox
+    && lat >= r.bbox.lat_min && lat <= r.bbox.lat_max
+    && lon >= r.bbox.lon_min && lon <= r.bbox.lon_max);
+}
+
+function clearSpatial(){
+  [overlay, contours, wreckLayer].forEach(l => l && map.removeLayer(l));
+  overlay = contours = wreckLayer = null;
+}
+
+async function loadPoint(lat, lon){
+  POINT = {lat, lon};
+  location.hash = `@${lat.toFixed(4)},${lon.toFixed(4)}`;
+  clearSpatial();
+  if(ptMarker) map.removeLayer(ptMarker);
+  ptMarker = L.circleMarker([lat, lon], {radius:7, color:"#F2B138", weight:2,
+    fillColor:"#0E2E3A", fillOpacity:.9}).addTo(map);
+
+  $("#rgname").textContent = "Anywhere";
+  $("#rgsub").textContent  = `${lat.toFixed(4)}, ${lon.toFixed(4)} · tap the map to move`;
+  $("#err").style.display = "block";
+  $("#err").style.color = "var(--sound)";
+  $("#err").textContent = "Fetching conditions for this point…";
+
+  try{
+    if(!MODEL) MODEL = await (await fetch("data/model.json",{cache:"no-store"})).json();
+    const { forecastPoint } = await import("./anywhere.js");
+    const host = regionContaining(lat, lon);
+    // Species and legal rules only where a validated pack actually applies.
+    const cfg = {...MODEL};
+    const pack = host && host.has_species && host.jurisdiction
+               ? MODEL.legal[host.jurisdiction] : null;
+    if(!pack) cfg.species = [];
+    if(!host) cfg.wind_regimes = null;       // named winds are regional
+    const d = await forecastPoint(lat, lon, cfg, pack);
+    $("#err").style.display = "none";
+    DATA = d; sel = null;
+    renderAll(d, host);
+  }catch(e){
+    $("#err").style.color = "var(--flag)";
+    $("#err").textContent = "Could not get a forecast here: " + e.message
+      + ". Open-Meteo has no marine data for inland points.";
+  }
+}
+
+map.on("click", e => { if(POINT !== null) loadPoint(e.latlng.lat, e.latlng.lng); });
 
 // score -> colour ramp: red (bad) through amber to green (good)
 function ramp(q){
@@ -752,6 +805,21 @@ $("#locate").addEventListener("click",()=>{
 
 function renderRegions(){
   const host=$("#regionpanel"); host.innerHTML="";
+  const any=document.createElement("button");
+  any.type="button"; any.className="rg";
+  any.setAttribute("aria-current", String(POINT !== null));
+  any.innerHTML=`<span><span class="n">Anywhere in the world</span>
+      <span class="tag">tap the map · conditions only, no structure map</span></span>
+    <span class="w" style="color:var(--buoy)">point</span><span class="v"></span>`;
+  any.addEventListener("click",()=>{
+    $("#regionpanel").classList.remove("open");
+    $("#regionbar").setAttribute("aria-expanded","false");
+    $("#rgchev").textContent="change ▾";
+    const c=map.getCenter();
+    if(map.getZoom()>6) map.setZoom(6);
+    loadPoint(c.lat, c.lng);
+  });
+  host.appendChild(any);
   const byCountry={};
   INDEX.regions.forEach(r=>{ (byCountry[r.country||"—"] ||= []).push(r); });
 
@@ -777,6 +845,7 @@ function renderRegions(){
         <span class="w" style="color:${col}">${r.verdict}</span>
         <span class="v">${r.visibility_m} m</span>`;
       b.addEventListener("click",()=>{
+        POINT=null; if(ptMarker){map.removeLayer(ptMarker); ptMarker=null;}
         $("#regionpanel").classList.remove("open");
         $("#regionbar").setAttribute("aria-expanded","false");
         $("#rgchev").textContent="change ▾";
@@ -810,6 +879,10 @@ async function load(){
       return;
     }
     const want=(location.hash||"").replace("#","");
+    if(want.startsWith("@")){
+      const [la,lo]=want.slice(1).split(",").map(Number);
+      if(isFinite(la)&&isFinite(lo)){ map.setView([la,lo],9); await loadPoint(la,lo); return; }
+    }
     REGION = INDEX.regions.some(r=>r.id===want) ? want : INDEX.regions[0].id;
   }
   const meta = INDEX.regions.find(r=>r.id===REGION) || {};
@@ -846,6 +919,15 @@ async function load(){
   }
 
   const warn=[];
+  if(DATA && DATA.point){
+    const host = regionContaining(POINT.lat, POINT.lon);
+    warn.push("Point forecast — conditions only. There is no structure map here, "
+            + "because relief needs bathymetry that has to be precomputed per region."
+            + (host ? ` This point is inside <b>${host.name}</b>, which does have one — pick it from the region list.`
+                    : " Add this coast from the region builder to get one."));
+    if(!DATA.has_species)
+      warn.push("No species or legal rules for this point — no validated pack covers it.");
+  }
   if(DATA && DATA.relief_meaningful===false)
     warn.push(`Bathymetry here is ~${DATA.bathymetry_native_m} m per cell `
             + `(${DATA.bathymetry_provider}). A reef is smaller than one cell, so the `
@@ -883,6 +965,11 @@ async function load(){
       `some features (day switching, the submit button) will not work.`;
   }
 
+  renderAll(d, meta);
+}
+
+function renderAll(d, meta){
+  meta = meta || {};
   $("#region").textContent = d.region;
   const vw = d.now.verdict || "";
   $("#word").textContent = vw.charAt(0).toUpperCase() + vw.slice(1);
@@ -943,7 +1030,7 @@ async function load(){
   drawSpark(d.series, d.now_index);
 
   DATA=d;
-  if(!overlay) map.fitBounds(L.latLngBounds(d.bounds));
+  if(!d.point && !overlay) map.fitBounds(L.latLngBounds(d.bounds));
   addEventListener("hashchange",()=>{
     const want=(location.hash||"").replace("#","");
     if(want && want!==REGION && INDEX.regions.some(r=>r.id===want)){
@@ -952,8 +1039,7 @@ async function load(){
   },{once:true});
   renderSpecies(d);
   initLog(d);
-  loadContours();
-  loadWrecks();
+  if(!d.point){ loadContours(); loadWrecks(); }
   selectTarget(sel && (d.species||[]).some(x=>x.id===sel) ? sel : null);
 
   const t=new Date(d.generated);
