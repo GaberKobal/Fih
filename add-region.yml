@@ -1,0 +1,80 @@
+name: Add region
+
+# Same pattern as the dive log: the site cannot write to the repo, so
+# add-region.html opens a prefilled issue and this turns it into a commit.
+
+on:
+  issues:
+    types: [opened, labeled]
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  add:
+    if: contains(github.event.issue.labels.*.name, 'add-region')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Append region to regions.json
+        id: add
+        env:
+          BODY: ${{ github.event.issue.body }}
+        run: |
+          python3 <<'PY'
+          import json, os, pathlib, re, sys
+
+          m = re.search(r"```(?:json)?\s*\n(.*?)\n```", os.environ.get("BODY") or "", re.S)
+          if not m:
+              print("::error::no fenced JSON block in the issue body"); sys.exit(1)
+          try:
+              region = json.loads(m.group(1))
+          except json.JSONDecodeError as e:
+              print(f"::error::block is not valid JSON: {e}"); sys.exit(1)
+
+          for k in ("id", "name", "bbox"):
+              if not region.get(k):
+                  print(f"::error::missing required field {k}"); sys.exit(1)
+          b = region["bbox"]
+          if not (b["lon_min"] < b["lon_max"] and b["lat_min"] < b["lat_max"]):
+              print("::error::bbox corners are the wrong way round"); sys.exit(1)
+          if not (-180 <= b["lon_min"] <= 180 and -90 <= b["lat_min"] <= 90):
+              print("::error::bbox is off the planet"); sys.exit(1)
+
+          path = pathlib.Path("regions.json")
+          doc = json.loads(path.read_text())
+          if any(r["id"] == region["id"] for r in doc["regions"]):
+              print(f"::error::region id {region['id']} already exists"); sys.exit(1)
+
+          doc["regions"].append(region)
+          path.write_text(json.dumps(doc, indent=2, ensure_ascii=False) + "\n")
+          print(f"added {region['id']}: {region['name']}")
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              f.write(f"id={region['id']}\nname={region['name']}\n"
+                      f"total={len(doc['regions'])}\n")
+          PY
+
+      - name: Commit
+        run: |
+          git config user.name  "fish-finder"
+          git config user.email "actions@users.noreply.github.com"
+          git add regions.json
+          git diff --staged --quiet && exit 0
+          git commit -q -m "region: add ${{ steps.add.outputs.id }}"
+          for i in 1 2 3; do
+            git push && exit 0
+            git fetch -q origin main && git reset -q --soft origin/main && git add regions.json
+            git diff --staged --quiet && exit 0
+            git commit -q -m "region: add ${{ steps.add.outputs.id }}"
+          done
+          exit 1
+
+      - name: Close the issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh issue comment ${{ github.event.issue.number }} --body \
+            "Added **${{ steps.add.outputs.name }}** (\`${{ steps.add.outputs.id }}\`). regions.json now has ${{ steps.add.outputs.total }} regions. The forecast workflow will pick it up on its next run."
+          gh issue close ${{ github.event.issue.number }}
