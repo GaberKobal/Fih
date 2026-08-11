@@ -2017,7 +2017,7 @@ def run(cfg, selftest=False, out_dir=None):
     keep = slice(max(0, now_i - 24), min(len(h["time"]), now_i + 60))
     payload = {
         "generated": stamp,
-        "schema_version": 11,
+        "schema_version": 12,
         "region": cfg["region_name"],
         "region_id": cfg.get("region_id", "default"),
         "country": cfg.get("country", ""),
@@ -2162,10 +2162,30 @@ def main():
     if not index:
         raise SystemExit("every region failed - nothing written")
 
+    model_keys = ("visibility", "workability", "movement", "light",
+                  "wind_regimes", "gust", "day_weights", "verdict",
+                  "conditions", "thermocline", "shelter")
+    model = {k: base.get(k) for k in model_keys}
+    try:
+        model["species"] = json.loads((ROOT / "species.json").read_text())["species"]
+    except Exception:
+        model["species"] = []
+    model["legal"] = {}
+    for f in sorted((ROOT / "legal").glob("*.json")) if (ROOT / "legal").exists() else []:
+        try:
+            model["legal"][f.stem] = json.loads(f.read_text())
+        except Exception:
+            pass
+    model["schema_version"] = 12
+    mpath = ROOT / "docs" / "data" / "model.json"
+    mpath.parent.mkdir(parents=True, exist_ok=True)
+    mpath.write_text(json.dumps(model, indent=1))
+    log(f"wrote {mpath} (constants for the in-browser model)")
+
     idx_path = ROOT / "docs" / "data" / "index.json"
     idx_path.parent.mkdir(parents=True, exist_ok=True)
     idx_path.write_text(json.dumps({
-        "schema_version": 11,
+        "schema_version": 12,
         "generated": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
         "regions": index,
         "failed": failed,
