@@ -19,7 +19,9 @@
     "footprint the relief term has nothing to work with and the region should",
     "not be added at all.",
     "",
-    "WORLDWIDE: regions outside EMODnet's footprint fall back to NOAA's global SRTM15+ at 15 arc-seconds (~300-450 m). The relief term cannot see a reef at that scale, and the app says so per region rather than pretending."
+    "WORLDWIDE: regions outside EMODnet's footprint fall back to NOAA's global SRTM15+ at 15 arc-seconds (~300-450 m). The relief term cannot see a reef at that scale, and the app says so per region rather than pretending.",
+    "",
+    "Only novigrad runs now. Point mode in the app covers conditions AND structure anywhere in the world, so a configured region is only worth it where you want the extras it alone provides: exclusion zones, charted wrecks, depth contours, per-species maps, GPX export, Sentinel-2 turbidity and the Copernicus temperature profile. Flip enabled back to true on any region you want those for."
   ],
   "regions": [
     {
@@ -68,7 +70,7 @@
       "name": "Kvarner — Krk and Cres",
       "country": "Croatia",
       "jurisdiction": "HR",
-      "enabled": true,
+      "enabled": false,
       "bbox": {
         "lon_min": 14.35,
         "lat_min": 44.75,
@@ -109,7 +111,7 @@
       "name": "Split and Brač channel",
       "country": "Croatia",
       "jurisdiction": "HR",
-      "enabled": true,
+      "enabled": false,
       "bbox": {
         "lon_min": 16.2,
         "lat_min": 43.33,
@@ -150,7 +152,7 @@
       "name": "Piran and the Gulf",
       "country": "Slovenia",
       "jurisdiction": "SI",
-      "enabled": true,
+      "enabled": false,
       "bbox": {
         "lon_min": 13.5,
         "lat_min": 45.44,
@@ -333,7 +335,7 @@
         "max_m": 45.0
       },
       "note": "Mid-Atlantic volcanic. EMODnet reaches here so the structure map is at full resolution, but the species are Atlantic, not Mediterranean.",
-      "enabled": true,
+      "enabled": false,
       "species_file": null,
       "exclusions_file": null,
       "wind_regimes": null
@@ -383,7 +385,7 @@
         "max_m": 40.0
       },
       "note": "Global bathymetry tier only. Hawaii has excellent NOAA CUDEM coverage at 3-10 m that this does not yet use - that would be the single biggest upgrade here.",
-      "enabled": true,
+      "enabled": false,
       "species_file": null,
       "exclusions_file": null,
       "wind_regimes": null
