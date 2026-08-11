@@ -275,6 +275,9 @@ def turbidity_to_viz_m(t_fnu, k=15.0):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", default=str(ROOT / "config.json"))
+    ap.add_argument("--regions", default=str(ROOT / "regions.json"))
+    ap.add_argument("--region", default=None,
+                    help="region id from regions.json; default is the first enabled one")
     ap.add_argument("--days", type=int, default=14)
     ap.add_argument("--max-cloud", type=float, default=20.0)
     ap.add_argument("--k", type=float, default=15.0)
@@ -293,6 +296,19 @@ def main():
         return
 
     cfg = json.loads(Path(args.config).read_text())
+
+    # Regions each get their own scene and their own output folder.
+    regions = json.loads(Path(args.regions).read_text()).get("regions", [])
+    picked = ([r for r in regions if r["id"] == args.region] if args.region
+              else [r for r in regions if r.get("enabled")])
+    if not picked:
+        log("no matching region in regions.json - skipping")
+        return
+    region = picked[0]
+    cfg["bbox"] = region["bbox"]
+    cfg["region_id"] = region["id"]
+    out_dir = ROOT / "docs" / "data" / region["id"]
+    log(f"region {region['id']}: {region['name']}")
     bbox = cfg["bbox"]
 
     token = get_token(cid, secret)
@@ -345,13 +361,13 @@ def main():
                    "against the viz_m column in dive_log.csv."),
         "fetched": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
     }
-    OUT.mkdir(parents=True, exist_ok=True)
-    (OUT / "s2_turbidity.json").write_text(json.dumps(out, indent=1))
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / "s2_turbidity.json").write_text(json.dumps(out, indent=1))
     log(f"relative turbidity median {med:.2f}, p90 {p90:.2f}, "
         f"contrast {contrast:.2f} FNU over {n} deep pixels")
     log(f"spread p10 {p10:.2f} to p90 {p90:.2f} - watch this and the median "
         "across dates rather than any single value")
-    log(f"wrote {OUT / 's2_turbidity.json'}")
+    log(f"wrote {out_dir / 's2_turbidity.json'}")
 
 
 if __name__ == "__main__":

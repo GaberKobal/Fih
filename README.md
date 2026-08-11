@@ -1,8 +1,13 @@
-# Novigrad dive forecast
+# European dive forecast
 
-A daily spearfishing forecast for the Istrian coast that runs entirely in
-GitHub's cloud and opens as a web page on your phone. Nothing runs on your
-machine, nothing needs to stay switched on, and no API key is required.
+A daily spearfishing forecast that runs entirely in GitHub's cloud and opens
+as a web page on your phone. Nothing runs on your machine, nothing needs to
+stay switched on, and no API key is required.
+
+Covers any stretch of European coast you add to `regions.json`, because the
+bathymetry comes from EMODnet — which is European seas only. Outside that
+footprint the best free global grid is ~450 m, where a 100 m reef is invisible
+and the whole structure model is meaningless. Do not add regions there.
 
 ```
 GitHub Actions (cron, 03:40 UTC)
@@ -20,8 +25,11 @@ GitHub Pages  →  the map on your phone
 
 1. Create a new repository and upload these files (the GitHub web UI and the
    mobile app can both do this — you never need a terminal).
-2. **Settings → Pages → Source:** *Deploy from a branch*, branch `main`,
-   folder `/docs`.
+2. **Settings → Pages → Source: GitHub Actions.** Not "deploy from a branch" —
+   the forecast output is a few MB a day across several regions, and
+   committing that would bloat the repo permanently. The workflow publishes it
+   as an artifact instead, so `docs/data/` is gitignored and never enters
+   history.
 3. **Settings → Actions → General → Workflow permissions:** *Read and write*.
    Without this the job cannot commit its own output.
 4. **Actions → Update dive forecast → Run workflow.** The first run takes a
@@ -31,6 +39,43 @@ GitHub Pages  →  the map on your phone
 
 To force a fresh run before you drive out, press *Run workflow* again from
 the GitHub mobile app.
+
+
+## Regions
+
+`regions.json` is the catalogue. `python fish_finder.py --list` shows it:
+
+```
+  on  novigrad       Novigrad, Istria             Croatia    species+exclusions
+  on  kvarner        Kvarner — Krk and Cres       Croatia    species
+  on  split          Split and Brač channel       Croatia    species
+  on  piran          Piran and the Gulf           Slovenia   structure only
+  off cyclades       Paros and Naxos              Greece     structure only
+```
+
+Flip `enabled` to add one. Each costs roughly 600 KB of output and 5 seconds
+of compute per day, and the region picker in the app doubles as a "where is
+diveable today" view, sorted best-first within each country.
+
+**Coverage is deliberately uneven, and the app says so.** Three things are
+region-specific and do not travel:
+
+| | |
+| --- | --- |
+| `species_file` | The pack here is Adriatic, and its closed seasons and minimum sizes are **Croatian**. Regions outside Croatia are set to `null` and run structure + conditions only — showing Croatian closed seasons in Slovenian water would be worse than showing nothing. |
+| `exclusions_file` | Protected areas, port limits. Only Novigrad has one. Every other region shows an amber warning telling you to check for yourself. |
+| `thermocline` | Monthly temperature drops estimated for the north Adriatic. Deeper, clearer regions need their own. |
+
+The visibility model was tuned on a turbid shallow shelf and will understate
+clarity badly in Sardinia or the Cyclades. It is uncalibrated everywhere,
+including at home.
+
+### Adding one
+
+Copy a block in `regions.json`, give it an id, a name and a bbox inside
+EMODnet coverage, set `species_file` and `exclusions_file` to `null` unless
+you have built them, and set `enabled: true`. Commit — the workflow picks it
+up. A region that fails is logged and skipped; the others still publish.
 
 ## Editing it
 

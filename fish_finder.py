@@ -126,6 +126,37 @@ def haversine_m(lat1, lon1, lat2, lon2):
 # target grid — one explicit grid that everything is interpolated onto
 # --------------------------------------------------------------------------
 
+def load_regions(path=None):
+    doc = json.loads((path or (ROOT / "regions.json")).read_text())
+    return doc.get("regions", [])
+
+
+def region_config(base, region):
+    """Merge a region's overrides onto the shared model config.
+
+    config.json holds the model - decay times, weights, thresholds. regions.json
+    holds geography and what data that place actually has. Keeping them apart
+    means tuning the model once instead of once per region.
+    """
+    cfg = json.loads(json.dumps(base))            # deep copy
+    cfg["region_id"] = region["id"]
+    cfg["region_name"] = region["name"]
+    cfg["country"] = region.get("country", "")
+    cfg["jurisdiction"] = region.get("jurisdiction", "")
+    cfg["region_note"] = region.get("note", "")
+    cfg["bbox"] = region["bbox"]
+    cfg["species_file"] = region.get("species_file")
+    cfg["exclusions_file"] = region.get("exclusions_file")
+    for key in ("depth", "thermocline", "entry_points", "max_swim_km",
+                "weights", "visibility", "overlay", "water", "structure"):
+        if key in region:
+            if isinstance(region[key], dict) and isinstance(cfg.get(key), dict):
+                cfg[key].update(region[key])
+            else:
+                cfg[key] = region[key]
+    return cfg
+
+
 def build_target_grid(bbox: dict, res_m: float):
     """Grid with (approximately) square metre cells at the box's centre latitude."""
     lat0 = 0.5 * (bbox["lat_min"] + bbox["lat_max"])
@@ -914,8 +945,15 @@ def trapezoid(x, lo, best_lo, best_hi, hi):
 
 
 def load_species(cfg):
-    path = ROOT / cfg.get("species_file", "species.json")
+    name = cfg.get("species_file")
+    if not name:
+        # Deliberate: a region without a validated pack shows structure and
+        # conditions only. Croatian closed seasons in Greek water would be
+        # worse than no species view at all.
+        return []
+    path = ROOT / name
     if not path.exists():
+        log(f"species: {name} not found - running structure only")
         return []
     doc = json.loads(path.read_text())
     wanted = cfg.get("species_ids")          # null/absent = all of them
@@ -1299,7 +1337,9 @@ def synthetic_bathymetry(bbox, res_deg):
     return lats, lons, elev
 
 
-def run(cfg, selftest=False):
+def run(cfg, selftest=False, out_dir=None):
+    global OUT
+    OUT = out_dir or OUT
     OUT.mkdir(parents=True, exist_ok=True)
     bbox = cfg["bbox"]
     res_deg = cfg["grid_resolution_m"] / 111320.0
@@ -1431,7 +1471,12 @@ def run(cfg, selftest=False):
     cfit = np.ones_like(dfit)
     if clear_min > 0:
         cfit = np.clip(shore_clearance(land, cfg) / max(clear_min, 1e-6), 0, 1)
-    excl = rasterize_polygons(ROOT / "exclusions.geojson", lats, lons)
+    excl_name = cfg.get("exclusions_file")
+    excl = (rasterize_polygons(ROOT / excl_name, lats, lons) if excl_name
+            else np.zeros((len(lats), len(lons)), dtype=bool))
+    if not excl_name:
+        log("exclusions: none defined for this region - "
+            "check protected areas yourself")
     if excl.any():
         log(f"exclusions: {excl.mean():.1%} of the box masked out")
     gates = [afit, cfit, (~excl).astype(float)]
@@ -1536,8 +1581,14 @@ def run(cfg, selftest=False):
     keep = slice(max(0, now_i - 24), min(len(h["time"]), now_i + 60))
     payload = {
         "generated": stamp,
-        "schema_version": 5,
+        "schema_version": 6,
         "region": cfg["region_name"],
+        "region_id": cfg.get("region_id", "default"),
+        "country": cfg.get("country", ""),
+        "jurisdiction": cfg.get("jurisdiction", ""),
+        "region_note": cfg.get("region_note", ""),
+        "has_species": bool(cfg.get("species_file")),
+        "has_exclusions": bool(cfg.get("exclusions_file")),
         "bounds": [[bbox["lat_min"], bbox["lon_min"]],
                    [bbox["lat_max"], bbox["lon_max"]]],
         "now": {
@@ -1597,16 +1648,82 @@ def run(cfg, selftest=False):
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[1])
     ap.add_argument("--config", default=str(ROOT / "config.json"))
+    ap.add_argument("--regions", default=str(ROOT / "regions.json"))
+    ap.add_argument("--region", default=None,
+                    help="run one region by id; default is every enabled one")
+    ap.add_argument("--list", action="store_true", help="list regions and exit")
     ap.add_argument("--selftest", action="store_true",
                     help="run the whole pipeline on synthetic data, no network")
     args = ap.parse_args()
 
-    cfg = json.loads(Path(args.config).read_text())
-    try:
-        run(cfg, selftest=args.selftest)
-    except Exception as e:
-        log(f"FAILED: {e.__class__.__name__}: {e}")
-        raise
+    base = json.loads(Path(args.config).read_text())
+    regions = load_regions(Path(args.regions))
+
+    if args.list:
+        for r in regions:
+            flags = []
+            if r.get("species_file"):    flags.append("species")
+            if r.get("exclusions_file"): flags.append("exclusions")
+            print(f"  {'on ' if r.get('enabled') else 'off'} {r['id']:<14} "
+                  f"{r['name']:<28} {r.get('country',''):<10} "
+                  f"{'+'.join(flags) or 'structure only'}")
+        return
+
+    if args.region:
+        chosen = [r for r in regions if r["id"] == args.region]
+        if not chosen:
+            raise SystemExit(f"no region with id {args.region!r} "
+                             f"(try --list)")
+    else:
+        chosen = [r for r in regions if r.get("enabled")]
+        if not chosen:
+            raise SystemExit("no enabled regions in regions.json")
+
+    log(f"running {len(chosen)} region(s): "
+        + ", ".join(r["id"] for r in chosen))
+
+    index, failed = [], []
+    for r in chosen:
+        cfg = region_config(base, r)
+        out = ROOT / "docs" / "data" / r["id"]
+        log(f"--- {r['id']}: {r['name']} ---")
+        try:
+            payload = run(cfg, selftest=args.selftest, out_dir=out)
+        except Exception as e:
+            # One region failing must not take the others down with it.
+            log(f"{r['id']} FAILED: {e.__class__.__name__}: {e}")
+            failed.append(r["id"])
+            continue
+        index.append({
+            "id": r["id"], "name": r["name"], "country": r.get("country", ""),
+            "jurisdiction": r.get("jurisdiction", ""),
+            "note": r.get("note", ""),
+            "has_species": bool(r.get("species_file")),
+            "has_exclusions": bool(r.get("exclusions_file")),
+            "bbox": r["bbox"],
+            "centre": [round((r["bbox"]["lat_min"] + r["bbox"]["lat_max"]) / 2, 4),
+                       round((r["bbox"]["lon_min"] + r["bbox"]["lon_max"]) / 2, 4)],
+            "verdict": payload["now"]["verdict"],
+            "score": payload["now"]["score"],
+            "visibility_m": payload["now"]["visibility_m"],
+            "wind_from_deg": payload["now"]["wind_from_deg"],
+            "best_window": payload.get("best_window"),
+            "generated": payload["generated"],
+        })
+
+    if not index:
+        raise SystemExit("every region failed - nothing written")
+
+    idx_path = ROOT / "docs" / "data" / "index.json"
+    idx_path.parent.mkdir(parents=True, exist_ok=True)
+    idx_path.write_text(json.dumps({
+        "schema_version": 6,
+        "generated": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
+        "regions": index,
+        "failed": failed,
+    }, indent=1))
+    log(f"wrote {idx_path} ({len(index)} region(s)"
+        + (f", {len(failed)} failed" if failed else "") + ")")
 
 
 if __name__ == "__main__":

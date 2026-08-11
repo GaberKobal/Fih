@@ -1,0 +1,152 @@
+{
+  "_note": [
+    "Every region the forecast can cover. Each one is a separate daily run and",
+    "its own folder under docs/data/, so the page can switch between them.",
+    "",
+    "COVERAGE IS NOT UNIFORM, and the app says so per region:",
+    "  species_file  a validated species pack, or null. The pack in this repo",
+    "                is Adriatic and its legal rules are Croatian - applying it",
+    "                to Greece or Spain would be confidently wrong, so those",
+    "                regions run structure + conditions only until someone",
+    "                builds a pack for them.",
+    "  jurisdiction  whose fishing law applies. Closed seasons and minimum",
+    "                sizes in species.json are Croatian ONLY.",
+    "  enabled       whether the daily workflow computes it. Each enabled",
+    "                region costs a few hundred KB of output and about 5",
+    "                seconds of compute, so turn on what you use.",
+    "",
+    "Bathymetry is EMODnet, which covers European seas only. Outside that",
+    "footprint the relief term has nothing to work with and the region should",
+    "not be added at all."
+  ],
+
+  "regions": [
+    {
+      "id": "novigrad",
+      "name": "Novigrad, Istria",
+      "country": "Croatia",
+      "jurisdiction": "HR",
+      "enabled": true,
+      "bbox": { "lon_min": 13.40, "lat_min": 45.15, "lon_max": 13.68, "lat_max": 45.50 },
+      "species_file": "species.json",
+      "exclusions_file": "exclusions.geojson",
+      "depth": { "min_m": 2.0, "best_m": [4.0, 10.0], "max_m": 24.0 },
+      "thermocline": {
+        "monthly_drop_c": [0, 0, 0.5, 1.5, 3.0, 6.0, 8.0, 8.0, 5.0, 2.0, 0.5, 0],
+        "reference_depth_m": 20.0
+      },
+      "note": "The home region. Species pack, closed seasons and exclusion zones all checked here; everything else in this file inherits or omits them."
+    },
+    {
+      "id": "kvarner",
+      "name": "Kvarner — Krk and Cres",
+      "country": "Croatia",
+      "jurisdiction": "HR",
+      "enabled": true,
+      "bbox": { "lon_min": 14.35, "lat_min": 44.75, "lon_max": 14.78, "lat_max": 45.12 },
+      "species_file": "species.json",
+      "exclusions_file": null,
+      "depth": { "min_m": 3.0, "best_m": [8.0, 22.0], "max_m": 35.0 },
+      "thermocline": {
+        "monthly_drop_c": [0, 0, 0.5, 1.5, 3.0, 5.5, 7.0, 7.0, 4.5, 2.0, 0.5, 0],
+        "reference_depth_m": 25.0
+      },
+      "note": "Same jurisdiction and broadly the same species as Novigrad, but deeper and rockier. NO exclusion zones are defined here yet - check protected areas yourself."
+    },
+    {
+      "id": "split",
+      "name": "Split and Brač channel",
+      "country": "Croatia",
+      "jurisdiction": "HR",
+      "enabled": true,
+      "bbox": { "lon_min": 16.20, "lat_min": 43.33, "lon_max": 16.62, "lat_max": 43.62 },
+      "species_file": "species.json",
+      "exclusions_file": null,
+      "depth": { "min_m": 3.0, "best_m": [10.0, 25.0], "max_m": 40.0 },
+      "thermocline": {
+        "monthly_drop_c": [0, 0, 0.5, 1.5, 3.0, 5.0, 6.5, 6.5, 4.0, 1.5, 0.5, 0],
+        "reference_depth_m": 30.0
+      },
+      "note": "Croatian rules apply, so the closed seasons hold. Clearer and deeper than Istria; the species depth bands were tuned on a shallow shelf and will read low here."
+    },
+    {
+      "id": "piran",
+      "name": "Piran and the Gulf",
+      "country": "Slovenia",
+      "jurisdiction": "SI",
+      "enabled": true,
+      "bbox": { "lon_min": 13.50, "lat_min": 45.44, "lon_max": 13.80, "lat_max": 45.62 },
+      "species_file": null,
+      "exclusions_file": null,
+      "depth": { "min_m": 2.0, "best_m": [5.0, 15.0], "max_m": 25.0 },
+      "note": "Structure and conditions only. Slovenian fishing law differs from Croatian, so the species pack is deliberately NOT applied - showing Croatian closed seasons here would be worse than showing nothing."
+    },
+
+    {
+      "id": "trieste",
+      "name": "Gulf of Trieste",
+      "country": "Italy",
+      "jurisdiction": "IT",
+      "enabled": false,
+      "bbox": { "lon_min": 13.55, "lat_min": 45.58, "lon_max": 13.92, "lat_max": 45.80 },
+      "species_file": null, "exclusions_file": null,
+      "depth": { "min_m": 2.0, "best_m": [5.0, 18.0], "max_m": 25.0 },
+      "note": "Italian rules. Needs its own species pack before the target view means anything."
+    },
+    {
+      "id": "costa-brava",
+      "name": "Costa Brava",
+      "country": "Spain",
+      "jurisdiction": "ES",
+      "enabled": false,
+      "bbox": { "lon_min": 3.00, "lat_min": 41.65, "lon_max": 3.35, "lat_max": 42.00 },
+      "species_file": null, "exclusions_file": null,
+      "depth": { "min_m": 3.0, "best_m": [8.0, 25.0], "max_m": 40.0 },
+      "note": "Different species assemblage and Spanish regional rules. Structure and conditions only."
+    },
+    {
+      "id": "sardinia-nw",
+      "name": "Sardinia, north-west",
+      "country": "Italy",
+      "jurisdiction": "IT",
+      "enabled": false,
+      "bbox": { "lon_min": 8.12, "lat_min": 40.52, "lon_max": 8.55, "lat_max": 40.92 },
+      "species_file": null, "exclusions_file": null,
+      "depth": { "min_m": 3.0, "best_m": [10.0, 28.0], "max_m": 45.0 },
+      "note": "Deep and clear. The visibility model was tuned on a turbid shelf and will understate clarity badly here."
+    },
+    {
+      "id": "corsica-west",
+      "name": "Corsica, west coast",
+      "country": "France",
+      "jurisdiction": "FR",
+      "enabled": false,
+      "bbox": { "lon_min": 8.52, "lat_min": 42.18, "lon_max": 8.88, "lat_max": 42.52 },
+      "species_file": null, "exclusions_file": null,
+      "depth": { "min_m": 3.0, "best_m": [10.0, 28.0], "max_m": 45.0 },
+      "note": "French rules, several marine reserves. Do not dive this on the app alone."
+    },
+    {
+      "id": "algarve",
+      "name": "Algarve, central",
+      "country": "Portugal",
+      "jurisdiction": "PT",
+      "enabled": false,
+      "bbox": { "lon_min": -8.95, "lat_min": 36.95, "lon_max": -8.50, "lat_max": 37.15 },
+      "species_file": null, "exclusions_file": null,
+      "depth": { "min_m": 3.0, "best_m": [8.0, 25.0], "max_m": 40.0 },
+      "note": "Atlantic, not Mediterranean: real tides, real swell, and a different species list entirely."
+    },
+    {
+      "id": "cyclades",
+      "name": "Paros and Naxos",
+      "country": "Greece",
+      "jurisdiction": "GR",
+      "enabled": false,
+      "bbox": { "lon_min": 25.00, "lat_min": 36.95, "lon_max": 25.40, "lat_max": 37.22 },
+      "species_file": null, "exclusions_file": null,
+      "depth": { "min_m": 3.0, "best_m": [10.0, 28.0], "max_m": 45.0 },
+      "note": "Meltemi dominates everything here; the shelter term should do more work than usual."
+    }
+  ]
+}
