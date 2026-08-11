@@ -27,7 +27,8 @@
     "relief": 0.35,
     "slope": 0.2,
     "shelter": 0.3,
-    "habitat": 0.15
+    "habitat": 0.15,
+    "wreck": 0.3
   },
   "structure": {
     "background_scale_m": 600,
@@ -39,7 +40,9 @@
   },
   "shelter": {
     "max_fetch_km": 20.0,
-    "fetch_step_m": 150.0
+    "fetch_step_m": 150.0,
+    "swell_weight": 0.5,
+    "_note": "swell_weight splits shelter between wind fetch and swell fetch. Wind alone missed old swell running in from a different quarter than today's breeze."
   },
   "habitat": {
     "enabled": false,
@@ -79,7 +82,8 @@
   },
   "movement": {
     "tide_rate_ref_m_per_h": 0.08,
-    "current_ref_ms": 0.3
+    "current_ref_ms": 0.3,
+    "macrotidal_range_m": 1.5
   },
   "day_weights": {
     "visibility": 0.5,
@@ -171,7 +175,8 @@
     "dataset_id": "cmems_mod_med_phy-tem_anfc_4.2km_P1D-m",
     "variable": "thetao",
     "pad_deg": 0.1,
-    "max_depth_m": 50.0
+    "max_depth_m": 50.0,
+    "dataset_id_global": "cmems_mod_glo_phy_anfc_0.083deg_P1D-m"
   },
   "water": {
     "_note": "min_width_cells severs narrow channels; require_sea_connection then discards whatever is left inland. EMODnet carries the Mirna estuary several km up the valley and it was being scored as diveable sea.",
@@ -189,5 +194,35 @@
     "alpha_full_score": 0.55,
     "alpha_max": 0.88,
     "palette_colors": 64
+  },
+  "contours": {
+    "_note": "Depth lines drawn on the map. Orientation only, not navigation.",
+    "enabled": true,
+    "levels_m": [
+      5,
+      10,
+      15,
+      20,
+      30
+    ],
+    "decimate": 3,
+    "min_points": 8
+  },
+  "bathymetry": {
+    "_note": "auto picks EMODnet (~115 m) inside European seas and GMRT elsewhere. GMRT merges research multibeam over a global base, so the resolution varies by how well surveyed a coast is - the code measures what arrives rather than trusting this file. Falls back down the chain GMRT -> SRTM15+ if a source is down, so an outage costs quality, not the region.",
+    "provider": "auto",
+    "erddap_dataset": "srtm15plus",
+    "erddap_dataset_360": "srtm15plus_Lon0360",
+    "erddap_variable": "z",
+    "min_cells_per_native": 1.5,
+    "relief_meaningful_below_m": 200.0,
+    "gmrt_resolution": "high",
+    "use_sdb": false,
+    "min_grid_resolution_m": 40.0
+  },
+  "wrecks": {
+    "_note": "Charted wrecks from OpenStreetMap. Point data, so unaffected by bathymetry resolution - the one structure signal that is as good in Bali as in Istria.",
+    "enabled": true,
+    "radius_m": 250.0
   }
 }
