@@ -401,7 +401,7 @@
 // Bumped whenever the page needs a matching fish_finder.py, and vice versa.
 // The two files live in different folders and get uploaded separately, so a
 // mismatch is easy to create and was previously invisible.
-const PAGE_VERSION = 15;
+const PAGE_VERSION = 16;
 
 // Offline: the app must open in a car park with one bar.
 if("serviceWorker" in navigator)
@@ -418,6 +418,14 @@ L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
 L.tileLayer("https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png", {
   maxZoom:18, opacity:.9, attribution:"OpenSeaMap"
 }).addTo(map);
+
+// The legend is map furniture, not a map target. Without this Leaflet receives
+// a click on its controls as a map click and moves the point forecast.
+const mapTools = $("#maptools");
+L.DomEvent.disableClickPropagation(mapTools);
+L.DomEvent.disableScrollPropagation(mapTools);
+["pointerdown", "pointerup", "touchstart", "touchend"].forEach(type =>
+  mapTools.addEventListener(type, e => e.stopPropagation()));
 
 let overlay=null, marks=[], DATA=null, sel=null;   // sel: null = structure map
 let INDEX=null, REGION=null, contours=null, wreckLayer=null, meMarker=null;
