@@ -126,6 +126,10 @@
   .sp .why{display:block; font-size:10px; color:var(--sound); margin-top:2px; white-space:nowrap}
   .sp.out .nm,.sp.out .sc{color:var(--sound)}
   #spnote{padding:10px 16px; font-size:12.5px; color:var(--sound); border-bottom:1px solid var(--line)}
+  #regionguide{border-bottom:1px solid var(--line); background:var(--abyss); padding:10px 16px}
+  #regionguide .guide-list{margin-top:6px; font-size:13px; line-height:1.6; color:var(--chart)}
+  #regionguide .guide-list i{color:var(--sound); font-size:11px}
+  #regionguide .guide-note{margin-top:5px; color:var(--sound); font-size:11px; line-height:1.4}
 
   /* ---- map ---- */
   #map{flex:1 1 auto; min-height:44vh; background:var(--abyss)}
@@ -317,6 +321,7 @@
     <div id="err"></div>
     <div id="species" role="group" aria-label="Target species"></div>
     <div id="spnote"></div>
+    <section id="regionguide" aria-live="polite" hidden></section>
     <section class="band">
       <div class="eyebrow">Best window</div>
       <div id="window"><span class="when">—</span></div>
@@ -396,7 +401,7 @@
 // Bumped whenever the page needs a matching fish_finder.py, and vice versa.
 // The two files live in different folders and get uploaded separately, so a
 // mismatch is easy to create and was previously invisible.
-const PAGE_VERSION = 14;
+const PAGE_VERSION = 15;
 
 // Offline: the app must open in a car park with one bar.
 if("serviceWorker" in navigator)
@@ -416,7 +421,7 @@ L.tileLayer("https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png", {
 
 let overlay=null, marks=[], DATA=null, sel=null;   // sel: null = structure map
 let INDEX=null, REGION=null, contours=null, wreckLayer=null, meMarker=null;
-let MODEL=null, POINT=null, ptMarker=null;      // POINT set = "anywhere" mode
+let MODEL=null, POINT=null, ptMarker=null, REGION_SPECIES=null; // POINT set = "anywhere" mode
 let STRUCT=null, TERRAIN=null, scanBox=null;    // client-side structure model
 let overlayOpacity=0.75;
 
@@ -463,6 +468,8 @@ async function loadPoint(lat, lon){
     if(!pack) cfg.species = [];
     if(!host) cfg.wind_regimes = null;       // named winds are regional
     const d = await forecastPoint(lat, lon, cfg, pack);
+    // Point forecasts inherit a guide only inside a configured region.
+    d.region_id = host?.id || null;
     $("#err").style.display = "none";
     DATA = d; sel = null;
     renderAll(d, host);
@@ -764,6 +771,29 @@ function renderHours(d){
   }
 }
 
+async function renderRegionGuide(d){
+  const host=$("#regionguide");
+  const id=d.region_id || REGION;
+  if(!id){ host.hidden=true; return; }
+  try{
+    if(!REGION_SPECIES){
+      const r=await fetch("region-species.json",{cache:"no-store"});
+      if(!r.ok) throw new Error("guide unavailable");
+      REGION_SPECIES=await r.json();
+    }
+    const entry=REGION_SPECIES.regions?.[id];
+    // A slow response for a previous map must not overwrite the current one.
+    if((d.region_id || REGION)!==id) return;
+    if(!entry){ host.hidden=true; return; }
+    host.hidden=false;
+    host.innerHTML=`<div class="eyebrow">Regional species guide</div>
+      <div class="guide-list">${entry.species.map(s =>
+        `${s.common} <i>(${s.scientific})</i>`).join(" · ")}</div>
+      <div class="guide-note">${entry.note ||
+        "Typical regional species, not a catch recommendation."} Check current local rules, sizes, bag limits and protected areas.</div>`;
+  }catch(_){ host.hidden=true; }
+}
+
 function renderSpecies(d){
   const host=$("#species"); host.innerHTML="";
   const list = dayData().species || d.species || [];
@@ -784,6 +814,7 @@ function renderSpecies(d){
     $("#spnote").textContent =
       "Structure map: where there is reachable relief and shelter. "
       + "No species pack for this region.";
+    renderRegionGuide(d);
     return;
   }
   host.style.display="";
@@ -798,6 +829,7 @@ function renderSpecies(d){
     mk(sp.id, sp.name_en || sp.common, sp.today, why,
        !sp.in_season || sp.legally_open===false);
   });
+  renderRegionGuide(d);
 }
 
 // Depth lines. A colour wash says a cell scores well; a 10 m line says
@@ -1049,11 +1081,17 @@ async function load(){
 function renderAll(d, meta){
   meta = meta || {};
   $("#region").textContent = d.region;
-  const vw = d.now.verdict || "";
+  // A cached forecast may predate the night gate. Never present a calm local
+  // 02:30 as diveable when the current-hour light value says it is dark.
+  const isDark = Number(d.now.light) <= 0;
+  const vw = isDark ? "not now" : (d.now.verdict || "");
   $("#word").textContent = vw.charAt(0).toUpperCase() + vw.slice(1);
-  $("#word").dataset.v = d.now.verdict;
-  if(d.now.verdict === "not now"){
-    const w = d.best_window;
+  $("#word").dataset.v = vw;
+  if(vw === "not now"){
+    if(isDark) d.now.limited_by = "dark - no daylight at this local hour";
+    // Use the per-day daylight-gated windows, never the legacy overall value
+    // which older data may have calculated without a light check.
+    const w = (d.days||[]).find(day=>day.best)?.best || null;
     const nxt = w ? new Date(w.start+"Z").toLocaleString([], {weekday:"short",
                     hour:"2-digit", minute:"2-digit"}) : null;
     $("#limit").textContent = d.now.limited_by + (nxt ? ` — next window ${nxt}` : "");
