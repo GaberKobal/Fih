@@ -8,7 +8,7 @@
 //   tiles   cache-first with a cap - map tiles never change and are the
 //           slowest thing on a bad connection
 
-const VERSION = "v14";
+const VERSION = "v15";
 const SHELL = `shell-${VERSION}`;
 const DATA = `data-${VERSION}`;
 const TILES = "tiles";
@@ -19,6 +19,7 @@ const SHELL_URLS = [
   "./index.html",
   "./anywhere.js",
   "./structure.js",
+  "./region-species.json",
   "./add-region.html",
   "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css",
   "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js",

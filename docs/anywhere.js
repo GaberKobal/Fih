@@ -255,7 +255,7 @@ export async function forecastPoint(lat, lon, cfg, legalPack){
 
   const keep = (a) => a.slice(Math.max(0, nowI-24), Math.min(a.length, nowI+60));
   return {
-    schema_version: 12, point: true,
+    schema_version: 15, point: true,
     region: `${lat.toFixed(3)}, ${lon.toFixed(3)}`,
     generated: new Date().toISOString(),
     bounds: [[lat-0.001, lon-0.001],[lat+0.001, lon+0.001]],
@@ -268,7 +268,8 @@ export async function forecastPoint(lat, lon, cfg, legalPack){
       sea_temp_c: +(h.sea_surface_temperature[nowI]||0).toFixed(1),
       current_ms: +(h.ocean_current_velocity[nowI]||0).toFixed(2),
       wind_regime: regimes[nowI].name, wind_regime_note: regimes[nowI].note,
-      sun_elevation_deg: null, light: +light[nowI].toFixed(2),
+      sun_elevation_deg: +solarElevation([times[nowI]], lat, lon, tz)[0].toFixed(1),
+      light: +light[nowI].toFixed(2),
     },
     best_window: days[0] ? days[0].best : null,
     days, species, spots: [],
