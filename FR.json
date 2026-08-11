@@ -1,0 +1,82 @@
+{
+  "_note": [
+    "Fishing rules applied to regions with jurisdiction FR.",
+    "",
+    "THREE TIERS OF CONFIDENCE, and the app shows which is which:",
+    "  min_size_cm from EU Reg 2019/1241 Annex IX is real law and a FLOOR -",
+    "    the national rule may be stricter and often is.",
+    "  framework rules (licence, night, scuba, distances) are widely",
+    "    reported and stable, but were NOT taken from a primary source",
+    "   except for HR. Treat FR as a prompt to check, not an answer.",
+    "  closed_seasons are researched for HR only. An empty list here means",
+    "    NOT RESEARCHED, not 'no closure exists'.",
+    "",
+    "Primary source: https://www.mer.gouv.fr"
+  ],
+  "jurisdiction": "FR",
+  "country": "France",
+  "confidence": "framework only",
+  "official_source": "https://www.mer.gouv.fr",
+  "checked": "2026-08-06",
+  "framework": {
+    "licence": "No national licence generally required; declaration to the maritime authority in some cases",
+    "night_spearfishing_allowed": false,
+    "scuba_allowed": false,
+    "sale_of_catch_allowed": false,
+    "distance_rules": "Numerous marine reserves along the Corsican coast where it is banned outright",
+    "surface_marker": "Marker buoy required"
+  },
+  "closed_seasons_researched": false,
+  "species": {
+    "sargus": {
+      "min_size_cm": 23,
+      "min_size_source": "EU Reg 2019/1241 Annex IX (Mediterranean floor) - national rule may be stricter",
+      "closed_seasons": [],
+      "must_tail_mark": false
+    },
+    "vulgaris": {
+      "min_size_cm": 18,
+      "min_size_source": "EU Reg 2019/1241 Annex IX (Mediterranean floor) - national rule may be stricter",
+      "closed_seasons": [],
+      "must_tail_mark": false
+    },
+    "aurata": {
+      "min_size_cm": 20,
+      "min_size_source": "EU Reg 2019/1241 Annex IX (Mediterranean floor) - national rule may be stricter",
+      "closed_seasons": [],
+      "must_tail_mark": false
+    },
+    "labrax": {
+      "min_size_cm": 25,
+      "min_size_source": "EU Reg 2019/1241 Annex IX (Mediterranean floor) - national rule may be stricter",
+      "closed_seasons": [],
+      "must_tail_mark": false
+    },
+    "dentex": {
+      "min_size_cm": 15,
+      "min_size_source": "EU Reg 2019/1241 Annex IX (Mediterranean floor) - national rule may be stricter",
+      "closed_seasons": [],
+      "must_tail_mark": false
+    },
+    "umbra": {
+      "min_size_cm": 23,
+      "min_size_source": "EU Reg 2019/1241 Annex IX (Mediterranean floor) - national rule may be stricter",
+      "closed_seasons": [],
+      "must_tail_mark": false
+    },
+    "sepia": {
+      "min_size_cm": 10,
+      "min_size_source": "EU Reg 2019/1241 Annex IX (Mediterranean floor) - national rule may be stricter",
+      "closed_seasons": [],
+      "must_tail_mark": false,
+      "size_note": "mantle length"
+    },
+    "octopus": {
+      "min_size_cm": null,
+      "min_size_source": "EU Reg 2019/1241 Annex IX (Mediterranean floor) - national rule may be stricter",
+      "closed_seasons": [],
+      "must_tail_mark": false,
+      "note": "no EU Mediterranean MCRS I could verify; several states set a mass limit instead"
+    }
+  }
+}

@@ -4,10 +4,7 @@ A daily spearfishing forecast that runs entirely in GitHub's cloud and opens
 as a web page on your phone. Nothing runs on your machine, nothing needs to
 stay switched on, and no API key is required.
 
-Covers any stretch of European coast you add to `regions.json`, because the
-bathymetry comes from EMODnet — which is European seas only. Outside that
-footprint the best free global grid is ~450 m, where a 100 m reef is invisible
-and the whole structure model is meaningless. Do not add regions there.
+Covers any coast in the world, at two very different levels of usefulness.
 
 ```
 GitHub Actions (cron, 03:40 UTC)
@@ -41,6 +38,33 @@ To force a fresh run before you drive out, press *Run workflow* again from
 the GitHub mobile app.
 
 
+## Bathymetry tiers — read this before trusting a map
+
+| provider | where | native | what the relief term can do |
+| --- | --- | --- | --- |
+| **EMODnet** WCS | European seas, incl. Azores and Canaries | ~115 m | finds reef-scale structure |
+| **GMRT** GridServer | everywhere else | 100 m where multibeam exists, coarser where not | depends — measured per region |
+| **SRTM15+** via NOAA ERDDAP | fallback | ~320–460 m | **broad slope only** |
+
+Picked automatically from the bbox; `bathymetry.provider` overrides it. If a
+source is down the code falls down the chain rather than dropping the region,
+so an outage costs resolution, not coverage.
+
+GMRT merges cleaned research multibeam over a global base, so what you get
+depends on whether anyone has surveyed that coast. The code **measures the
+grid that actually arrives** instead of trusting this table, and the app
+reports the real figure per region.
+
+That gap is not a detail. The relief term looks for mounds a few cells across.
+At 450 m a tegnùe is smaller than one cell, so outside Europe a mark means
+"the shelf does something here", not "there is a spot here". The app measures
+the resolution it actually received, refuses to resample far below it, and
+shows an amber banner on any region where relief is not meaningful.
+
+Two national sources would fix this where they exist and are the obvious next
+step: **NOAA CUDEM** (US coasts, 3–10 m) and **AusSeabed** (Australia). The
+provider abstraction is built to take them.
+
 ## Regions
 
 `regions.json` is the catalogue. `python fish_finder.py --list` shows it:
@@ -62,7 +86,8 @@ region-specific and do not travel:
 
 | | |
 | --- | --- |
-| `species_file` | The pack here is Adriatic, and its closed seasons and minimum sizes are **Croatian**. Regions outside Croatia are set to `null` and run structure + conditions only — showing Croatian closed seasons in Slovenian water would be worse than showing nothing. |
+| `species_file` | Biology only — depth, temperature, substrate, season of presence. Travels across the Mediterranean. Portugal is Atlantic and has no pack. |
+| `jurisdiction` | Picks `legal/<CC>.json`. Law does **not** travel, so this is separate from biology. |
 | `exclusions_file` | Protected areas, port limits. Only Novigrad has one. Every other region shows an amber warning telling you to check for yourself. |
 | `thermocline` | Monthly temperature drops estimated for the north Adriatic. Deeper, clearer regions need their own. |
 
@@ -171,3 +196,97 @@ python fish_finder.py              # the real thing
   Confirm the current rules with the Croatian fisheries ministry, and fill in
   `exclusions.geojson` before you trust a mark near a protected area.
 - Never dive alone, whatever the map says.
+
+## Species and rules
+
+`species.json` holds **biology** — where each animal lives, what temperature it
+tolerates, how it responds to water clarity. That generalises across the
+Mediterranean, so every Mediterranean region shares it.
+
+`legal/<CC>.json` holds **law**, one file per jurisdiction, merged in at run
+time by the region's `jurisdiction` field. A closed season in Croatia means
+nothing in Slovenia, so these are kept strictly apart.
+
+### Three tiers of confidence, and the app shows which is which
+
+| tier | what it is | how far to trust it |
+| --- | --- | --- |
+| **EU minimum sizes** | Reg (EU) 2019/1241 Annex IX | Real law and a **floor** across every EU Mediterranean state. National rules may be stricter and often are. |
+| **Framework rules** | licence, night ban, scuba ban, distances, marker buoy | Widely reported and stable, but taken from secondary sources for everything except Croatia. The app labels these **"framework only"** and links to the national regulator. |
+| **Closed seasons** | species-by-species closures | Researched for **Croatia only**. Every other pack sets `closed_seasons_researched: false`, and the app says *"closed seasons not researched for XX — an open species means unknown, not legal."* |
+
+That last distinction matters more than anything else in this file. An empty
+`closed_seasons` list is a gap in my research, not a statement that fishing is
+open. The app never implies otherwise.
+
+### Adding a jurisdiction properly
+
+Open the national regulator (each pack carries its `official_source`), find
+the current closed seasons and minimum sizes, fill them into
+`legal/<CC>.json`, set `closed_seasons_researched: true` and update `checked`.
+The warnings disappear on their own.
+
+## Going worldwide: what else breaks
+
+**Tides.** The movement term assumes a Mediterranean tide of 30–80 cm. Every
+run now measures the forecast tidal range and flags anything over 1.5 m as
+macrotidal, because Open-Meteo's 8 km sea-level model is not adequate on those
+coasts. Brittany, the UK, north-west Australia: use a real tide table.
+
+**Named winds.** Bora, jugo and maestral mean nothing in Hawaii. Regions
+outside the Adriatic set `wind_regimes: null`, and wind still counts through
+fetch and workability — it just is not given a local name or a clarity
+multiplier it has not earned.
+
+**Species and law.** Unchanged and still the dominant cost. Every non-European
+region ships with `species_file: null`, so it runs structure and conditions
+only. An Indo-Pacific or Caribbean pack is real research, not a config edit.
+
+**Marine reserves.** None of the worldwide regions have exclusion polygons.
+The Poor Knights is a no-take reserve; large parts of the Florida Keys are
+closed to spearfishing. The app warns, but it does not know.
+
+## Wrecks
+
+Charted wrecks and obstructions come from OpenStreetMap via Overpass, cached
+per region, and feed a `wreck` scoring term with a 250 m halo. They are the
+best structure a spearo gets, they are point data rather than a raster, and
+they are **exactly as useful on a 450 m grid as on a 115 m one** — which makes
+them the most valuable thing in the whole model outside Europe.
+
+## Satellite-derived bathymetry
+
+`python sdb.py --region <id>` estimates depth from Sentinel-2 at 20 m, five
+times finer than any chart grid available, over 2–18 m — the band you dive.
+
+It uses the Stumpf ratio transform, `ln(1000·blue) / ln(1000·green)`, which is
+monotonic in depth and largely blind to bottom type. Calibration normally
+needs surveyed depths; here **the existing EMODnet or GMRT grid is the
+training signal**, so the satellite supplies detail and the chart supplies
+scale. No field survey.
+
+It refuses itself when it does not work:
+
+```
+clear water   ACCEPTED   R2 0.976  RMSE 0.71 m
+turbid water  REFUSED    R2 0.018  "probably too turbid for optical depth"
+```
+
+That refusal is the feature. Optical depth only works in clear water, so this
+will do least for Novigrad and most for the Azores, Canaries, Keys, Bali and
+Okinawa. Set `bathymetry.use_sdb` on a region to put a passing fit into
+service; it is laid over the chart grid, so fine detail where the satellite
+can see and the original everywhere else.
+
+## Offline
+
+`docs/sw.js` caches the app shell and map tiles aggressively and the forecast
+network-first, so the map opens instantly at the coast and still works with no
+signal — using the last forecast it managed to fetch. Tiles are capped at 900.
+
+## Adding a region from the map
+
+`add-region.html` — drag a box over a coast, fill in a name, and submit. It
+opens a prefilled GitHub issue and `add-region.yml` validates the bbox, checks
+for id collisions and appends to `regions.json`. Same no-token pattern as the
+dive log. It warns you when the box is unreasonably large or the id is taken.

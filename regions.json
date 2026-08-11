@@ -17,9 +17,10 @@
     "",
     "Bathymetry is EMODnet, which covers European seas only. Outside that",
     "footprint the relief term has nothing to work with and the region should",
-    "not be added at all."
+    "not be added at all.",
+    "",
+    "WORLDWIDE: regions outside EMODnet's footprint fall back to NOAA's global SRTM15+ at 15 arc-seconds (~300-450 m). The relief term cannot see a reef at that scale, and the app says so per region rather than pretending."
   ],
-
   "regions": [
     {
       "id": "novigrad",
@@ -27,12 +28,37 @@
       "country": "Croatia",
       "jurisdiction": "HR",
       "enabled": true,
-      "bbox": { "lon_min": 13.40, "lat_min": 45.15, "lon_max": 13.68, "lat_max": 45.50 },
+      "bbox": {
+        "lon_min": 13.4,
+        "lat_min": 45.15,
+        "lon_max": 13.68,
+        "lat_max": 45.5
+      },
       "species_file": "species.json",
       "exclusions_file": "exclusions.geojson",
-      "depth": { "min_m": 2.0, "best_m": [4.0, 10.0], "max_m": 24.0 },
+      "depth": {
+        "min_m": 2.0,
+        "best_m": [
+          4.0,
+          10.0
+        ],
+        "max_m": 24.0
+      },
       "thermocline": {
-        "monthly_drop_c": [0, 0, 0.5, 1.5, 3.0, 6.0, 8.0, 8.0, 5.0, 2.0, 0.5, 0],
+        "monthly_drop_c": [
+          0,
+          0,
+          0.5,
+          1.5,
+          3.0,
+          6.0,
+          8.0,
+          8.0,
+          5.0,
+          2.0,
+          0.5,
+          0
+        ],
         "reference_depth_m": 20.0
       },
       "note": "The home region. Species pack, closed seasons and exclusion zones all checked here; everything else in this file inherits or omits them."
@@ -43,12 +69,37 @@
       "country": "Croatia",
       "jurisdiction": "HR",
       "enabled": true,
-      "bbox": { "lon_min": 14.35, "lat_min": 44.75, "lon_max": 14.78, "lat_max": 45.12 },
+      "bbox": {
+        "lon_min": 14.35,
+        "lat_min": 44.75,
+        "lon_max": 14.78,
+        "lat_max": 45.12
+      },
       "species_file": "species.json",
       "exclusions_file": null,
-      "depth": { "min_m": 3.0, "best_m": [8.0, 22.0], "max_m": 35.0 },
+      "depth": {
+        "min_m": 3.0,
+        "best_m": [
+          8.0,
+          22.0
+        ],
+        "max_m": 35.0
+      },
       "thermocline": {
-        "monthly_drop_c": [0, 0, 0.5, 1.5, 3.0, 5.5, 7.0, 7.0, 4.5, 2.0, 0.5, 0],
+        "monthly_drop_c": [
+          0,
+          0,
+          0.5,
+          1.5,
+          3.0,
+          5.5,
+          7.0,
+          7.0,
+          4.5,
+          2.0,
+          0.5,
+          0
+        ],
         "reference_depth_m": 25.0
       },
       "note": "Same jurisdiction and broadly the same species as Novigrad, but deeper and rockier. NO exclusion zones are defined here yet - check protected areas yourself."
@@ -59,12 +110,37 @@
       "country": "Croatia",
       "jurisdiction": "HR",
       "enabled": true,
-      "bbox": { "lon_min": 16.20, "lat_min": 43.33, "lon_max": 16.62, "lat_max": 43.62 },
+      "bbox": {
+        "lon_min": 16.2,
+        "lat_min": 43.33,
+        "lon_max": 16.62,
+        "lat_max": 43.62
+      },
       "species_file": "species.json",
       "exclusions_file": null,
-      "depth": { "min_m": 3.0, "best_m": [10.0, 25.0], "max_m": 40.0 },
+      "depth": {
+        "min_m": 3.0,
+        "best_m": [
+          10.0,
+          25.0
+        ],
+        "max_m": 40.0
+      },
       "thermocline": {
-        "monthly_drop_c": [0, 0, 0.5, 1.5, 3.0, 5.0, 6.5, 6.5, 4.0, 1.5, 0.5, 0],
+        "monthly_drop_c": [
+          0,
+          0,
+          0.5,
+          1.5,
+          3.0,
+          5.0,
+          6.5,
+          6.5,
+          4.0,
+          1.5,
+          0.5,
+          0
+        ],
         "reference_depth_m": 30.0
       },
       "note": "Croatian rules apply, so the closed seasons hold. Clearer and deeper than Istria; the species depth bands were tuned on a shallow shelf and will read low here."
@@ -75,23 +151,47 @@
       "country": "Slovenia",
       "jurisdiction": "SI",
       "enabled": true,
-      "bbox": { "lon_min": 13.50, "lat_min": 45.44, "lon_max": 13.80, "lat_max": 45.62 },
-      "species_file": null,
+      "bbox": {
+        "lon_min": 13.5,
+        "lat_min": 45.44,
+        "lon_max": 13.8,
+        "lat_max": 45.62
+      },
+      "species_file": "species.json",
       "exclusions_file": null,
-      "depth": { "min_m": 2.0, "best_m": [5.0, 15.0], "max_m": 25.0 },
-      "note": "Structure and conditions only. Slovenian fishing law differs from Croatian, so the species pack is deliberately NOT applied - showing Croatian closed seasons here would be worse than showing nothing."
+      "depth": {
+        "min_m": 2.0,
+        "best_m": [
+          5.0,
+          15.0
+        ],
+        "max_m": 25.0
+      },
+      "note": "Structure and conditions only. Slovenian fishing law differs from Croatian, so the species pack is deliberately NOT applied - showing Croatian closed seasons here would be worse than showing nothing. Mediterranean species pack applies; sizes are the EU floor and closed seasons for this country are NOT researched."
     },
-
     {
       "id": "trieste",
       "name": "Gulf of Trieste",
       "country": "Italy",
       "jurisdiction": "IT",
       "enabled": false,
-      "bbox": { "lon_min": 13.55, "lat_min": 45.58, "lon_max": 13.92, "lat_max": 45.80 },
-      "species_file": null, "exclusions_file": null,
-      "depth": { "min_m": 2.0, "best_m": [5.0, 18.0], "max_m": 25.0 },
-      "note": "Italian rules. Needs its own species pack before the target view means anything."
+      "bbox": {
+        "lon_min": 13.55,
+        "lat_min": 45.58,
+        "lon_max": 13.92,
+        "lat_max": 45.8
+      },
+      "species_file": "species.json",
+      "exclusions_file": null,
+      "depth": {
+        "min_m": 2.0,
+        "best_m": [
+          5.0,
+          18.0
+        ],
+        "max_m": 25.0
+      },
+      "note": "Italian rules. Needs its own species pack before the target view means anything. Mediterranean species pack applies; sizes are the EU floor and closed seasons for this country are NOT researched."
     },
     {
       "id": "costa-brava",
@@ -99,10 +199,23 @@
       "country": "Spain",
       "jurisdiction": "ES",
       "enabled": false,
-      "bbox": { "lon_min": 3.00, "lat_min": 41.65, "lon_max": 3.35, "lat_max": 42.00 },
-      "species_file": null, "exclusions_file": null,
-      "depth": { "min_m": 3.0, "best_m": [8.0, 25.0], "max_m": 40.0 },
-      "note": "Different species assemblage and Spanish regional rules. Structure and conditions only."
+      "bbox": {
+        "lon_min": 3.0,
+        "lat_min": 41.65,
+        "lon_max": 3.35,
+        "lat_max": 42.0
+      },
+      "species_file": "species.json",
+      "exclusions_file": null,
+      "depth": {
+        "min_m": 3.0,
+        "best_m": [
+          8.0,
+          25.0
+        ],
+        "max_m": 40.0
+      },
+      "note": "Different species assemblage and Spanish regional rules. Mediterranean species pack applies; sizes are the EU floor and closed seasons for this country are NOT researched."
     },
     {
       "id": "sardinia-nw",
@@ -110,10 +223,23 @@
       "country": "Italy",
       "jurisdiction": "IT",
       "enabled": false,
-      "bbox": { "lon_min": 8.12, "lat_min": 40.52, "lon_max": 8.55, "lat_max": 40.92 },
-      "species_file": null, "exclusions_file": null,
-      "depth": { "min_m": 3.0, "best_m": [10.0, 28.0], "max_m": 45.0 },
-      "note": "Deep and clear. The visibility model was tuned on a turbid shelf and will understate clarity badly here."
+      "bbox": {
+        "lon_min": 8.12,
+        "lat_min": 40.52,
+        "lon_max": 8.55,
+        "lat_max": 40.92
+      },
+      "species_file": "species.json",
+      "exclusions_file": null,
+      "depth": {
+        "min_m": 3.0,
+        "best_m": [
+          10.0,
+          28.0
+        ],
+        "max_m": 45.0
+      },
+      "note": "Deep and clear. The visibility model was tuned on a turbid shelf and will understate clarity badly here. Mediterranean species pack applies; sizes are the EU floor and closed seasons for this country are NOT researched."
     },
     {
       "id": "corsica-west",
@@ -121,10 +247,23 @@
       "country": "France",
       "jurisdiction": "FR",
       "enabled": false,
-      "bbox": { "lon_min": 8.52, "lat_min": 42.18, "lon_max": 8.88, "lat_max": 42.52 },
-      "species_file": null, "exclusions_file": null,
-      "depth": { "min_m": 3.0, "best_m": [10.0, 28.0], "max_m": 45.0 },
-      "note": "French rules, several marine reserves. Do not dive this on the app alone."
+      "bbox": {
+        "lon_min": 8.52,
+        "lat_min": 42.18,
+        "lon_max": 8.88,
+        "lat_max": 42.52
+      },
+      "species_file": "species.json",
+      "exclusions_file": null,
+      "depth": {
+        "min_m": 3.0,
+        "best_m": [
+          10.0,
+          28.0
+        ],
+        "max_m": 45.0
+      },
+      "note": "French rules, several marine reserves. Do not dive this on the app alone. Mediterranean species pack applies; sizes are the EU floor and closed seasons for this country are NOT researched."
     },
     {
       "id": "algarve",
@@ -132,10 +271,23 @@
       "country": "Portugal",
       "jurisdiction": "PT",
       "enabled": false,
-      "bbox": { "lon_min": -8.95, "lat_min": 36.95, "lon_max": -8.50, "lat_max": 37.15 },
-      "species_file": null, "exclusions_file": null,
-      "depth": { "min_m": 3.0, "best_m": [8.0, 25.0], "max_m": 40.0 },
-      "note": "Atlantic, not Mediterranean: real tides, real swell, and a different species list entirely."
+      "bbox": {
+        "lon_min": -8.95,
+        "lat_min": 36.95,
+        "lon_max": -8.5,
+        "lat_max": 37.15
+      },
+      "species_file": null,
+      "exclusions_file": null,
+      "depth": {
+        "min_m": 3.0,
+        "best_m": [
+          8.0,
+          25.0
+        ],
+        "max_m": 40.0
+      },
+      "note": "Atlantic, not Mediterranean: different species entirely, real tides and real swell. No pack exists for it, so structure and conditions only."
     },
     {
       "id": "cyclades",
@@ -143,10 +295,273 @@
       "country": "Greece",
       "jurisdiction": "GR",
       "enabled": false,
-      "bbox": { "lon_min": 25.00, "lat_min": 36.95, "lon_max": 25.40, "lat_max": 37.22 },
-      "species_file": null, "exclusions_file": null,
-      "depth": { "min_m": 3.0, "best_m": [10.0, 28.0], "max_m": 45.0 },
-      "note": "Meltemi dominates everything here; the shelter term should do more work than usual."
+      "bbox": {
+        "lon_min": 25.0,
+        "lat_min": 36.95,
+        "lon_max": 25.4,
+        "lat_max": 37.22
+      },
+      "species_file": "species.json",
+      "exclusions_file": null,
+      "depth": {
+        "min_m": 3.0,
+        "best_m": [
+          10.0,
+          28.0
+        ],
+        "max_m": 45.0
+      },
+      "note": "Meltemi dominates everything here; the shelter term should do more work than usual. Mediterranean species pack applies; sizes are the EU floor and closed seasons for this country are NOT researched."
+    },
+    {
+      "id": "azores",
+      "name": "Faial and Pico channel",
+      "country": "Portugal",
+      "jurisdiction": "PT",
+      "bbox": {
+        "lon_min": -28.85,
+        "lat_min": 38.42,
+        "lon_max": -28.35,
+        "lat_max": 38.62
+      },
+      "depth": {
+        "min_m": 3.0,
+        "best_m": [
+          10.0,
+          30.0
+        ],
+        "max_m": 45.0
+      },
+      "note": "Mid-Atlantic volcanic. EMODnet reaches here so the structure map is at full resolution, but the species are Atlantic, not Mediterranean.",
+      "enabled": true,
+      "species_file": null,
+      "exclusions_file": null,
+      "wind_regimes": null
+    },
+    {
+      "id": "canaries",
+      "name": "Tenerife, south-west",
+      "country": "Spain",
+      "jurisdiction": "ES",
+      "bbox": {
+        "lon_min": -16.8,
+        "lat_min": 28.0,
+        "lon_max": -16.55,
+        "lat_max": 28.25
+      },
+      "depth": {
+        "min_m": 3.0,
+        "best_m": [
+          8.0,
+          25.0
+        ],
+        "max_m": 40.0
+      },
+      "note": "EMODnet coverage, so full-resolution structure. Subtropical Atlantic species.",
+      "enabled": false,
+      "species_file": null,
+      "exclusions_file": null,
+      "wind_regimes": null
+    },
+    {
+      "id": "oahu-west",
+      "name": "Oahu, west shore",
+      "country": "United States",
+      "jurisdiction": "US-HI",
+      "bbox": {
+        "lon_min": -158.25,
+        "lat_min": 21.28,
+        "lon_max": -158.02,
+        "lat_max": 21.6
+      },
+      "depth": {
+        "min_m": 3.0,
+        "best_m": [
+          8.0,
+          25.0
+        ],
+        "max_m": 40.0
+      },
+      "note": "Global bathymetry tier only. Hawaii has excellent NOAA CUDEM coverage at 3-10 m that this does not yet use - that would be the single biggest upgrade here.",
+      "enabled": true,
+      "species_file": null,
+      "exclusions_file": null,
+      "wind_regimes": null
+    },
+    {
+      "id": "socal",
+      "name": "Palos Verdes and Catalina",
+      "country": "United States",
+      "jurisdiction": "US-CA",
+      "bbox": {
+        "lon_min": -118.6,
+        "lat_min": 33.3,
+        "lon_max": -118.2,
+        "lat_max": 33.8
+      },
+      "depth": {
+        "min_m": 3.0,
+        "best_m": [
+          8.0,
+          25.0
+        ],
+        "max_m": 40.0
+      },
+      "note": "Kelp forest diving. California has its own licence and species rules that are NOT encoded.",
+      "enabled": false,
+      "species_file": null,
+      "exclusions_file": null,
+      "wind_regimes": null
+    },
+    {
+      "id": "florida-keys",
+      "name": "Florida Keys, upper",
+      "country": "United States",
+      "jurisdiction": "US-FL",
+      "bbox": {
+        "lon_min": -80.6,
+        "lat_min": 24.9,
+        "lon_max": -80.2,
+        "lat_max": 25.25
+      },
+      "depth": {
+        "min_m": 2.0,
+        "best_m": [
+          5.0,
+          20.0
+        ],
+        "max_m": 30.0
+      },
+      "note": "Reef. Large protected areas where spearfishing is banned outright and none of them are encoded here.",
+      "enabled": false,
+      "species_file": null,
+      "exclusions_file": null,
+      "wind_regimes": null
+    },
+    {
+      "id": "capetown",
+      "name": "False Bay",
+      "country": "South Africa",
+      "jurisdiction": "ZA",
+      "bbox": {
+        "lon_min": 18.35,
+        "lat_min": -34.3,
+        "lon_max": 18.75,
+        "lat_max": -34.0
+      },
+      "depth": {
+        "min_m": 3.0,
+        "best_m": [
+          6.0,
+          20.0
+        ],
+        "max_m": 35.0
+      },
+      "note": "Cold, surgy, and shark country. The model knows nothing about any of that.",
+      "enabled": false,
+      "species_file": null,
+      "exclusions_file": null,
+      "wind_regimes": null
+    },
+    {
+      "id": "rottnest",
+      "name": "Rottnest and Perth",
+      "country": "Australia",
+      "jurisdiction": "AU-WA",
+      "bbox": {
+        "lon_min": 115.42,
+        "lat_min": -32.1,
+        "lon_max": 115.8,
+        "lat_max": -31.9
+      },
+      "depth": {
+        "min_m": 3.0,
+        "best_m": [
+          8.0,
+          25.0
+        ],
+        "max_m": 40.0
+      },
+      "note": "AusSeabed publishes much finer bathymetry than the global tier used here.",
+      "enabled": false,
+      "species_file": null,
+      "exclusions_file": null,
+      "wind_regimes": null
+    },
+    {
+      "id": "poor-knights",
+      "name": "Northland, Poor Knights",
+      "country": "New Zealand",
+      "jurisdiction": "NZ",
+      "bbox": {
+        "lon_min": 174.3,
+        "lat_min": -35.6,
+        "lon_max": 174.85,
+        "lat_max": -35.3
+      },
+      "depth": {
+        "min_m": 3.0,
+        "best_m": [
+          10.0,
+          30.0
+        ],
+        "max_m": 45.0
+      },
+      "note": "The Poor Knights themselves are a no-take marine reserve. This region covers the wider coast; the reserve is NOT masked.",
+      "enabled": false,
+      "species_file": null,
+      "exclusions_file": null,
+      "wind_regimes": null
+    },
+    {
+      "id": "bali-north",
+      "name": "Bali, north coast",
+      "country": "Indonesia",
+      "jurisdiction": "ID",
+      "bbox": {
+        "lon_min": 114.95,
+        "lat_min": -8.28,
+        "lon_max": 115.35,
+        "lat_max": -8.05
+      },
+      "depth": {
+        "min_m": 3.0,
+        "best_m": [
+          8.0,
+          25.0
+        ],
+        "max_m": 40.0
+      },
+      "note": "Indo-Pacific reef, a completely different species assemblage from anything encoded here.",
+      "enabled": false,
+      "species_file": null,
+      "exclusions_file": null,
+      "wind_regimes": null
+    },
+    {
+      "id": "okinawa",
+      "name": "Okinawa, west coast",
+      "country": "Japan",
+      "jurisdiction": "JP",
+      "bbox": {
+        "lon_min": 127.6,
+        "lat_min": 26.3,
+        "lon_max": 128.0,
+        "lat_max": 26.7
+      },
+      "depth": {
+        "min_m": 3.0,
+        "best_m": [
+          8.0,
+          25.0
+        ],
+        "max_m": 40.0
+      },
+      "note": "Subtropical reef. Japanese prefectural rules on spearfishing are strict and vary; none are encoded.",
+      "enabled": false,
+      "species_file": null,
+      "exclusions_file": null,
+      "wind_regimes": null
     }
   ]
 }

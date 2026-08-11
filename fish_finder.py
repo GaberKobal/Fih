@@ -148,9 +148,13 @@ def region_config(base, region):
     cfg["species_file"] = region.get("species_file")
     cfg["exclusions_file"] = region.get("exclusions_file")
     for key in ("depth", "thermocline", "entry_points", "max_swim_km",
-                "weights", "visibility", "overlay", "water", "structure"):
+                "weights", "visibility", "overlay", "water", "structure",
+                "bathymetry", "shelter", "movement", "contours", "cmems",
+                "wind_regimes", "grid_resolution_m"):
         if key in region:
-            if isinstance(region[key], dict) and isinstance(cfg.get(key), dict):
+            if region[key] is None:
+                cfg[key] = None                    # explicit "not applicable here"
+            elif isinstance(region[key], dict) and isinstance(cfg.get(key), dict):
                 cfg[key].update(region[key])
             else:
                 cfg[key] = region[key]
@@ -211,18 +215,166 @@ def regrid(src_lats, src_lons, src, dst_lats, dst_lons, fill=np.nan,
 # bathymetry — EMODnet DTM, ~115 m, cached to disk
 # --------------------------------------------------------------------------
 
+# EMODnet covers European seas at ~115 m. Everywhere else the best free
+# numeric source is SRTM15+ at 15 arc-seconds, which is 300-450 m depending on
+# latitude. That is not a small difference: the relief term exists to find
+# mounds a few cells across, and at 450 m a reef is smaller than one cell.
+EMODNET_FOOTPRINT = {"lon_min": -36.0, "lat_min": 24.0,
+                     "lon_max": 43.0, "lat_max": 90.0}
+ERDDAP_BASE = "https://coastwatch.pfeg.noaa.gov/erddap/griddap"
+
+
+def inside(bbox, outer):
+    return (bbox["lon_min"] >= outer["lon_min"] and bbox["lon_max"] <= outer["lon_max"]
+            and bbox["lat_min"] >= outer["lat_min"] and bbox["lat_max"] <= outer["lat_max"])
+
+
+def choose_provider(bbox, cfg):
+    """EMODnet where it reaches, the global grid otherwise."""
+    forced = (cfg.get("bathymetry") or {}).get("provider")
+    if forced and forced != "auto":
+        return forced
+    return "emodnet" if inside(bbox, EMODNET_FOOTPRINT) else "gmrt"
+
+
+def parse_erddap_json(raw):
+    payload = json.loads(raw)
+    cols = payload["table"]["columnNames"]
+    rows = payload["table"]["rows"]
+    li, oi = cols.index("latitude"), cols.index("longitude")
+    vi = next(i for i, c in enumerate(cols) if i not in (li, oi))
+    lats = sorted({r[li] for r in rows})
+    lons = sorted({r[oi] for r in rows})
+    grid = np.full((len(lats), len(lons)), np.nan)
+    ly = {v: i for i, v in enumerate(lats)}
+    lx = {v: i for i, v in enumerate(lons)}
+    for r in rows:
+        if r[vi] is not None:
+            grid[ly[r[li]], lx[r[oi]]] = r[vi]
+    return np.array(lats), np.array(lons), grid
+
+
+def fetch_erddap_bathymetry(bbox, cfg):
+    """Global 15 arc-second bathymetry via NOAA ERDDAP griddap.
+
+    Values are elevation: negative below sea level, matching EMODnet, so the
+    rest of the pipeline does not care which provider it came from.
+    """
+    b = (cfg.get("bathymetry") or {})
+    dataset = b.get("erddap_dataset", "srtm15plus")
+    var = b.get("erddap_variable", "z")
+    lon_min, lon_max = bbox["lon_min"], bbox["lon_max"]
+
+    # The Lon0360 twin exists for the Pacific; a box that crosses the
+    # antimeridian is unrepresentable in -180..180.
+    if lon_min > lon_max or lon_min < -180 or lon_max > 180:
+        dataset = b.get("erddap_dataset_360", "srtm15plus_Lon0360")
+        lon_min %= 360.0
+        lon_max %= 360.0
+
+    query = (f"{var}"
+             f"[({bbox['lat_min']}):1:({bbox['lat_max']})]"
+             f"[({lon_min}):1:({lon_max})]")
+    url = f"{ERDDAP_BASE}/{dataset}.json?{urllib.parse.quote(query, safe='(),:.-')}"
+    log(f"bathymetry: requesting {dataset} from NOAA ERDDAP (global tier)")
+    lats, lons, elev = parse_erddap_json(http_get(url, timeout=300))
+    lons = np.where(lons > 180.0, lons - 360.0, lons)   # back to -180..180
+    order = np.argsort(lons)
+    return lats, lons[order], elev[:, order]
+
+
+GMRT_URL = "https://www.gmrt.org/services/GridServer"
+
+
+def fetch_gmrt_bathymetry(bbox, cfg):
+    """Global Multi-Resolution Topography, to 100 m where multibeam exists.
+
+    GMRT merges cleaned multibeam from research cruises worldwide over a
+    GEBCO/SRTM base, so the resolution you actually get depends on whether
+    anyone has surveyed that coast. That is fine and in fact the point: the
+    grid is measured after it arrives rather than assumed, so a well-surveyed
+    coast gets a real structure map and an unsurveyed one is told it is only
+    seeing slope.
+    """
+    import rasterio
+    b = (cfg.get("bathymetry") or {})
+    params = {
+        "north": bbox["lat_max"], "south": bbox["lat_min"],
+        "west": bbox["lon_min"], "east": bbox["lon_max"],
+        "layer": "topo",                      # includes land; we mask on elev >= 0
+        "format": "geotiff",
+        "resolution": b.get("gmrt_resolution", "high"),
+    }
+    url = f"{GMRT_URL}?{urllib.parse.urlencode(params)}"
+    log("bathymetry: requesting GMRT (multibeam where it exists)")
+    raw = http_get(url, timeout=300)
+    if raw[:4] not in (b"II*\x00", b"MM\x00*"):
+        raise RuntimeError(f"GMRT returned a non-TIFF response: {raw[:200]!r}")
+
+    with rasterio.MemoryFile(raw) as mem, mem.open() as ds:
+        elev = ds.read(1).astype(float)
+        if ds.nodata is not None:
+            elev[elev == ds.nodata] = np.nan
+        elev[np.abs(elev) > 12000] = np.nan
+        t = ds.transform
+        lons = t.c + t.a * (np.arange(ds.width) + 0.5)
+        lats = t.f + t.e * (np.arange(ds.height) + 0.5)
+    if lats[0] > lats[-1]:
+        lats, elev = lats[::-1], elev[::-1, :]
+    return lats, lons, elev
+
+
+def native_resolution_m(lats, lons):
+    """Actual cell size of whatever came back, rather than what we asked for."""
+    lat0 = float(np.mean(lats))
+    dy = float(np.abs(np.diff(lats)).mean()) * 111320.0
+    dx = float(np.abs(np.diff(lons)).mean()) * 111320.0 * math.cos(math.radians(lat0))
+    return float(np.hypot(dy, dx) / math.sqrt(2))
+
+
+def fetch_bathymetry(bbox, res_deg, cache_key, cfg):
+    """One entry point; the provider is an implementation detail downstream."""
+    provider = choose_provider(bbox, cfg)
+    cache_file = CACHE / f"bathy_{provider}_{cache_key}.npz"
+    if cache_file.exists():
+        log(f"bathymetry: cache hit ({cache_file.name})")
+        z = np.load(cache_file)
+        return z["lats"], z["lons"], z["elev"], provider, float(z["native_m"])
+
+    chain = {"emodnet": [("emodnet", lambda: fetch_emodnet_bathymetry(bbox, res_deg, cache_key)),
+                         ("gmrt",    lambda: fetch_gmrt_bathymetry(bbox, cfg)),
+                         ("erddap",  lambda: fetch_erddap_bathymetry(bbox, cfg))],
+             "gmrt":    [("gmrt",    lambda: fetch_gmrt_bathymetry(bbox, cfg)),
+                         ("erddap",  lambda: fetch_erddap_bathymetry(bbox, cfg))],
+             "erddap":  [("erddap",  lambda: fetch_erddap_bathymetry(bbox, cfg))]}[provider]
+
+    lats = lons = elev = None
+    for name, fn in chain:
+        try:
+            lats, lons, elev = fn()
+            provider = name
+            break
+        except Exception as e:
+            log(f"bathymetry: {name} failed ({e.__class__.__name__}: {e})"
+                + (" - trying the next source" if fn is not chain[-1][1] else ""))
+    if elev is None:
+        raise RuntimeError("every bathymetry source failed for this region")
+
+    native = native_resolution_m(lats, lons)
+    CACHE.mkdir(parents=True, exist_ok=True)
+    np.savez_compressed(cache_file, lats=lats, lons=lons, elev=elev,
+                        native_m=native)
+    log(f"bathymetry: {provider}, {elev.shape[0]}x{elev.shape[1]} cells, "
+        f"native ~{native:.0f} m")
+    return lats, lons, elev, provider, native
+
+
 def fetch_emodnet_bathymetry(bbox: dict, res_deg: float, cache_key: str):
     """EMODnet Bathymetry DTM via WCS 1.0.0, as GeoTIFF.
 
     Values are elevation: negative below sea level, positive on land.
     Static data, so it is cached and never refetched.
     """
-    cache_file = CACHE / f"bathy_{cache_key}.npz"
-    if cache_file.exists():
-        log(f"bathymetry: cache hit ({cache_file.name})")
-        z = np.load(cache_file)
-        return z["lats"], z["lons"], z["elev"]
-
     import rasterio  # imported here so --selftest works without it
 
     params = {
@@ -261,9 +413,6 @@ def fetch_emodnet_bathymetry(bbox: dict, res_deg: float, cache_key: str):
     if lats[0] > lats[-1]:
         lats, elev = lats[::-1], elev[::-1, :]
 
-    CACHE.mkdir(parents=True, exist_ok=True)
-    np.savez_compressed(cache_file, lats=lats, lons=lons, elev=elev)
-    log(f"bathymetry: {elev.shape[0]}x{elev.shape[1]} cells cached")
     return lats, lons, elev
 
 
@@ -295,7 +444,7 @@ def open_sea_mask(land, cfg):
     passes. A morphological opening removes any water body narrower than the
     structuring disk, which is exactly the set of places you cannot dive.
     """
-    wcfg = cfg.get("water", {})
+    wcfg = (cfg.get("water") or {})
     r = int(wcfg.get("min_width_cells", 3))
     water = ~land
     keep = water.copy()
@@ -457,6 +606,104 @@ def access_fit(lats, lons, cfg):
     return np.clip((max_m + taper - best) / taper, 0.0, 1.0)
 
 
+def fetch_from(land, lats, lons, from_deg, cfg, nodata=None):
+    """Distance to land along the ray a wave or wind is arriving from.
+
+    Shared by wind and swell: both are 'how much open water is upstream of
+    this cell', they just come from different directions.
+    """
+    max_km = cfg["shelter"]["max_fetch_km"]
+    step_m = cfg["shelter"]["fetch_step_m"]
+    n_steps = int(max_km * 1000 / step_m)
+
+    th = math.radians(float(from_deg) % 360.0)
+    east, north = math.sin(th), math.cos(th)
+    lat0 = float(np.mean(lats))
+    dlat = (north * step_m) / 111320.0
+    dlon = (east * step_m) / (111320.0 * math.cos(math.radians(lat0)))
+
+    blocks = land if nodata is None else (land & ~nodata)
+    lat_step, lon_step = lats[1] - lats[0], lons[1] - lons[0]
+    ny, nx = land.shape
+    gy, gx = np.meshgrid(lats, lons, indexing="ij")
+    fetch = np.full(gy.shape, max_km * 1000.0)
+    done = blocks.copy()
+    cur_lat, cur_lon = gy.copy(), gx.copy()
+
+    for step in range(1, n_steps + 1):
+        cur_lat += dlat
+        cur_lon += dlon
+        iy = np.rint((cur_lat - lats[0]) / lat_step).astype(int)
+        ix = np.rint((cur_lon - lons[0]) / lon_step).astype(int)
+        outside = (iy < 0) | (iy >= ny) | (ix < 0) | (ix >= nx)
+        hit = blocks[np.clip(iy, 0, ny - 1), np.clip(ix, 0, nx - 1)] & ~outside & ~done
+        fetch[hit] = step * step_m
+        done |= hit
+        if done.all():
+            break
+    return fetch
+
+
+def combined_shelter(land, lats, lons, wind_from, swell_from, cfg, nodata=None):
+    """Shelter from wind chop AND from swell, which rarely agree.
+
+    Wind fetch alone missed the common case here: a light onshore breeze with
+    an old swell still running in from a different quarter. The two are traced
+    separately and the worse one dominates.
+    """
+    max_m = cfg["shelter"]["max_fetch_km"] * 1000.0
+    w = 1.0 - np.clip(fetch_from(land, lats, lons, wind_from, cfg, nodata) / max_m, 0, 1)
+    sw_weight = float(cfg["shelter"].get("swell_weight", 0.5))
+    if swell_from is None or not np.isfinite(swell_from) or sw_weight <= 0:
+        w[land] = 0.0
+        return w, None
+    sw = 1.0 - np.clip(fetch_from(land, lats, lons, swell_from, cfg, nodata) / max_m, 0, 1)
+    both = (1.0 - sw_weight) * w + sw_weight * sw
+    both[land] = 0.0
+    return both, sw
+
+
+def depth_contours(depth_m, land, lats, lons, cfg):
+    """Depth lines as GeoJSON, so the map shows where the shelf actually is.
+
+    A colour wash tells you a cell scores well; a 10 m line tells you whether
+    you can reach the bottom. Decimated hard - these are for orientation, not
+    navigation.
+    """
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    c = (cfg.get("contours") or {})
+    levels = c.get("levels_m", [5, 10, 15, 20, 30])
+    every = max(1, int(c.get("decimate", 3)))
+    min_pts = int(c.get("min_points", 8))
+
+    field = gaussian_filter(np.nan_to_num(depth_m, nan=-5.0), sigma=1.5)
+    field[land] = -5.0
+    fig = plt.figure()
+    try:
+        cs = plt.contour(lons, lats, field, levels=levels)
+        feats = []
+        for lvl, segs in zip(cs.levels, cs.allsegs):
+            for seg in segs:
+                if len(seg) < min_pts:
+                    continue
+                pts = seg[::every]
+                if len(pts) < 3:
+                    continue
+                feats.append({
+                    "type": "Feature",
+                    "properties": {"depth_m": float(lvl)},
+                    "geometry": {"type": "LineString",
+                                 "coordinates": [[round(float(x), 5),
+                                                  round(float(y), 5)] for x, y in pts]},
+                })
+    finally:
+        plt.close(fig)
+    return {"type": "FeatureCollection", "features": feats}
+
+
 def upwind_shelter(land, lats, lons, wind_from_deg, cfg, nodata=None):
     """Trace the upwind ray from every water cell until it hits land.
 
@@ -551,6 +798,79 @@ def rasterize_polygons(path_or_gj, lats, lons):
             continue
         mask |= MplPath(ring[:, :2]).contains_points(pts).reshape(gy.shape)
     return mask
+
+
+OVERPASS_URL = "https://overpass-api.de/api/interpreter"
+
+
+def fetch_wrecks(bbox, cfg, region_id):
+    """Charted wrecks and artificial reefs from OpenStreetMap via Overpass.
+
+    Worth more than anything else per line of code here: a wreck is the best
+    structure a spearo can be given, it is a point rather than a raster, and
+    it is exactly as useful on a 450 m grid as on a 115 m one. Cached, because
+    wrecks do not move and Overpass is a shared free service.
+    """
+    cache_file = CACHE / f"wrecks_{region_id}.geojson"
+    if cache_file.exists():
+        return json.loads(cache_file.read_text())
+
+    q = f"""[out:json][timeout:90];
+(
+  node["seamark:type"="wreck"]({bbox['lat_min']},{bbox['lon_min']},{bbox['lat_max']},{bbox['lon_max']});
+  way["seamark:type"="wreck"]({bbox['lat_min']},{bbox['lon_min']},{bbox['lat_max']},{bbox['lon_max']});
+  node["historic"="wreck"]({bbox['lat_min']},{bbox['lon_min']},{bbox['lat_max']},{bbox['lon_max']});
+  way["historic"="wreck"]({bbox['lat_min']},{bbox['lon_min']},{bbox['lat_max']},{bbox['lon_max']});
+  node["seamark:type"="obstruction"]({bbox['lat_min']},{bbox['lon_min']},{bbox['lat_max']},{bbox['lon_max']});
+);
+out center tags;"""
+    req = urllib.request.Request(OVERPASS_URL, data=urllib.parse.urlencode({"data": q}).encode(),
+                                 headers={"User-Agent": USER_AGENT})
+    with urllib.request.urlopen(req, timeout=120) as r:
+        doc = json.loads(r.read())
+
+    feats = []
+    for el in doc.get("elements", []):
+        lat = el.get("lat") or (el.get("center") or {}).get("lat")
+        lon = el.get("lon") or (el.get("center") or {}).get("lon")
+        if lat is None or lon is None:
+            continue
+        tg = el.get("tags", {})
+        depth = tg.get("seamark:wreck:depth") or tg.get("depth")
+        try:
+            depth = float(depth) if depth is not None else None
+        except (TypeError, ValueError):
+            depth = None
+        feats.append({
+            "type": "Feature",
+            "geometry": {"type": "Point", "coordinates": [round(lon, 6), round(lat, 6)]},
+            "properties": {
+                "name": tg.get("seamark:name") or tg.get("name") or "wreck",
+                "kind": tg.get("seamark:type") or tg.get("historic") or "wreck",
+                "category": tg.get("seamark:wreck:category"),
+                "depth_m": depth,
+                "osm_id": el.get("id"),
+            },
+        })
+    gj = {"type": "FeatureCollection", "features": feats}
+    CACHE.mkdir(parents=True, exist_ok=True)
+    cache_file.write_text(json.dumps(gj))
+    return gj
+
+
+def wreck_score(gj, lats, lons, cfg):
+    """A soft halo around each charted wreck, tapering over a swimmable radius."""
+    c = (cfg.get("wrecks") or {})
+    radius = float(c.get("radius_m", 250.0))
+    pts = [f["geometry"]["coordinates"] for f in gj.get("features", [])]
+    field = np.zeros((len(lats), len(lons)))
+    if not pts:
+        return field
+    gy, gx = np.meshgrid(lats, lons, indexing="ij")
+    for lon, lat in pts:
+        d = haversine_m(lat, lon, gy, gx)
+        field = np.maximum(field, np.clip(1.0 - d / radius, 0.0, 1.0))
+    return field
 
 
 def fetch_seabed_habitat(bbox, cfg):
@@ -694,7 +1014,13 @@ def classify_wind(dir_deg, speed_kmh, gust_kmh, cfg):
     Bora off the land, jugo onshore and warm, maestral the afternoon thermal.
     They do very different things to visibility and to whether you can work.
     """
-    regs = cfg.get("wind_regimes", {})
+    regs = cfg.get("wind_regimes") or {}
+    if not regs:
+        # bora, jugo and maestral mean nothing in Hawaii. With no named set the
+        # wind still counts through fetch and workability, it just is not
+        # given a local name or a clarity multiplier.
+        return {"name": "", "viz_factor": 1.0, "work_factor": 1.0,
+                "gust_ratio": 1.0, "note": ""}
     name, spec = "other", regs.get("other", {})
     d = float(dir_deg) % 360.0
     for key, r in regs.items():
@@ -959,7 +1285,36 @@ def load_species(cfg):
     wanted = cfg.get("species_ids")          # null/absent = all of them
     out = [sp for sp in doc.get("species", [])
            if not wanted or sp["id"] in wanted]
+
+    # Law is per jurisdiction, biology is not. Merge the right pack in here so
+    # the same species file can serve any Mediterranean coast.
+    law = load_legal(cfg)
+    for sp in out:
+        sp["legal"] = dict(law.get("species", {}).get(sp["id"], {}))
+        sp["legal"]["jurisdiction"] = law.get("jurisdiction", "")
+        sp["legal"]["seasons_researched"] = law.get("closed_seasons_researched", False)
     return out
+
+
+def load_legal(cfg):
+    """Fishing rules for this region's jurisdiction.
+
+    Returns an empty pack rather than guessing if there is no file: showing a
+    Croatian closed season in Greek water is worse than showing nothing.
+    """
+    cc = (cfg.get("jurisdiction") or "").upper()
+    path = ROOT / "legal" / f"{cc}.json"
+    if not cc or not path.exists():
+        log(f"legal: no rules pack for jurisdiction {cc or '(none)'} - "
+            "sizes and seasons will not be shown")
+        return {}
+    doc = json.loads(path.read_text())
+    n = sum(1 for v in doc.get("species", {}).values() if v.get("closed_seasons"))
+    log(f"legal: {cc} pack ({doc.get('confidence')}), "
+        f"{n} species with a closed season"
+        + ("" if doc.get("closed_seasons_researched")
+           else " - SEASONS NOT RESEARCHED for this country"))
+    return doc
 
 
 def fetch_cmems_profile(lat, lon, cfg):
@@ -970,7 +1325,7 @@ def fetch_cmems_profile(lat, lon, cfg):
     secret is ever committed. Returns None on any problem and the caller
     falls back to the estimate.
     """
-    c = cfg.get("cmems", {})
+    c = (cfg.get("cmems") or {})
     if not c.get("enabled"):
         return None
     if not (os.environ.get("COPERNICUSMARINE_SERVICE_USERNAME")
@@ -1045,6 +1400,9 @@ def legal_status(sp, on_date):
     pointed you at a closed fish for two weeks either side.
     """
     L = sp.get("legal") or {}
+    if not L.get("seasons_researched", True):
+        # No closure data for this country. Say so rather than implying open.
+        return {"open": True, "reason": "", "reopens": None, "unknown": True}
     md = f"{on_date.month:02d}-{on_date.day:02d}"
     for w in L.get("closed_seasons", []):
         a, b = w["from"], w["to"]
@@ -1054,7 +1412,7 @@ def legal_status(sp, on_date):
             return {"open": False,
                     "reason": f"closed season {a} to {b}",
                     "reopens": f"{y}-{b}"}
-    return {"open": True, "reason": "", "reopens": None}
+    return {"open": True, "reason": "", "reopens": None, "unknown": False}
 
 
 def species_day_factors(sp, sea_temp_c, viz_score, month, cfg=None, profile=None,
@@ -1097,6 +1455,7 @@ def species_day_factors(sp, sea_temp_c, viz_score, month, cfg=None, profile=None
         "legally_open": law["open"],
         "closed_reason": law["reason"],
         "reopens": law["reopens"],
+        "seasons_unknown": law.get("unknown", False),
     }
 
 
@@ -1349,13 +1708,52 @@ def run(cfg, selftest=False, out_dir=None):
     # ---- bathymetry ----
     if selftest:
         blats, blons, elev = synthetic_bathymetry(bbox, res_deg)
+        provider, native = "synthetic", 100.0
     else:
         key = (f"{bbox['lon_min']}_{bbox['lat_min']}_{bbox['lon_max']}_"
                f"{bbox['lat_max']}_{cfg['grid_resolution_m']}")
-        blats, blons, elev = fetch_emodnet_bathymetry(bbox, res_deg, key)
+        blats, blons, elev, provider, native = fetch_bathymetry(
+            bbox, res_deg, key, cfg)
+
+        # Satellite-derived depth, if sdb.py produced one that passed its own
+        # R2 check. It only covers the optically shallow band, so it is laid
+        # OVER the chart grid rather than replacing it - fine detail where the
+        # satellite can see, the original everywhere else.
+        sdb_file = CACHE / f"sdb_{cfg.get('region_id','default')}.npz"
+        if (cfg.get("bathymetry") or {}).get("use_sdb") and sdb_file.exists():
+            z = np.load(sdb_file)
+            sd = regrid(z["lats"], z["lons"], -z["depth"], blats, blons,
+                        min_valid=0.6)
+            merged = np.where(np.isfinite(sd), sd, elev)
+            filled = int(np.isfinite(sd).sum())
+            elev = merged
+            native = float(z["native_m"])
+            provider = f"{provider}+sdb"
+            log(f"bathymetry: satellite depth merged over {filled} cells "
+                f"(R2 {float(z['r2']):.2f}, RMSE {float(z['rmse_m']):.1f} m, "
+                f"scene {str(z['scene'])[:10]}) - native now ~{native:.0f} m")
+
+    # Do not resample far below what the source actually resolves. A 100 m
+    # target grid on a 450 m global tile is fake precision, and it quadruples
+    # the output for no information.
+    floor = max(native / float((cfg.get("bathymetry") or {}).get("min_cells_per_native", 1.5)),
+                float((cfg.get("bathymetry") or {}).get("min_grid_resolution_m", 40.0)))
+    if cfg["grid_resolution_m"] < floor:
+        log(f"grid: source resolves ~{native:.0f} m, so using {floor:.0f} m "
+            f"cells instead of {cfg['grid_resolution_m']} m")
+        cfg["grid_resolution_m"] = round(floor)
+        res_deg = cfg["grid_resolution_m"] / 111320.0
+        lats, lons = build_target_grid(bbox, cfg["grid_resolution_m"])
+        log(f"target grid: {len(lats)} x {len(lons)} at {cfg['grid_resolution_m']} m")
+
+    relief_ok = native <= float((cfg.get("bathymetry") or {}).get(
+        "relief_meaningful_below_m", 200.0))
+    if not relief_ok:
+        log(f"bathymetry: {native:.0f} m cells cannot resolve reef-scale relief - "
+            "the structure map here shows broad slope only")
 
     elev_g = regrid(blats, blons, elev, lats, lons,
-                    min_valid=cfg.get("water", {}).get("bathy_min_valid", 0.9))
+                    min_valid=(cfg.get("water") or {}).get("bathy_min_valid", 0.9))
     nodata = ~np.isfinite(elev_g)
     land = nodata | (elev_g >= 0)
     if nodata.any():
@@ -1422,6 +1820,15 @@ def run(cfg, selftest=False, out_dir=None):
 
     # Named wind regimes: bora, jugo, maestral do different things to the
     # water and to whether you can work in it.
+    lvl = np.nan_to_num(h["sea_level_height_msl"], nan=0.0)
+    tide_range = float(np.nanmax(lvl) - np.nanmin(lvl)) if lvl.size else 0.0
+    macrotidal = tide_range > float((cfg.get("movement") or {}).get(
+        "macrotidal_range_m", 1.5))
+    if macrotidal:
+        log(f"tides: forecast range {tide_range:.1f} m - macrotidal. The movement "
+            "term and Open-Meteo's 8 km tide model are not adequate here; treat "
+            "timing as unreliable and use a real tide table.")
+
     regimes, viz_f, work_f = wind_regime_series(h, cfg)
     viz = np.clip(viz * viz_f, 0.0, 1.0)
     vc = cfg["visibility"]
@@ -1467,7 +1874,7 @@ def run(cfg, selftest=False, out_dir=None):
     # ---- gates: static, so computed once ----
     dfit = depth_fit(depth_m, land, cfg)
     afit = access_fit(lats, lons, cfg)
-    clear_min = cfg.get("water", {}).get("min_shore_clearance_m", 0)
+    clear_min = (cfg.get("water") or {}).get("min_shore_clearance_m", 0)
     cfit = np.ones_like(dfit)
     if clear_min > 0:
         cfit = np.clip(shore_clearance(land, cfg) / max(clear_min, 1e-6), 0, 1)
@@ -1480,6 +1887,20 @@ def run(cfg, selftest=False, out_dir=None):
     if excl.any():
         log(f"exclusions: {excl.mean():.1%} of the box masked out")
     gates = [afit, cfit, (~excl).astype(float)]
+
+    wrecks_gj, wrecks = None, None
+    if (cfg.get("wrecks") or {}).get("enabled", True) and not selftest:
+        try:
+            wrecks_gj = fetch_wrecks(bbox, cfg, cfg.get("region_id", "default"))
+            n = len(wrecks_gj["features"])
+            if n:
+                wrecks = wreck_score(wrecks_gj, lats, lons, cfg)
+                log(f"wrecks: {n} charted within the box")
+            else:
+                log("wrecks: none charted here")
+            (OUT / "wrecks.geojson").write_text(json.dumps(wrecks_gj))
+        except Exception as e:
+            log(f"wrecks: unavailable ({e.__class__.__name__}) - continuing without")
 
     habitat = None
     if cfg["habitat"]["enabled"] and not selftest:
@@ -1504,10 +1925,14 @@ def run(cfg, selftest=False, out_dir=None):
         wind_d = float(h["wind_direction_10m"][ri])
         if not np.isfinite(wind_d):
             wind_d = 0.0
-        shelter_d, _ = upwind_shelter(land, lats, lons, wind_d, cfg, nodata)
+        swell_d = float(h["wave_direction"][ri]) if "wave_direction" in h else None
+        shelter_d, _ = combined_shelter(land, lats, lons, wind_d, swell_d,
+                                        cfg, nodata)
         terms_d = {"relief": relief_s, "slope": slope_s, "shelter": shelter_d}
         if habitat is not None:
             terms_d["habitat"] = habitat
+        if wrecks is not None:
+            terms_d["wreck"] = wrecks
         w_d = {k: weights_cfg.get(k, 0.0) for k in terms_d}
 
         score_d = combine_score(terms_d, w_d, gates)
@@ -1548,6 +1973,8 @@ def run(cfg, selftest=False, out_dir=None):
         sp_out.sort(key=lambda x: -x["today"])
 
         day["wind_from_deg"] = round(wind_d)
+        day["swell_from_deg"] = (round(swell_d) if swell_d is not None
+                                 and np.isfinite(swell_d) else None)
         day["wind_regime"] = regimes[ri]
         day["viz_m"] = round(float(viz_m[ri]), 1)
         day["sea_temp_c"] = round(temp_d, 1)
@@ -1577,17 +2004,32 @@ def run(cfg, selftest=False, out_dir=None):
     spots = days[0]["spots"] if days else []
     species_out = days[0]["species"] if days else []
     write_geojson(spots, OUT / "spots.geojson", {"generated": stamp})
+    if (cfg.get("contours") or {}).get("enabled", True):
+        try:
+            gj = depth_contours(depth_m, land, lats, lons, cfg)
+            (OUT / "contours.geojson").write_text(json.dumps(gj))
+            log(f"wrote {OUT / 'contours.geojson'} "
+                f"({len(gj['features'])} lines at "
+                f"{cfg.get('contours', {}).get('levels_m', [5,10,15,20,30])} m)")
+        except Exception as e:
+            log(f"contours: skipped ({e.__class__.__name__}: {e})")
 
     keep = slice(max(0, now_i - 24), min(len(h["time"]), now_i + 60))
     payload = {
         "generated": stamp,
-        "schema_version": 6,
+        "schema_version": 11,
         "region": cfg["region_name"],
         "region_id": cfg.get("region_id", "default"),
         "country": cfg.get("country", ""),
         "jurisdiction": cfg.get("jurisdiction", ""),
         "region_note": cfg.get("region_note", ""),
+        "bathymetry_provider": provider,
+        "bathymetry_native_m": round(native),
+        "relief_meaningful": bool(relief_ok),
+        "grid_resolution_m": cfg["grid_resolution_m"],
+        "has_wrecks": bool(wrecks_gj and wrecks_gj["features"]),
         "has_species": bool(cfg.get("species_file")),
+        "legal_pack": load_legal(cfg),
         "has_exclusions": bool(cfg.get("exclusions_file")),
         "bounds": [[bbox["lat_min"], bbox["lon_min"]],
                    [bbox["lat_max"], bbox["lon_max"]]],
@@ -1604,7 +2046,7 @@ def run(cfg, selftest=False, out_dir=None):
             "current_ms": round(float(h["ocean_current_velocity"][now_i]), 2),
             "wind_regime": regimes[now_i],
             "wind_from_deg_now": round(wind_from_now),
-            "wind_regime_note": cfg.get("wind_regimes", {}).get(
+            "wind_regime_note": (cfg.get("wind_regimes") or {}).get(
                 regimes[now_i], {}).get("note", ""),
             "sun_elevation_deg": round(float(elev[now_i]), 1),
             "light": round(float(light[now_i]), 2),
@@ -1630,6 +2072,8 @@ def run(cfg, selftest=False, out_dir=None):
         },
         "now_index": now_i - max(0, now_i - 24),
         "sea_temp_now_c": round(sea_temp, 1),
+        "tide_range_m": round(tide_range, 2),
+        "macrotidal": macrotidal,
         "species_top_spots": sp_cap,
         "visibility_calibrated": bool(vzc),
         "visibility_correction": vzc,
@@ -1700,6 +2144,10 @@ def main():
             "note": r.get("note", ""),
             "has_species": bool(r.get("species_file")),
             "has_exclusions": bool(r.get("exclusions_file")),
+            "bathymetry_provider": payload.get("bathymetry_provider"),
+            "bathymetry_native_m": payload.get("bathymetry_native_m"),
+            "relief_meaningful": payload.get("relief_meaningful"),
+            "macrotidal": payload.get("macrotidal"),
             "bbox": r["bbox"],
             "centre": [round((r["bbox"]["lat_min"] + r["bbox"]["lat_max"]) / 2, 4),
                        round((r["bbox"]["lon_min"] + r["bbox"]["lon_max"]) / 2, 4)],
@@ -1717,7 +2165,7 @@ def main():
     idx_path = ROOT / "docs" / "data" / "index.json"
     idx_path.parent.mkdir(parents=True, exist_ok=True)
     idx_path.write_text(json.dumps({
-        "schema_version": 6,
+        "schema_version": 11,
         "generated": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
         "regions": index,
         "failed": failed,

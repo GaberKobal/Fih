@@ -1,24 +1,12 @@
 {
   "_note": [
     "name_en is shown in the app; name_local is the Croatian name.",
-    "Habitat envelopes for the species worth hunting on this coast.",
-    "These come from published depth/habitat/temperature ranges and general",
-    "Mediterranean literature, NOT from Novigrad. They are a prior, not a",
-    "measurement. Adjust them as your dive log tells you otherwise — that is",
-    "the whole point of logging the species column.",
     "",
-    "depth_m       absolute range the species occupies",
-    "depth_best_m  where you actually expect to meet it (plateau of the fit)",
-    "relief_affinity  0-1, how tightly it holds to raised structure",
-    "slope_affinity   0-1, how much it works edges and drop-offs",
-    "temp_c / temp_best_c  water temperature tolerance and optimum",
-    "months        months it is realistically present and huntable here",
-    "viz_pref      clear  = you need clean water to get near it",
-    "              any    = visibility barely changes your odds",
-    "              murky  = stirred or coloured water works in your favour",
-    "wary          0-1, how much the fish punishes a noisy or visible approach",
+    "BIOLOGY ONLY. Depth, temperature, substrate, season of presence and how each species responds to water clarity. None of it is law.",
     "",
-    "temp_c is compared against ESTIMATED TEMPERATURE AT THE SPECIES' DEPTH, not sea surface temperature - see the thermocline block in config.json."
+    "Legal rules live in legal/<JURISDICTION>.json and are merged in at run time, because a closed season in Croatia means nothing in Slovenia. A region picks its pack in regions.json.",
+    "",
+    "months = when the animal is realistically present and huntable, which is a biological claim. A legal closure is separate and always wins."
   ],
   "species": [
     {
@@ -65,17 +53,6 @@
       "viz_pref": "any",
       "wary": 0.5,
       "note": "Resident on rocky edges year round. The bread-and-butter fish here; holds tight to structure and comes back to the same rock.",
-      "legal": {
-        "closed_seasons": [
-          {
-            "from": "03-15",
-            "to": "04-30"
-          }
-        ],
-        "min_size_cm": 23,
-        "min_size_source": "EU Mediterranean MCRS - Croatian national rule may be STRICTER, verify",
-        "must_tail_mark": true
-      },
       "name_en": "White seabream",
       "name_local": "šarag"
     },
@@ -124,12 +101,6 @@
       "viz_pref": "any",
       "wary": 0.4,
       "note": "Schools more than sargus and less spooky. Often the first fish on a new mark, which makes it a decent test of whether a mark is real.",
-      "legal": {
-        "closed_seasons": [],
-        "min_size_cm": 18,
-        "min_size_source": "EU Mediterranean MCRS - Croatian national rule may be STRICTER, verify",
-        "must_tail_mark": true
-      },
       "name_en": "Two-banded seabream",
       "name_local": "fratar"
     },
@@ -173,12 +144,6 @@
       "viz_pref": "murky",
       "wary": 0.8,
       "note": "Works soft bottom and seagrass, not rock — so it scores where the rest of the model scores low. Extremely wary in clear water; coloured water is your friend.",
-      "legal": {
-        "closed_seasons": [],
-        "min_size_cm": 20,
-        "min_size_source": "EU Mediterranean MCRS - Croatian national rule may be STRICTER, verify",
-        "must_tail_mark": true
-      },
       "name_en": "Gilthead seabream",
       "name_local": "orada"
     },
@@ -226,12 +191,6 @@
       "viz_pref": "murky",
       "wary": 0.85,
       "note": "Present year round here - a 40 cm fish was taken in August 2026, which killed the June-August closure this file used to claim. Still hunts stirred and coloured water.",
-      "legal": {
-        "closed_seasons": [],
-        "min_size_cm": 25,
-        "min_size_source": "EU Mediterranean MCRS - Croatian national rule may be STRICTER, verify",
-        "must_tail_mark": true
-      },
       "name_en": "European seabass",
       "name_local": "brancin"
     },
@@ -273,17 +232,6 @@
       "viz_pref": "clear",
       "wary": 0.95,
       "note": "Observed repeatedly at 4-10 m off Novigrad in Aug 2026, so the textbook 15-30 m band does not describe this shelf. Still needs clear water and a still approach.",
-      "legal": {
-        "closed_seasons": [
-          {
-            "from": "04-15",
-            "to": "06-15"
-          }
-        ],
-        "min_size_cm": 30,
-        "min_size_source": "Croatian Pravilnik o zastiti riba",
-        "must_tail_mark": true
-      },
       "name_en": "Common dentex",
       "name_local": "zubatac"
     },
@@ -325,17 +273,6 @@
       "viz_pref": "any",
       "wary": 0.6,
       "note": "Lives in holes, caves and under overhangs — the highest relief affinity in this list. Protected or restricted in parts of the Adriatic; CHECK THE CURRENT RULES before targeting it.",
-      "legal": {
-        "closed_seasons": [
-          {
-            "from": "05-15",
-            "to": "07-15"
-          }
-        ],
-        "min_size_cm": 30,
-        "min_size_source": "Croatian Pravilnik o zastiti riba",
-        "must_tail_mark": true
-      },
       "name_en": "Brown meagre",
       "name_local": "kavala"
     },
@@ -380,13 +317,6 @@
       "viz_pref": "any",
       "wary": 0.15,
       "note": "Rubble and rock edges, in holes. Barely cares about visibility and does not spook, so it salvages otherwise poor days. Best in the cooler months.",
-      "legal": {
-        "closed_seasons": [],
-        "min_size_cm": null,
-        "min_size_source": "Croatian Pravilnik o zastiti riba",
-        "must_tail_mark": false,
-        "min_mass_g": 500
-      },
       "name_en": "Common octopus",
       "name_local": "hobotnica"
     },
@@ -429,13 +359,6 @@
       "viz_pref": "any",
       "wary": 0.2,
       "note": "Seagrass and sand, strongly seasonal — the spring inshore spawning run is the window. Scores where rock-loving species do not.",
-      "legal": {
-        "closed_seasons": [],
-        "min_size_cm": 10,
-        "min_size_source": "EU Mediterranean MCRS - Croatian national rule may be STRICTER, verify",
-        "must_tail_mark": false,
-        "size_note": "mantle length"
-      },
       "name_en": "Common cuttlefish",
       "name_local": "sipa"
     }
