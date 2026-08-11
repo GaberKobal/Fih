@@ -1,0 +1,898 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#071A22">
+<title>Novigrad — dive forecast</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  /* ---------------------------------------------------------------
+     No webfonts on purpose. This page gets opened in a car park on a
+     bad coastal signal; system faces render instantly and work from
+     cache. The character comes from weight, tracking and scale.
+     --------------------------------------------------------------- */
+  :root{
+    --abyss:#071A22;      /* page ground: deep petrol, not neutral black */
+    --shelf:#0E2E3A;      /* panels */
+    --shoal:#164657;      /* raised, hover */
+    --line:#1E5163;
+    --chart:#C9DDE3;      /* chart-paper text */
+    --sound:#6E93A0;      /* muted */
+    --buoy:#F2B138;       /* cardinal-mark amber */
+    --flag:#E4573D;       /* dive-flag red */
+    --kelp:#5FBFA0;
+
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{
+    background:var(--abyss); color:var(--chart); font-family:var(--sans);
+    -webkit-font-smoothing:antialiased;
+    display:flex; flex-direction:column;
+    padding-bottom:env(safe-area-inset-bottom);
+  }
+  .eyebrow{
+    font-size:10px; font-weight:700; letter-spacing:.18em; text-transform:uppercase;
+    color:var(--sound);
+  }
+  .num{font-family:var(--mono); font-variant-numeric:tabular-nums}
+
+  /* ---- region bar: which coast, and where else is good today ---- */
+  #regionbar{
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+    padding:9px 16px; background:var(--abyss); cursor:pointer;
+    border-bottom:1px solid var(--line); flex:0 0 auto;
+  }
+  #regionbar .nm{font-size:14px; font-weight:600}
+  #regionbar .sub{font-size:10.5px; color:var(--sound); margin-top:2px}
+  #regionbar .chev{color:var(--buoy); font-size:13px}
+  #regionpanel{display:none; background:var(--abyss);
+    border-bottom:1px solid var(--line); flex:0 0 auto; max-height:52vh;
+    overflow-y:auto}
+  #regionpanel.open{display:block}
+  #regionpanel .grp{padding:8px 16px 2px; font:700 9.5px/1 var(--sans);
+    letter-spacing:.18em; text-transform:uppercase; color:var(--sound)}
+  .rg{
+    width:100%; display:grid; grid-template-columns:1fr auto auto; gap:10px;
+    align-items:center; text-align:left; cursor:pointer;
+    background:none; border:0; border-top:1px solid var(--line);
+    padding:10px 16px; color:var(--chart); font-family:var(--sans);
+  }
+  .rg:hover{background:var(--shelf)}
+  .rg[aria-current="true"]{background:var(--shoal)}
+  .rg .n{font-size:13.5px}
+  .rg .w{font-family:var(--mono); font-size:13px}
+  .rg .v{font-family:var(--mono); font-size:12px; color:var(--sound)}
+  .rg .tag{font-size:9.5px; color:var(--sound); letter-spacing:.1em;
+    text-transform:uppercase; display:block; margin-top:2px}
+  #regionwarn{padding:9px 16px; font-size:11.5px; color:var(--buoy);
+    background:rgba(242,177,56,.08); border-bottom:1px solid var(--line); display:none}
+
+  /* ---- signature: the verdict band is also the 72-hour forecast ---- */
+  #verdict{
+    position:relative; padding:14px 16px 12px;
+    border-bottom:1px solid var(--line);
+    background:var(--shelf); overflow:hidden;
+    /* Never let flex shrink this: #verdict has overflow:hidden, so if the
+       sheet competes for height the vitals get silently clipped. That is
+       what hid viz/swell/wind on the desktop layout. */
+    flex:0 0 auto;
+  }
+  #vgrad{position:absolute; inset:0; opacity:.30}
+  #verdict > .row{position:relative}
+  .row{display:flex; align-items:baseline; justify-content:space-between; gap:12px}
+  #word{
+    font-size:clamp(30px,10vw,44px); font-weight:300; letter-spacing:-.03em;
+    line-height:1;
+  }
+  #word[data-v="go"]{color:var(--kelp)}
+  #word[data-v="marginal"]{color:var(--buoy)}
+  #word[data-v="poor"],#word[data-v="stay home"]{color:var(--flag)}
+  #word[data-v="not now"]{color:var(--sound)}
+  #limit{font-size:13px; color:var(--sound); margin-top:6px}
+  #vitals{display:flex; gap:16px; margin-top:12px; flex-wrap:wrap}
+  #vitals div{min-width:56px}
+  #vitals b{display:block; font-family:var(--mono); font-size:17px; font-weight:500}
+
+  /* ---- species strip: ranked by how catchable each is today ---- */
+  #species{
+    display:flex; gap:8px; overflow-x:auto; padding:10px 16px;
+    border-bottom:1px solid var(--line); background:var(--abyss);
+    scrollbar-width:none; -webkit-overflow-scrolling:touch;
+  }
+  #species::-webkit-scrollbar{display:none}
+  /* On a mouse, a hidden horizontal scrollbar is a trap - show it. */
+  @media (hover:hover){
+    #species{scrollbar-width:thin; flex-wrap:wrap}
+    #species::-webkit-scrollbar{display:block; height:8px}
+    #species::-webkit-scrollbar-thumb{background:var(--shoal); border-radius:4px}
+  }
+  .sp{
+    flex:0 0 auto; text-align:left; cursor:pointer;
+    background:var(--shelf); border:1px solid var(--line); border-radius:2px;
+    padding:8px 11px; min-width:96px; color:var(--chart);
+    font-family:var(--sans);
+  }
+  .sp:hover{background:var(--shoal)}
+  .sp[aria-pressed="true"]{border-color:var(--buoy); background:var(--shoal)}
+  .sp .nm{display:block; font-size:12px; font-weight:600; line-height:1.25;
+    max-width:130px; white-space:normal}
+  .sp .sc{
+    display:block; font-family:var(--mono); font-size:15px; margin-top:3px;
+  }
+  .sp .why{display:block; font-size:10px; color:var(--sound); margin-top:2px; white-space:nowrap}
+  .sp.out .nm,.sp.out .sc{color:var(--sound)}
+  #spnote{padding:10px 16px; font-size:12.5px; color:var(--sound); border-bottom:1px solid var(--line)}
+
+  /* ---- map ---- */
+  #map{flex:1 1 auto; min-height:44vh; background:var(--abyss)}
+  .leaflet-container{background:var(--abyss); font-family:var(--sans)}
+  /* Deliberately left smooth. Nearest-neighbour rendering keeps the
+     coastline exact but turns the map into a wall of blocks at dive zoom,
+     which is a worse trade. The land mask baked into the PNG means any
+     remaining bleed fades to transparent rather than sitting solid on shore. */
+  .leaflet-control-attribution{
+    background:rgba(7,26,34,.82)!important; color:var(--sound)!important; font-size:9px
+  }
+  .leaflet-control-attribution a{color:var(--sound)!important}
+  .mark{
+    width:26px;height:26px;border-radius:50%;
+    display:grid;place-items:center;
+    font:600 11px/1 var(--mono); color:var(--abyss);
+    background:var(--buoy); border:1.5px solid var(--abyss);
+    box-shadow:0 0 0 1px rgba(242,177,56,.55);
+  }
+  .mark.dim{background:var(--sound); box-shadow:none}
+
+  /* ---- bottom drawer ---- */
+  #sheet{
+    flex:0 0 auto; max-height:42vh; overflow-y:auto;
+    border-top:1px solid var(--line); background:var(--shelf);
+    -webkit-overflow-scrolling:touch;
+  }
+  .band{padding:12px 16px; border-bottom:1px solid var(--line)}
+  #window{display:flex; align-items:baseline; gap:10px; flex-wrap:wrap}
+  #window .when{font-family:var(--mono); font-size:16px; color:var(--buoy)}
+  #spark{display:block; width:100%; height:46px; margin-top:10px}
+
+  /* ---- day tabs + hour-by-hour strip ---- */
+  #days{display:flex; gap:6px; margin:10px 0 2px; flex-wrap:wrap}
+  .day{
+    flex:1 1 auto; min-width:78px; cursor:pointer; text-align:left;
+    background:var(--abyss); border:1px solid var(--line); border-radius:2px;
+    padding:7px 9px; color:var(--chart); font-family:var(--sans);
+  }
+  .day[aria-pressed="true"]{border-color:var(--buoy); background:var(--shoal)}
+  .day .dl{display:block; font:700 9.5px/1 var(--sans); letter-spacing:.16em;
+    text-transform:uppercase; color:var(--sound)}
+  .day .dt{display:block; font-family:var(--mono); font-size:14px; margin-top:4px}
+  #hours{display:flex; gap:2px; align-items:flex-end; height:64px; margin-top:12px}
+  #hours .hr{
+    flex:1 1 0; min-width:0; height:100%; position:relative; cursor:pointer;
+    display:flex; align-items:flex-end; background:none; border:0; padding:0;
+  }
+  #hours .hr span{display:block; width:100%; border-radius:1px 1px 0 0; min-height:2px}
+  #hours .hr.dark span{opacity:.22}
+  #hours .hr.gone span{opacity:.13}
+  #hours .hr.best::after{
+    content:""; position:absolute; inset:-2px -1px; border:1px solid var(--buoy);
+    border-radius:2px; pointer-events:none;
+  }
+  #hours .hr[aria-pressed="true"] span{outline:1px solid var(--chart)}
+  #hourax{display:flex; justify-content:space-between; margin-top:4px;
+    font:400 9.5px/1 var(--mono); color:var(--sound)}
+  #hourdet{margin-top:9px; font-size:12.5px; color:var(--sound); min-height:18px}
+  #hourdet b{color:var(--chart); font-family:var(--mono); font-weight:500}
+
+  ol#spots{list-style:none; margin:0; padding:0}
+  ol#spots li{
+    display:grid; grid-template-columns:26px 1fr auto; gap:12px; align-items:center;
+    padding:11px 16px; border-bottom:1px solid var(--line); cursor:pointer;
+  }
+  ol#spots li:hover,ol#spots li:focus-visible{background:var(--shoal); outline:none}
+  ol#spots li .rank{
+    font:600 11px/26px var(--mono); text-align:center; color:var(--abyss);
+    background:var(--buoy); border-radius:50%; height:26px;
+  }
+  .coords{font-family:var(--mono); font-size:12.5px}
+  .bars{display:flex; gap:3px; margin-top:5px}
+  .bars i{height:3px; width:26px; background:var(--shoal); border-radius:2px; display:block}
+  .bars i span{display:block; height:100%; background:var(--sound); border-radius:2px}
+  .depth{font-family:var(--mono); font-size:15px; color:var(--buoy); white-space:nowrap}
+
+  .actions{display:flex; gap:8px; padding:12px 16px 16px; flex-wrap:wrap}
+  .actions a,.actions button{
+    font:600 11px/1 var(--sans); letter-spacing:.12em; text-transform:uppercase;
+    color:var(--chart); background:var(--shoal); border:1px solid var(--line);
+    border-radius:2px; padding:10px 13px; text-decoration:none; cursor:pointer;
+  }
+  .actions a:hover,.actions button:hover{background:var(--line)}
+  :focus-visible{outline:2px solid var(--buoy); outline-offset:2px}
+
+  /* ---- dive log ---- */
+  details#log{border-bottom:1px solid var(--line)}
+  details#log > summary{
+    padding:12px 16px; cursor:pointer; list-style:none;
+    font:700 10px/1 var(--sans); letter-spacing:.18em; text-transform:uppercase;
+    color:var(--buoy);
+  }
+  details#log > summary::-webkit-details-marker{display:none}
+  details#log > summary::before{content:"+ "; }
+  details#log[open] > summary::before{content:"– "; }
+  .form{padding:0 16px 14px; display:grid; grid-template-columns:1fr 1fr; gap:9px}
+  .form label{display:flex; flex-direction:column; gap:4px; font-size:10px;
+    letter-spacing:.14em; text-transform:uppercase; color:var(--sound); font-weight:700}
+  .form label.wide{grid-column:1 / -1}
+  .form input,.form select,.form textarea{
+    background:var(--abyss); color:var(--chart); border:1px solid var(--line);
+    border-radius:2px; padding:8px; font:400 14px/1.3 var(--mono); width:100%;
+  }
+  .form textarea{font-family:var(--sans); resize:vertical; min-height:44px}
+  .toggle{display:flex; gap:6px}
+  .toggle button{
+    flex:1; padding:9px; border:1px solid var(--line); border-radius:2px;
+    background:var(--abyss); color:var(--sound); cursor:pointer;
+    font:600 11px/1 var(--sans); letter-spacing:.1em; text-transform:uppercase;
+  }
+  .toggle button[aria-pressed="true"]{background:var(--shoal); color:var(--chart); border-color:var(--buoy)}
+  #rowout{
+    grid-column:1 / -1; font:400 11.5px/1.5 var(--mono); color:var(--sound);
+    background:var(--abyss); border:1px solid var(--line); border-radius:2px;
+    padding:8px; overflow-x:auto; white-space:pre;
+  }
+  #stamp{padding:10px 16px 16px; font-size:11px; color:var(--sound)}
+  #err{padding:20px 16px; color:var(--flag); font-size:14px; display:none}
+  @media (prefers-reduced-motion:no-preference){
+    #verdict{animation:rise .4s ease-out both}
+    @keyframes rise{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
+  }
+  /* Phone: let the document scroll instead of cramming three panes into
+     100vh. display:contents on #left lets the map sit between the verdict
+     and the sheet without changing the markup order. */
+  @media (max-width:819px){
+    html,body{height:auto}
+    #left{display:contents}
+    #verdict{order:1; flex:0 0 auto}
+    #map{order:2; flex:0 0 auto; height:50vh; min-height:0}
+    #sheet{order:3; flex:0 0 auto; max-height:none; overflow:visible}
+  }
+  @media (min-width:820px){
+    body{flex-direction:row}
+    #left{display:flex;flex-direction:column;width:380px;flex:0 0 380px;height:100%;overflow:hidden}
+    #sheet{max-height:none;flex:1 1 auto;border-top:none}
+    #map{height:100%}
+  }
+</style>
+</head>
+<body>
+
+<div id="left">
+  <div id="regionbar" role="button" tabindex="0" aria-expanded="false">
+    <span>
+      <span class="nm" id="rgname">…</span>
+      <span class="sub" id="rgsub"></span>
+    </span>
+    <span class="chev" id="rgchev">change ▾</span>
+  </div>
+  <div id="regionpanel"></div>
+  <div id="regionwarn"></div>
+
+  <header id="verdict">
+    <canvas id="vgrad" aria-hidden="true"></canvas>
+    <div class="row">
+      <div>
+        <div class="eyebrow" id="region">loading</div>
+        <div id="word">—</div>
+        <div id="limit"></div>
+      </div>
+    </div>
+    <div id="vitals"></div>
+  </header>
+
+  <div id="sheet">
+    <div id="err"></div>
+    <div id="species" role="group" aria-label="Target species"></div>
+    <div id="spnote"></div>
+    <section class="band">
+      <div class="eyebrow">Best window</div>
+      <div id="window"><span class="when">—</span></div>
+      <div id="days" role="group" aria-label="Forecast day"></div>
+      <div id="hours" role="group" aria-label="Hour by hour"></div>
+      <div id="hourax"><span>00</span><span>06</span><span>12</span><span>18</span><span>23</span></div>
+      <div id="hourdet"></div>
+      <svg id="spark" viewBox="0 0 300 46" preserveAspectRatio="none" aria-hidden="true"></svg>
+      <div class="eyebrow" style="margin-top:6px" id="sparklabel"></div>
+    </section>
+    <ol id="spots"></ol>
+    <details id="log">
+      <summary>Log a dive</summary>
+      <div class="form">
+        <label>Date<input type="date" id="f_date"></label>
+        <label>Species<select id="f_species"></select></label>
+        <label>Lat<input id="f_lat" inputmode="decimal" placeholder="45.32187"></label>
+        <label>Lon<input id="f_lon" inputmode="decimal" placeholder="13.55732"></label>
+        <label>Depth m<input id="f_depth" inputmode="decimal"></label>
+        <label>Viz m<input id="f_viz" inputmode="decimal"></label>
+        <label>Wind from °<input id="f_wind" inputmode="numeric"></label>
+        <label>Result
+          <span class="toggle">
+            <button type="button" id="f_r0" aria-pressed="true">blank</button>
+            <button type="button" id="f_r1" aria-pressed="false">fish</button>
+          </span>
+        </label>
+        <label class="wide">Notes<textarea id="f_notes" rows="2"></textarea></label>
+        <div id="rowout"></div>
+        <span class="wide" style="display:flex;gap:8px;flex-wrap:wrap">
+          <button type="button" class="sp" id="f_here" style="min-width:0">Use my location</button>
+          <button type="button" class="sp" id="f_submit" style="min-width:0;border-color:var(--buoy)">Submit dive</button>
+          <button type="button" class="sp" id="f_copy" style="min-width:0">Copy row</button>
+        </span>
+      </div>
+    </details>
+    <div class="actions">
+      <a id="gpx" href="data/spots.gpx" download>Download GPX</a>
+      <button id="refresh" type="button">Refresh</button>
+    </div>
+    <div id="stamp"></div>
+  </div>
+</div>
+
+<div id="map"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+// Bumped whenever the page needs a matching fish_finder.py, and vice versa.
+// The two files live in different folders and get uploaded separately, so a
+// mismatch is easy to create and was previously invisible.
+const PAGE_VERSION = 6;
+
+const $ = s => document.querySelector(s);
+const fmt = (n,d=1) => (n===null||n===undefined||Number.isNaN(n)) ? "–" : Number(n).toFixed(d);
+
+const map = L.map("map", {zoomControl:false, attributionControl:true});
+L.control.zoom({position:"bottomright"}).addTo(map);
+L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+  maxZoom:18, attribution:"&copy; OpenStreetMap"
+}).addTo(map);
+L.tileLayer("https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png", {
+  maxZoom:18, opacity:.9, attribution:"OpenSeaMap"
+}).addTo(map);
+
+let overlay=null, marks=[], DATA=null, sel=null;   // sel: null = structure map
+let INDEX=null, REGION=null;
+
+// Every data file now lives under its region's folder.
+const dataUrl = f => `data/${REGION}/${f}`;
+
+// score -> colour ramp: red (bad) through amber to green (good)
+function ramp(q){
+  const stops=[[0,[228,87,61]],[0.5,[242,177,56]],[1,[95,191,160]]];
+  q=Math.max(0,Math.min(1,q));
+  for(let i=1;i<stops.length;i++){
+    if(q<=stops[i][0]){
+      const [a,ca]=stops[i-1],[b,cb]=stops[i],t=(q-a)/(b-a);
+      return ca.map((v,j)=>Math.round(v+(cb[j]-v)*t));
+    }
+  }
+  return stops[2][1];
+}
+
+function drawVerdictGradient(series, nowIdx){
+  const c=$("#vgrad"), host=$("#verdict");
+  const w=host.clientWidth, h=host.clientHeight;
+  c.width=w*devicePixelRatio; c.height=h*devicePixelRatio;
+  c.style.width=w+"px"; c.style.height=h+"px";
+  const ctx=c.getContext("2d"); ctx.scale(devicePixelRatio,devicePixelRatio);
+
+  const viz=series.visibility_m, work=series.workability, n=viz.length;
+  const g=ctx.createLinearGradient(0,0,w,0);
+  for(let i=0;i<n;i++){
+    const q=0.6*Math.min(1,viz[i]/12)+0.4*work[i];
+    const [r,gg,b]=ramp(q);
+    g.addColorStop(i/(n-1), `rgb(${r},${gg},${b})`);
+  }
+  ctx.fillStyle=g; ctx.fillRect(0,0,w,h);
+}
+
+function drawSpark(series, nowIdx){
+  const svg=$("#spark"), W=300, H=46, n=series.time.length;
+  const x=i=>i/(n-1)*W;
+  const viz=series.visibility_m, mx=Math.max(12,...viz);
+  const yv=v=>H-4-(v/mx)*(H-10);
+  const wave=series.wave_height_m, mw=Math.max(0.8,...wave);
+  const yw=v=>H-4-(v/mw)*(H-10);
+
+  const path = a=>a.map((v,i)=>`${i?"L":"M"}${x(i).toFixed(1)},${a===viz?yv(v):yw(v)}`).join("");
+  const area = `${path(viz)}L${W},${H}L0,${H}Z`;
+
+  svg.innerHTML = `
+    <path d="${area}" fill="rgba(95,191,160,.18)"/>
+    <path d="${path(viz)}" fill="none" stroke="#5FBFA0" stroke-width="1.6"/>
+    <path d="${path(wave)}" fill="none" stroke="#E4573D" stroke-width="1.2"
+          stroke-dasharray="3 2" opacity=".85"/>
+    <line x1="${x(nowIdx)}" y1="0" x2="${x(nowIdx)}" y2="${H}"
+          stroke="#C9DDE3" stroke-width="1" opacity=".5"/>`;
+  $("#sparklabel").textContent =
+    `visibility (green, to ${Math.round(mx)} m) vs wave height (red, to ${mw.toFixed(1)} m) · past 24 h and next ${n-nowIdx-1} h`;
+}
+
+function renderSpots(d, spots){
+  marks.forEach(m=>map.removeLayer(m)); marks=[];
+  const ol=$("#spots"); ol.innerHTML="";
+  if(!spots.length){
+    ol.innerHTML='<li style="grid-template-columns:1fr;color:var(--sound)">'+
+      'Nothing scores above the threshold for this target today.</li>';
+  }
+
+  spots.forEach((s,i)=>{
+    const m=L.marker([s.lat,s.lon],{
+      icon:L.divIcon({className:"",iconSize:[26,26],
+        html:`<div class="mark${s.score<0.5?" dim":""}">${i+1}</div>`}),
+      title:`${fmt(s.depth_m,0)} m`
+    }).addTo(map);
+    m.bindPopup(
+      `<b>${i+1}</b> · ${fmt(s.depth_m,0)} m<br>`+
+      `<span style="font-family:monospace">${s.lat.toFixed(5)}, ${s.lon.toFixed(5)}</span><br>`+
+      `relief ${fmt(s.relief,2)} · slope ${fmt(s.slope,2)} · shelter ${fmt(s.shelter,2)}`);
+    marks.push(m);
+
+    const li=document.createElement("li");
+    li.tabIndex=0;
+    li.innerHTML=
+      `<span class="rank">${i+1}</span>
+       <span>
+         <span class="coords">${s.lat.toFixed(5)}, ${s.lon.toFixed(5)}</span>
+         <span class="bars">
+           <i title="relief"><span style="width:${s.relief*100}%"></span></i>
+           <i title="slope"><span style="width:${s.slope*100}%"></span></i>
+           <i title="shelter"><span style="width:${s.shelter*100}%"></span></i>
+         </span>
+       </span>
+       <span class="depth">${fmt(s.depth_m,0)} m</span>`;
+    const go=()=>{
+      map.setView([s.lat,s.lon],16); m.openPopup();
+      $("#f_lat").value=s.lat.toFixed(5);
+      $("#f_lon").value=s.lon.toFixed(5);
+      $("#f_depth").value=Math.round(s.depth_m);
+      buildRow();
+    };
+    li.addEventListener("click",go);
+    li.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();go();}});
+    ol.appendChild(li);
+  });
+}
+
+function selectTarget(id){
+  sel = id;
+  const d = DATA, day = dayData(), suf = daySuffix();
+  const list = day.species || d.species || [];
+  const sp = id ? list.find(x=>x.id===id) : null;
+
+  document.querySelectorAll(".sp").forEach(b=>
+    b.setAttribute("aria-pressed", String(b.dataset.id===(id||"")) ));
+
+  if(!sp){
+    $("#spnote").textContent =
+      "Structure map: where there is reachable relief and shelter, regardless of species.";
+  }else{
+    const L = sp.legal || {};
+    const rules = [];
+    if(sp.legally_open===false)
+      rules.push(`<b style="color:var(--flag)">CLOSED — ${sp.closed_reason}`+
+                 `${sp.reopens?`, reopens ${sp.reopens}`:""}</b>`);
+    if(L.min_size_cm) rules.push(`min ${L.min_size_cm} cm`+
+      (L.size_note?` (${L.size_note})`:""));
+    if(L.min_mass_g) rules.push(`min ${L.min_mass_g} g`);
+    if(L.must_tail_mark) rules.push("must tail-mark if kept");
+    $("#spnote").innerHTML =
+      (rules.length?`<div style="margin-bottom:6px">${rules.join(" · ")}</div>`:"")
+      + (sp.name_local ? `<div style="font-size:11.5px;opacity:.8;margin-bottom:4px">`+
+         `${sp.scientific} · known locally as ${sp.name_local}</div>` : "")
+      + `<div>${sp.note}</div>`
+      + (L.min_size_source?`<div style="font-size:11px;margin-top:5px;opacity:.75">`+
+         `Size: ${L.min_size_source}</div>`:"");
+  }
+
+  $("#gpx").href = sp ? dataUrl(`spots_${sp.id}${suf}.gpx`) : dataUrl(`spots${suf}.gpx`);
+  $("#gpx").textContent = sp ? `GPX · ${sp.name_en || sp.common}` : "Download GPX";
+
+  const b=L.latLngBounds(d.bounds);
+  if(overlay) map.removeLayer(overlay);
+  const png = sp ? dataUrl(`score_${sp.id}${suf}.png`) : dataUrl(`score${suf}.png`);
+  overlay=L.imageOverlay(png+"?v="+encodeURIComponent(d.generated),b,{opacity:.75}).addTo(map);
+
+  renderSpots(d, sp ? sp.spots : (day.spots || d.spots || []));
+  if(sp && $("#f_species").options.length){ $("#f_species").value=sp.id; buildRow(); }
+}
+
+let selDay=0;
+
+// Everything below reads the SELECTED day, not "now". Only shelter varies by
+// day, but it is wind-driven, so a change of wind moves the good water.
+function dayData(){ return ((DATA && DATA.days) || [])[selDay] || DATA || {}; }
+function daySuffix(){ return ((DATA && DATA.days) || []).length ? `_d${selDay}` : ""; }
+
+function renderDays(d){
+  const host=$("#days"); host.innerHTML="";
+  (d.days||[]).forEach((day,i)=>{
+    const b=document.createElement("button");
+    b.type="button"; b.className="day"; b.setAttribute("aria-pressed",String(i===selDay));
+    const dt=new Date(day.date+"T12:00");
+    const label=day.is_today?"Today":dt.toLocaleDateString([], {weekday:"short"});
+    const best=day.best
+      ? day.best.start.slice(11,16)+"–"+day.best.end.slice(11,16)
+      : "—";
+    const col=day.peak_score>=.6?"var(--kelp)":day.peak_score>=.3?"var(--buoy)":"var(--flag)";
+    const extra = (day.wind_from_deg!==undefined)
+      ? `<span class="dl" style="margin-top:3px;letter-spacing:.06em;text-transform:none">${day.wind_from_deg}° · ${day.viz_m} m</span>` : "";
+    b.innerHTML=`<span class="dl">${label}</span>
+                 <span class="dt" style="color:${col}">${best}</span>${extra}`;
+    b.addEventListener("click",()=>{
+      selDay=i; renderDays(d); renderHours(d);
+      renderSpecies(d);              // scores are per day
+      selectTarget(sel);             // and so is the map
+    });
+    host.appendChild(b);
+  });
+}
+
+function renderHours(d){
+  const day=(d.days||[])[selDay];
+  const host=$("#hours"); host.innerHTML="";
+  $("#hourdet").textContent="";
+
+  if(!day){
+    // Data file predates the hourly breakdown - fall back to the single
+    // overall window rather than rendering an empty panel.
+    const w=d.best_window;
+    $("#window").innerHTML = w
+      ? `<span class="when">${w.start.slice(11,16)} – ${w.end.slice(11,16)}</span>
+         <span style="color:var(--sound);font-size:13px">${w.wave_height_m} m · ${w.wind_speed_kmh} km/h</span>`
+      : `<span class="when">—</span>`;
+    $("#hourdet").innerHTML =
+      '<span style="color:var(--flag)">Hour-by-hour needs the current fish_finder.py. '+
+      'Upload it and re-run the workflow.</span>';
+    $("#hourax").style.display="none";
+    return;
+  }
+  $("#hourax").style.display="flex";
+
+  const inBest=h=>day.best && h.t>=day.best.start && h.t<=day.best.end;
+  day.hours.forEach(h=>{
+    const b=document.createElement("button");
+    b.type="button";
+    b.className="hr"+(h.daylight?"":" dark")+(h.past?" gone":"")+(inBest(h)?" best":"");
+    b.setAttribute("aria-pressed","false");
+    b.title=`${String(h.hour).padStart(2,"0")}:00`;
+    const [r,g,bl]=ramp(h.score);
+    const pct=Math.max(3,Math.round(h.score*100));
+    b.innerHTML=`<span style="height:${pct}%;background:rgb(${r},${g},${bl})"></span>`;
+    b.addEventListener("click",()=>{
+      host.querySelectorAll(".hr").forEach(x=>x.setAttribute("aria-pressed","false"));
+      b.setAttribute("aria-pressed","true");
+      $("#hourdet").innerHTML =
+        `<b>${String(h.hour).padStart(2,"0")}:00</b> · score <b>${h.score.toFixed(2)}</b>
+         · viz <b>${h.viz_m}</b> m · swell <b>${h.wave_m}</b> m
+         · wind <b>${h.wind_kmh}</b> km/h · <b>${h.sea_temp_c}</b> °C
+         ${h.daylight?"":" · dark"}${h.workable?"":" · unworkable"}${h.past?" · past":""}`;
+    });
+    host.appendChild(b);
+  });
+
+  const b=day.best;
+  if(b){
+    $("#window").innerHTML =
+      `<span class="when">${b.start.slice(11,16)} – ${b.end.slice(11,16)}</span>
+       <span style="color:var(--sound);font-size:13px">
+        viz ${b.viz_m} m · ${b.wave_m} m · ${b.wind_kmh} km/h</span>`;
+  }else{
+    // No window can mean two very different things. "Nothing diveable" on a
+    // flat calm day is just wrong: the day is simply over.
+    const anyLeft = day.hours.some(x=>!x.past && x.daylight);
+    $("#window").innerHTML = anyLeft
+      ? `<span class="when">nothing diveable</span>
+         <span style="color:var(--sound);font-size:13px">conditions rule this day out</span>`
+      : `<span class="when">day is over</span>
+         <span style="color:var(--sound);font-size:13px">no daylight left — try tomorrow</span>`;
+  }
+}
+
+function renderSpecies(d){
+  const host=$("#species"); host.innerHTML="";
+  const list = dayData().species || d.species || [];
+  const mk=(id,name,score,why,out)=>{
+    const b=document.createElement("button");
+    b.type="button"; b.className="sp"+(out?" out":""); b.dataset.id=id||"";
+    b.setAttribute("aria-pressed","false");
+    const col = score===null ? "var(--chart)"
+              : score>=.6 ? "var(--kelp)" : score>=.3 ? "var(--buoy)" : "var(--flag)";
+    b.innerHTML=`<span class="nm">${name}</span>
+      <span class="sc" style="color:${col}">${score===null?"–":score.toFixed(2)}</span>
+      <span class="why">${why}</span>`;
+    b.addEventListener("click",()=>selectTarget(id));
+    host.appendChild(b);
+  };
+  if(!list.length){
+    host.style.display="none";
+    $("#spnote").textContent =
+      "Structure map: where there is reachable relief and shelter. "
+      + "No species pack for this region.";
+    return;
+  }
+  host.style.display="";
+  mk(null,"Structure",null,"any target");
+  list.forEach(sp=>{
+    const why = sp.legally_open===false ? "CLOSED SEASON"
+              : !sp.in_season ? "out of season"
+              : sp.temp_fit<.35 ? "water temp"
+              : sp.viz_fit<.35  ? "needs clearer"
+              : sp.viz_pref==="murky" ? "likes the murk"
+              : "in season";
+    mk(sp.id, sp.name_en || sp.common, sp.today, why,
+       !sp.in_season || sp.legally_open===false);
+  });
+}
+
+function renderRegions(){
+  const host=$("#regionpanel"); host.innerHTML="";
+  const byCountry={};
+  INDEX.regions.forEach(r=>{ (byCountry[r.country||"—"] ||= []).push(r); });
+
+  // Sorted best-first inside each country, so the panel doubles as a
+  // "where in Europe is actually diveable today" view.
+  Object.keys(byCountry).sort().forEach(c=>{
+    const g=document.createElement("div"); g.className="grp"; g.textContent=c;
+    host.appendChild(g);
+    byCountry[c].sort((a,b)=>(b.score||0)-(a.score||0)).forEach(r=>{
+      const b=document.createElement("button");
+      b.type="button"; b.className="rg";
+      b.setAttribute("aria-current", String(r.id===REGION));
+      const col = r.verdict==="go" ? "var(--kelp)"
+                : r.verdict==="marginal" ? "var(--buoy)"
+                : r.verdict==="not now" ? "var(--sound)" : "var(--flag)";
+      const tags=[];
+      if(!r.has_species)    tags.push("no species pack");
+      if(!r.has_exclusions) tags.push("no exclusion zones");
+      b.innerHTML=`<span><span class="n">${r.name}</span>
+          ${tags.length?`<span class="tag">${tags.join(" · ")}</span>`:""}</span>
+        <span class="w" style="color:${col}">${r.verdict}</span>
+        <span class="v">${r.visibility_m} m</span>`;
+      b.addEventListener("click",()=>{
+        $("#regionpanel").classList.remove("open");
+        $("#regionbar").setAttribute("aria-expanded","false");
+        $("#rgchev").textContent="change ▾";
+        if(r.id!==REGION){ REGION=r.id; location.hash=r.id; sel=null;
+                           overlay=null; load(); }
+      });
+      host.appendChild(b);
+    });
+  });
+}
+
+function toggleRegions(){
+  const open=$("#regionpanel").classList.toggle("open");
+  $("#regionbar").setAttribute("aria-expanded", String(open));
+  $("#rgchev").textContent = open ? "close ▴" : "change ▾";
+}
+$("#regionbar").addEventListener("click",toggleRegions);
+$("#regionbar").addEventListener("keydown",e=>{
+  if(e.key==="Enter"||e.key===" "){e.preventDefault();toggleRegions();}});
+
+async function load(){
+  // Region catalogue first: it decides which folder everything else lives in.
+  if(!INDEX){
+    try{
+      const ri=await fetch("data/index.json",{cache:"no-store"});
+      if(!ri.ok) throw new Error("HTTP "+ri.status);
+      INDEX=await ri.json();
+    }catch(e){
+      $("#err").style.display="block";
+      $("#err").textContent="No region index yet. Run the Update dive forecast workflow, then reload.";
+      return;
+    }
+    const want=(location.hash||"").replace("#","");
+    REGION = INDEX.regions.some(r=>r.id===want) ? want : INDEX.regions[0].id;
+  }
+  const meta = INDEX.regions.find(r=>r.id===REGION) || {};
+  $("#rgname").textContent = meta.name || REGION;
+  $("#rgsub").textContent  = `${meta.country||""} · ${INDEX.regions.length} regions available`;
+  renderRegions();
+
+  const warn=[];
+  if(meta.has_species===false)
+    warn.push("No validated species pack for this region — structure and conditions only. "
+            + "Croatian closed seasons are NOT applied here.");
+  if(meta.has_exclusions===false)
+    warn.push("No exclusion zones defined — check protected areas and port limits yourself.");
+  $("#regionwarn").style.display = warn.length ? "block" : "none";
+  $("#regionwarn").innerHTML = warn.join("<br>");
+
+  let d;
+  try{
+    const r=await fetch(dataUrl("latest.json"),{cache:"no-store"});
+    if(!r.ok) throw new Error("HTTP "+r.status);
+    d=await r.json();
+  }catch(e){
+    $("#err").style.display="block";
+    $("#err").textContent=`No forecast for ${REGION} yet. Run the Update dive forecast workflow, then reload.`;
+    return;
+  }
+
+  const dataV = d.schema_version || 1;
+  if(dataV !== PAGE_VERSION){
+    const stale = dataV < PAGE_VERSION ? "fish_finder.py" : "docs/index.html";
+    $("#err").style.display = "block";
+    $("#err").innerHTML =
+      `<b>Version mismatch.</b> This page is v${PAGE_VERSION}, the data is v${dataV}. ` +
+      `Upload the current <b>${stale}</b> and re-run the workflow — until then ` +
+      `some features (day switching, the submit button) will not work.`;
+  }
+
+  $("#region").textContent = d.region;
+  const vw = d.now.verdict || "";
+  $("#word").textContent = vw.charAt(0).toUpperCase() + vw.slice(1);
+  $("#word").dataset.v = d.now.verdict;
+  if(d.now.verdict === "not now"){
+    const w = d.best_window;
+    const nxt = w ? new Date(w.start+"Z").toLocaleString([], {weekday:"short",
+                    hour:"2-digit", minute:"2-digit"}) : null;
+    $("#limit").textContent = d.now.limited_by + (nxt ? ` — next window ${nxt}` : "");
+  }else{
+    $("#limit").textContent = d.now.limited_by === "nothing limiting"
+      ? "nothing holding it back" : "limited by " + d.now.limited_by;
+  }
+
+  // Satellite water clarity, if a recent scene was processed. Optional file:
+  // absent until s2_turbidity.py has run successfully.
+  fetch(dataUrl("s2_turbidity.json"),{cache:"no-store"})
+    .then(r => r.ok ? r.json() : null)
+    .then(s2 => {
+      if(!s2) return;
+      const T = s2.turbidity_relative_fnu || {};
+      const age = Math.round((Date.now() - new Date(s2.scene_datetime)) / 86400000);
+      const when = age <= 0 ? "today" : age + " day" + (age === 1 ? "" : "s") + " ago";
+      const el = document.createElement("div");
+      el.className = "band";
+      el.innerHTML =
+        `<div class="eyebrow">Satellite water clarity</div>
+         <div style="margin-top:6px;font-size:13.5px">
+           Sentinel-2, ${when}: relative turbidity
+           <b class="num" style="color:var(--buoy)">${T.median}</b>
+           (spread <b class="num">${s2.contrast_fnu}</b>),
+           range <b class="num">${(s2.turbidity_relative_fnu||{}).p10}</b>–<b class="num">${(s2.turbidity_relative_fnu||{}).p90}</b>.
+         </div>
+         <div style="margin-top:5px;font-size:11.5px;color:var(--sound)">
+           Relative, not metres. Sentinel-2 L2A leaves too much atmosphere over
+           water for an absolute reading, so this tracks change week to week and
+           shows where the dirty water sits — it cannot confirm the
+           ${Math.round(d.now.visibility_m)} m the model claims today.
+         </div>`;
+      $("#sheet").insertBefore(el, $("#spots"));
+    })
+    .catch(() => {});
+
+  $("#vitals").innerHTML = [
+    ["viz",       `${fmt(d.now.visibility_m,0)} m`],
+    ["swell",     `${fmt(d.now.wave_height_m,2)} m`],
+    ["wind",      `${fmt(d.now.wind_speed_kmh,0)} km/h`],
+    ["from",      `${d.now.wind_from_deg}°`],
+    ["water",     `${fmt(d.now.sea_temp_c,1)} °C`],
+    ["current",   `${fmt(d.now.current_ms,2)} m/s`],
+  ].map(([k,v])=>`<div><span class="eyebrow">${k}</span><b>${v}</b></div>`).join("");
+
+  selDay = 0;
+  renderDays(d);
+  renderHours(d);
+
+  drawVerdictGradient(d.series, d.now_index);
+  drawSpark(d.series, d.now_index);
+
+  DATA=d;
+  if(!overlay) map.fitBounds(L.latLngBounds(d.bounds));
+  addEventListener("hashchange",()=>{
+    const want=(location.hash||"").replace("#","");
+    if(want && want!==REGION && INDEX.regions.some(r=>r.id===want)){
+      REGION=want; sel=null; if(overlay){map.removeLayer(overlay); overlay=null;} load();
+    }
+  },{once:true});
+  renderSpecies(d);
+  initLog(d);
+  selectTarget(sel && (d.species||[]).some(x=>x.id===sel) ? sel : null);
+
+  const t=new Date(d.generated);
+  $("#stamp").innerHTML =
+    `Updated ${t.toLocaleString()} · depth band ${d.depth_range_m[0]}–${d.depth_range_m[1]} m<br>
+     Weights: ${Object.entries(d.weights).map(([k,v])=>k+" "+v).join(" · ")}<br>
+     Water temp: ${d.temp_source || "unknown"}<br>
+     Bathymetry EMODnet · conditions Open-Meteo. Model output, not a chart. Check the
+     rules and the protected areas before you get in.`;
+}
+
+// Vertical wheel scrolls the species strip horizontally when it overflows.
+$("#species").addEventListener("wheel",e=>{
+  const el=e.currentTarget;
+  if(el.scrollWidth<=el.clientWidth) return;
+  if(Math.abs(e.deltaY)<=Math.abs(e.deltaX)) return;
+  el.scrollLeft += e.deltaY; e.preventDefault();
+},{passive:false});
+
+// ---- dive log row builder ----
+let logResult=0;
+function setResult(v){
+  logResult=v;
+  $("#f_r0").setAttribute("aria-pressed",String(v===0));
+  $("#f_r1").setAttribute("aria-pressed",String(v===1));
+  buildRow();
+}
+$("#f_r0").addEventListener("click",()=>setResult(0));
+$("#f_r1").addEventListener("click",()=>setResult(1));
+
+function buildRow(){
+  const v=id=>($("#"+id).value||"").trim().replace(/,/g," ");
+  const modelViz = DATA ? Math.round(DATA.now.visibility_m) : "";
+  const row=[v("f_date"),v("f_lat"),v("f_lon"),v("f_depth"),v("f_viz"),
+             modelViz,v("f_wind"),v("f_species"),logResult,v("f_notes")].join(",");
+  $("#rowout").textContent=row;
+  return row;
+}
+["f_date","f_lat","f_lon","f_depth","f_viz","f_wind","f_species","f_notes"]
+  .forEach(id=>$("#"+id).addEventListener("input",buildRow));
+
+// Submit by opening a prefilled GitHub issue. A workflow picks it up and
+// appends the row to dive_log.csv - so no write token is ever needed here.
+$("#f_submit").addEventListener("click",()=>{
+  const row = buildRow();
+  if(!$("#f_date").value || !$("#f_lat").value || !$("#f_viz").value){
+    $("#rowout").textContent = "Need at least a date, coordinates and visibility.";
+    return;
+  }
+  const base = (DATA && DATA.repo_issue_url) || "";
+  if(!base){ $("#rowout").textContent = "No repo_issue_url set in config.json."; return; }
+  const title = `Dive ${$("#f_date").value}` +
+                ($("#f_species").value ? ` - ${$("#f_species").value}` : "");
+  const body  = "Logged from the map.\n\n```csv\n" + row + "\n```\n";
+  const url = base + "?labels=dive-log"
+            + "&title=" + encodeURIComponent(title)
+            + "&body="  + encodeURIComponent(body);
+  window.open(url, "_blank", "noopener");
+});
+
+$("#f_copy").addEventListener("click",async()=>{
+  const row=buildRow();
+  try{ await navigator.clipboard.writeText(row); $("#f_copy").textContent="Copied"; }
+  catch{ $("#rowout").focus(); $("#f_copy").textContent="Select above"; }
+  setTimeout(()=>{$("#f_copy").textContent="Copy row";},1600);
+});
+
+$("#f_here").addEventListener("click",()=>{
+  if(!navigator.geolocation) return;
+  $("#f_here").textContent="Locating…";
+  navigator.geolocation.getCurrentPosition(pos=>{
+    $("#f_lat").value=pos.coords.latitude.toFixed(5);
+    $("#f_lon").value=pos.coords.longitude.toFixed(5);
+    $("#f_here").textContent="Use my location"; buildRow();
+  },()=>{ $("#f_here").textContent="Unavailable"; },{enableHighAccuracy:true,timeout:8000});
+});
+
+function initLog(d){
+  $("#f_date").value=new Date().toISOString().slice(0,10);
+  $("#f_viz").value=Math.round(d.now.visibility_m);
+  $("#f_wind").value=d.now.wind_from_deg;
+  $("#f_species").innerHTML=((d.days&&d.days[0]&&d.days[0].species)||d.species||[])
+    .map(sp=>`<option value="${sp.id}">${sp.name_en || sp.common}</option>`).join("");
+  buildRow();
+}
+
+$("#refresh").addEventListener("click",load);
+addEventListener("resize",()=>{
+  const el=$("#vgrad");
+  if(el.width) fetch(dataUrl("latest.json"),{cache:"force-cache"})
+    .then(r=>r.json()).then(d=>drawVerdictGradient(d.series,d.now_index)).catch(()=>{});
+});
+load();
+</script>
+</body>
+</html>
