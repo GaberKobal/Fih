@@ -293,10 +293,10 @@
 <div id="left">
   <div id="regionbar" role="button" tabindex="0" aria-expanded="false">
     <span>
-      <span class="nm" id="rgname">…</span>
+      <span class="nm" id="rgname">Tap a coast</span>
       <span class="sub" id="rgsub"></span>
     </span>
-    <span class="chev" id="rgchev">change ▾</span>
+    <span class="chev" id="rgchev">full maps ▾</span>
   </div>
   <div id="regionpanel"></div>
   <div id="regionwarn"></div>
@@ -396,7 +396,7 @@
 // Bumped whenever the page needs a matching fish_finder.py, and vice versa.
 // The two files live in different folders and get uploaded separately, so a
 // mismatch is easy to create and was previously invisible.
-const PAGE_VERSION = 13;
+const PAGE_VERSION = 14;
 
 // Offline: the app must open in a car park with one bar.
 if("serviceWorker" in navigator)
@@ -446,8 +446,8 @@ async function loadPoint(lat, lon){
   ptMarker = L.circleMarker([lat, lon], {radius:7, color:"#F2B138", weight:2,
     fillColor:"#0E2E3A", fillOpacity:.9}).addTo(map);
 
-  $("#rgname").textContent = "Anywhere";
-  $("#rgsub").textContent  = `${lat.toFixed(4)}, ${lon.toFixed(4)} · tap the map to move`;
+  $("#rgname").textContent = `${lat.toFixed(4)}, ${lon.toFixed(4)}`;
+  $("#rgsub").textContent  = "tap the map to move · Scan structure for relief and shelter";
   $("#err").style.display = "block";
   $("#err").style.color = "var(--sound)";
   $("#err").textContent = "Fetching conditions for this point…";
@@ -874,13 +874,16 @@ function renderRegions(){
   const any=document.createElement("button");
   any.type="button"; any.className="rg";
   any.setAttribute("aria-current", String(POINT !== null));
-  any.innerHTML=`<span><span class="n">Anywhere in the world</span>
-      <span class="tag">tap the map · conditions only, no structure map</span></span>
+  const lead=document.createElement("div");
+  lead.className="grp"; lead.textContent="Anywhere";
+  host.appendChild(lead);
+  any.innerHTML=`<span><span class="n">Tap any coast on Earth</span>
+      <span class="tag">conditions live · scan for structure</span></span>
     <span class="w" style="color:var(--buoy)">point</span><span class="v"></span>`;
   any.addEventListener("click",()=>{
     $("#regionpanel").classList.remove("open");
     $("#regionbar").setAttribute("aria-expanded","false");
-    $("#rgchev").textContent="change ▾";
+    $("#rgchev").textContent="full maps ▾";
     const c=map.getCenter();
     if(map.getZoom()>6) map.setZoom(6);
     loadPoint(c.lat, c.lng);
@@ -892,7 +895,8 @@ function renderRegions(){
   // Sorted best-first inside each country, so the panel doubles as a
   // "where in Europe is actually diveable today" view.
   Object.keys(byCountry).sort().forEach(c=>{
-    const g=document.createElement("div"); g.className="grp"; g.textContent=c;
+    const g=document.createElement("div"); g.className="grp";
+    g.textContent = `Precomputed · ${c}`;
     host.appendChild(g);
     byCountry[c].sort((a,b)=>(b.score||0)-(a.score||0)).forEach(r=>{
       const b=document.createElement("button");
@@ -914,7 +918,7 @@ function renderRegions(){
         POINT=null; if(ptMarker){map.removeLayer(ptMarker); ptMarker=null;}
         $("#regionpanel").classList.remove("open");
         $("#regionbar").setAttribute("aria-expanded","false");
-        $("#rgchev").textContent="change ▾";
+        $("#rgchev").textContent="full maps ▾";
         if(r.id!==REGION){ REGION=r.id; location.hash=r.id; sel=null;
                            overlay=null; load(); }
       });
@@ -926,7 +930,7 @@ function renderRegions(){
 function toggleRegions(){
   const open=$("#regionpanel").classList.toggle("open");
   $("#regionbar").setAttribute("aria-expanded", String(open));
-  $("#rgchev").textContent = open ? "close ▴" : "change ▾";
+  $("#rgchev").textContent = open ? "close ▴" : "full maps ▾";
 }
 $("#regionbar").addEventListener("click",toggleRegions);
 $("#regionbar").addEventListener("keydown",e=>{
@@ -949,7 +953,15 @@ async function load(){
       const [la,lo]=want.slice(1).split(",").map(Number);
       if(isFinite(la)&&isFinite(lo)){ map.setView([la,lo],9); await loadPoint(la,lo); return; }
     }
-    REGION = INDEX.regions.some(r=>r.id===want) ? want : INDEX.regions[0].id;
+    if(INDEX.regions.some(r=>r.id===want)){ REGION = want; }
+    else {
+      // Default to anywhere-mode: open on the first region's coast, but as a
+      // tappable point rather than a fixed region.
+      const c = INDEX.regions[0]?.centre || [45.32, 13.56];
+      map.setView(c, 10);
+      await loadPoint(c[0], c[1]);
+      return;
+    }
   }
   const meta = INDEX.regions.find(r=>r.id===REGION) || {};
   $("#rgname").textContent = meta.name || REGION;
