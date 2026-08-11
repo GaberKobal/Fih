@@ -374,6 +374,20 @@
     <label style="display:block">Overlay
       <input type="range" id="opac" min="0" max="100" value="75">
     </label>
+    <div id="scanbox" style="display:none;margin-top:9px;border-top:1px solid var(--line);padding-top:8px">
+      <button type="button" id="scan" style="width:100%;padding:9px;border:1px solid var(--buoy);
+        border-radius:2px;background:var(--shoal);color:var(--chart);cursor:pointer;
+        font:600 10.5px/1 var(--sans);letter-spacing:.1em;text-transform:uppercase">Scan structure</button>
+      <label style="margin-top:6px">Radius
+        <select id="radius" style="flex:1;background:var(--abyss);color:var(--chart);
+          border:1px solid var(--line);border-radius:2px;padding:4px;font:400 11px var(--mono)">
+          <option value="15">15 km</option>
+          <option value="30" selected>30 km</option>
+          <option value="50">50 km</option>
+        </select>
+      </label>
+      <div id="scanmsg" style="font-size:10px;color:var(--sound);margin-top:5px;line-height:1.4"></div>
+    </div>
   </div>
 </div>
 
@@ -382,7 +396,7 @@
 // Bumped whenever the page needs a matching fish_finder.py, and vice versa.
 // The two files live in different folders and get uploaded separately, so a
 // mismatch is easy to create and was previously invisible.
-const PAGE_VERSION = 12;
+const PAGE_VERSION = 13;
 
 // Offline: the app must open in a car park with one bar.
 if("serviceWorker" in navigator)
@@ -403,6 +417,7 @@ L.tileLayer("https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png", {
 let overlay=null, marks=[], DATA=null, sel=null;   // sel: null = structure map
 let INDEX=null, REGION=null, contours=null, wreckLayer=null, meMarker=null;
 let MODEL=null, POINT=null, ptMarker=null;      // POINT set = "anywhere" mode
+let STRUCT=null, TERRAIN=null, scanBox=null;    // client-side structure model
 let overlayOpacity=0.75;
 
 // Every data file now lives under its region's folder.
@@ -459,6 +474,55 @@ async function loadPoint(lat, lon){
 }
 
 map.on("click", e => { if(POINT !== null) loadPoint(e.latlng.lat, e.latlng.lng); });
+
+// ---- client-side structure ------------------------------------------------
+// Bathymetry is static, so the terrain (relief, slope, depth gate) is built
+// once per box and cached. Shelter is NOT static - it is upwind fetch - so it
+// is recomputed whenever the selected day changes the wind.
+async function paintStructure(){
+  if(!TERRAIN || !STRUCT) return;
+  const day = dayData();
+  const wind = day.wind_from_deg ?? DATA.now.wind_from_deg ?? 0;
+  const swell = day.swell_from_deg ?? null;
+  const {score} = STRUCT.score(TERRAIN, wind, swell, TERRAIN.opts);
+  if(overlay) map.removeLayer(overlay);
+  overlay = L.imageOverlay(STRUCT.toDataURL(TERRAIN, score),
+                           STRUCT.bounds(TERRAIN), {opacity: overlayOpacity}).addTo(map);
+  const spots = STRUCT.findSpots(TERRAIN, score, TERRAIN.opts);
+  DATA.spots = spots;
+  renderSpots(DATA, spots);
+  $("#scanmsg").innerHTML =
+    `${spots.length} spots · relief and slope cached · shelter recomputed for `
+    + `wind ${Math.round(wind)}°${swell!=null?` and swell ${Math.round(swell)}°`:""}.`;
+}
+
+$("#scan").addEventListener("click", async () => {
+  if(!POINT) return;
+  const btn = $("#scan"), r = +$("#radius").value;
+  btn.disabled = true; btn.textContent = "Fetching bathymetry…";
+  $("#scanmsg").textContent = "";
+  try{
+    if(!STRUCT) STRUCT = await import("./structure.js");
+    const box = STRUCT.boxAround(POINT.lat, POINT.lon, r);
+    const same = scanBox && Math.abs(scanBox.lat_min-box.lat_min)<1e-6
+                         && Math.abs(scanBox.lon_min-box.lon_min)<1e-6;
+    if(!same || !TERRAIN){
+      const grid = await STRUCT.fetchBathymetry(box);
+      btn.textContent = "Building terrain…";
+      const opts = {...STRUCT.defaults, radius_km: r,
+                    depth_min_m: 2, depth_best: [4, 18], depth_max_m: 30};
+      TERRAIN = STRUCT.buildTerrain(grid, opts);
+      TERRAIN.opts = opts;
+      scanBox = box;
+    }
+    await paintStructure();
+    map.fitBounds(STRUCT.bounds(TERRAIN));
+  }catch(e){
+    $("#scanmsg").innerHTML = `<span style="color:var(--flag)">${e.message}</span>`;
+  }finally{
+    btn.disabled = false; btn.textContent = "Scan structure";
+  }
+});
 
 // score -> colour ramp: red (bad) through amber to green (good)
 function ramp(q){
@@ -595,6 +659,7 @@ function selectTarget(id){
   $("#gpx").href = sp ? dataUrl(`spots_${sp.id}${suf}.gpx`) : dataUrl(`spots${suf}.gpx`);
   $("#gpx").textContent = sp ? `GPX · ${sp.name_en || sp.common}` : "Download GPX";
 
+  if(d.point){ renderSpots(d, d.spots || []); return; }
   const b=L.latLngBounds(d.bounds);
   if(overlay) map.removeLayer(overlay);
   const png = sp ? dataUrl(`score_${sp.id}${suf}.png`) : dataUrl(`score${suf}.png`);
@@ -632,6 +697,7 @@ function renderDays(d){
       selDay=i; renderDays(d); renderHours(d);
       renderSpecies(d);              // scores are per day
       selectTarget(sel);             // and so is the map
+      if(d.point && TERRAIN) paintStructure();   // wind moved, so shelter moved
     });
     host.appendChild(b);
   });
@@ -921,10 +987,10 @@ async function load(){
   const warn=[];
   if(DATA && DATA.point){
     const host = regionContaining(POINT.lat, POINT.lon);
-    warn.push("Point forecast — conditions only. There is no structure map here, "
-            + "because relief needs bathymetry that has to be precomputed per region."
-            + (host ? ` This point is inside <b>${host.name}</b>, which does have one — pick it from the region list.`
-                    : " Add this coast from the region builder to get one."));
+    warn.push("Point forecast. Conditions are live for this exact spot; press "
+            + "<b>Scan structure</b> on the map to fetch bathymetry and score "
+            + "relief, slope and shelter around it."
+            + (host ? ` This point is also inside <b>${host.name}</b>, which has a precomputed map with wrecks, contours and exclusion zones.` : ""));
     if(!DATA.has_species)
       warn.push("No species or legal rules for this point — no validated pack covers it.");
   }
@@ -1039,7 +1105,8 @@ function renderAll(d, meta){
   },{once:true});
   renderSpecies(d);
   initLog(d);
-  if(!d.point){ loadContours(); loadWrecks(); }
+  $("#scanbox").style.display = d.point ? "block" : "none";
+  if(!d.point){ loadContours(); loadWrecks(); TERRAIN=null; scanBox=null; }
   selectTarget(sel && (d.species||[]).some(x=>x.id===sel) ? sel : null);
 
   const t=new Date(d.generated);
