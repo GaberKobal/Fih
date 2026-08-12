@@ -35,7 +35,7 @@
     padding-bottom:env(safe-area-inset-bottom);
   }
   .eyebrow{
-    font-size:10px; font-weight:700; letter-spacing:.18em; text-transform:uppercase;
+    font-size:11.5px; font-weight:700; letter-spacing:.14em; text-transform:uppercase;
     color:var(--sound);
   }
   .num{font-family:var(--mono); font-variant-numeric:tabular-nums}
@@ -47,7 +47,7 @@
     border-bottom:1px solid var(--line); flex:0 0 auto;
   }
   #regionbar .nm{font-size:14px; font-weight:600}
-  #regionbar .sub{font-size:10.5px; color:var(--sound); margin-top:2px}
+  #regionbar .sub{font-size:12px; color:var(--sound); margin-top:2px}
   #regionbar .chev{color:var(--buoy); font-size:13px}
   #regionpanel{display:none; background:var(--abyss);
     border-bottom:1px solid var(--line); flex:0 0 auto; max-height:52vh;
@@ -66,7 +66,7 @@
   .rg .n{font-size:13.5px}
   .rg .w{font-family:var(--mono); font-size:13px}
   .rg .v{font-family:var(--mono); font-size:12px; color:var(--sound)}
-  .rg .tag{font-size:9.5px; color:var(--sound); letter-spacing:.1em;
+  .rg .tag{font-size:11px; color:var(--sound); letter-spacing:.08em;
     text-transform:uppercase; display:block; margin-top:2px}
   #regionwarn{padding:9px 16px; font-size:11.5px; color:var(--buoy);
     background:rgba(242,177,56,.08); border-bottom:1px solid var(--line); display:none}
@@ -123,7 +123,7 @@
   .sp .sc{
     display:block; font-family:var(--mono); font-size:15px; margin-top:3px;
   }
-  .sp .why{display:block; font-size:10px; color:var(--sound); margin-top:2px; white-space:nowrap}
+  .sp .why{display:block; font-size:11.5px; color:var(--sound); margin-top:2px; white-space:nowrap}
   .sp.out .nm,.sp.out .sc{color:var(--sound)}
   #spnote{padding:10px 16px; font-size:12.5px; color:var(--sound); border-bottom:1px solid var(--line)}
   #regionguide{border-bottom:1px solid var(--line); background:var(--abyss); padding:10px 16px}
@@ -163,7 +163,7 @@
   #ramplab{display:flex; justify-content:space-between;
     font:400 9.5px/1 var(--mono); color:var(--sound)}
   #maptools label{display:flex; align-items:center; gap:6px; margin-top:8px;
-    font-size:10.5px; color:var(--chart); cursor:pointer}
+    font-size:12px; color:var(--chart); cursor:pointer}
   #maptools input[type=range]{width:100%; accent-color:var(--buoy)}
   .depthline{font:600 9px/1 var(--mono)}
   #locate{
@@ -191,7 +191,7 @@
     padding:7px 9px; color:var(--chart); font-family:var(--sans);
   }
   .day[aria-pressed="true"]{border-color:var(--buoy); background:var(--shoal)}
-  .day .dl{display:block; font:700 9.5px/1 var(--sans); letter-spacing:.16em;
+  .day .dl{display:block; font:700 10.5px/1 var(--sans); letter-spacing:.13em;
     text-transform:uppercase; color:var(--sound)}
   .day .dt{display:block; font-family:var(--mono); font-size:14px; margin-top:4px}
   #hours{display:flex; gap:2px; align-items:flex-end; height:64px; margin-top:12px}
@@ -230,7 +230,7 @@
 
   .actions{display:flex; gap:8px; padding:12px 16px 16px; flex-wrap:wrap}
   .actions a,.actions button{
-    font:600 11px/1 var(--sans); letter-spacing:.12em; text-transform:uppercase;
+    font:600 12.5px/1 var(--sans); letter-spacing:.08em; text-transform:uppercase;
     color:var(--chart); background:var(--shoal); border:1px solid var(--line);
     border-radius:2px; padding:10px 13px; text-decoration:none; cursor:pointer;
   }
@@ -241,26 +241,26 @@
   details#log{border-bottom:1px solid var(--line)}
   details#log > summary{
     padding:12px 16px; cursor:pointer; list-style:none;
-    font:700 10px/1 var(--sans); letter-spacing:.18em; text-transform:uppercase;
+    font:700 11.5px/1 var(--sans); letter-spacing:.14em; text-transform:uppercase;
     color:var(--buoy);
   }
   details#log > summary::-webkit-details-marker{display:none}
   details#log > summary::before{content:"+ "; }
   details#log[open] > summary::before{content:"– "; }
   .form{padding:0 16px 14px; display:grid; grid-template-columns:1fr 1fr; gap:9px}
-  .form label{display:flex; flex-direction:column; gap:4px; font-size:10px;
-    letter-spacing:.14em; text-transform:uppercase; color:var(--sound); font-weight:700}
+  .form label{display:flex; flex-direction:column; gap:4px; font-size:11.5px;
+    letter-spacing:.1em; text-transform:uppercase; color:var(--sound); font-weight:700}
   .form label.wide{grid-column:1 / -1}
   .form input,.form select,.form textarea{
     background:var(--abyss); color:var(--chart); border:1px solid var(--line);
-    border-radius:2px; padding:8px; font:400 14px/1.3 var(--mono); width:100%;
+    border-radius:2px; padding:8px; font:400 16px/1.3 var(--mono); width:100%;
   }
   .form textarea{font-family:var(--sans); resize:vertical; min-height:44px}
   .toggle{display:flex; gap:6px}
   .toggle button{
     flex:1; padding:9px; border:1px solid var(--line); border-radius:2px;
     background:var(--abyss); color:var(--sound); cursor:pointer;
-    font:600 11px/1 var(--sans); letter-spacing:.1em; text-transform:uppercase;
+    font:600 12.5px/1 var(--sans); letter-spacing:.08em; text-transform:uppercase;
   }
   .toggle button[aria-pressed="true"]{background:var(--shoal); color:var(--chart); border-color:var(--buoy)}
   #rowout{
@@ -382,16 +382,16 @@
     <div id="scanbox" style="display:none;margin-top:9px;border-top:1px solid var(--line);padding-top:8px">
       <button type="button" id="scan" style="width:100%;padding:9px;border:1px solid var(--buoy);
         border-radius:2px;background:var(--shoal);color:var(--chart);cursor:pointer;
-        font:600 10.5px/1 var(--sans);letter-spacing:.1em;text-transform:uppercase">Scan structure</button>
+        font:600 12.5px/1 var(--sans);letter-spacing:.08em;text-transform:uppercase">Scan structure</button>
       <label style="margin-top:6px">Radius
         <select id="radius" style="flex:1;background:var(--abyss);color:var(--chart);
-          border:1px solid var(--line);border-radius:2px;padding:4px;font:400 11px var(--mono)">
+          border:1px solid var(--line);border-radius:2px;padding:4px;font:400 14px var(--mono)">
           <option value="15">15 km</option>
           <option value="30" selected>30 km</option>
           <option value="50">50 km</option>
         </select>
       </label>
-      <div id="scanmsg" style="font-size:10px;color:var(--sound);margin-top:5px;line-height:1.4"></div>
+      <div id="scanmsg" style="font-size:11.5px;color:var(--sound);margin-top:5px;line-height:1.4"></div>
     </div>
   </div>
 </div>
