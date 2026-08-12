@@ -317,32 +317,70 @@ export function findSpots(T, s, o = defaults){
   return out;
 }
 
+function mercatorY(latDeg){
+  const lat = latDeg * Math.PI / 180;
+  return Math.log(Math.tan(Math.PI / 4 + lat / 2));
+}
+function invMercatorY(y){
+  return (2 * Math.atan(Math.exp(y)) - Math.PI / 2) * 180 / Math.PI;
+}
+
 /** Paint the score field to a data URL for a Leaflet ImageOverlay. */
 export function toDataURL(T, s, alphaFloor = 0.35, alphaFull = 0.80){
-  const {nx, ny} = T;
+  const {nx, ny, lat0, cell, land} = T;
   const cv = document.createElement("canvas");
   cv.width = nx; cv.height = ny;
   const ctx = cv.getContext("2d");
   const img = ctx.createImageData(nx, ny);
   // viridis, sampled
   const ramp = [[68,1,84],[59,82,139],[33,145,140],[94,201,98],[253,231,37]];
-  for(let y = 0; y < ny; y++) for(let x = 0; x < nx; x++){
-    const v = s[(ny - 1 - y) * nx + x];         // canvas rows run north-first
-    const o = (y * nx + x) * 4;
-    if(v <= alphaFloor){ img.data[o+3] = 0; continue; }
-    const t = Math.min(1, (v - alphaFloor) / Math.max(alphaFull - alphaFloor, 1e-6));
-    const p = t * (ramp.length - 1), k = Math.min(ramp.length - 2, p | 0), f = p - k;
-    img.data[o]   = ramp[k][0] + (ramp[k+1][0] - ramp[k][0]) * f;
-    img.data[o+1] = ramp[k][1] + (ramp[k+1][1] - ramp[k][1]) * f;
-    img.data[o+2] = ramp[k][2] + (ramp[k+1][2] - ramp[k][2]) * f;
-    img.data[o+3] = 217 * t;
+
+  // Leaflet stretches this canvas linearly in Mercator y across the plain
+  // lat/lon corners bounds() gives it, but the source grid s[]/land[] is
+  // evenly spaced in plain latitude. The two only line up at the very top
+  // and bottom row; every row in between lands tens of metres — over a
+  // hundred at the 50 km radius option — north or south of where it should
+  // be. Resample each output row from its true Mercator-y position instead,
+  // the same correction write_overlay_png makes on the Python side, and
+  // pick the land mask with NEAREST rather than blending it, so this fix
+  // does not reintroduce its own smear across the coastline.
+  const latTop = lat0 + (ny - 1) * cell, latBot = lat0;
+  const yTop = mercatorY(latTop), yBot = mercatorY(latBot);
+  for(let y = 0; y < ny; y++){
+    const yMerc = yTop - (y / Math.max(ny - 1, 1)) * (yTop - yBot);
+    let rf = (invMercatorY(yMerc) - lat0) / cell;      // fractional source row, 0 = south
+    rf = Math.min(ny - 1, Math.max(0, rf));
+    const r0 = Math.floor(rf), r1 = Math.min(ny - 1, r0 + 1), f = rf - r0;
+    const rNear = f < 0.5 ? r0 : r1;
+    for(let x = 0; x < nx; x++){
+      const o = (y * nx + x) * 4;
+      if(land && land[rNear * nx + x]){ img.data[o+3] = 0; continue; }
+      const v = (1 - f) * s[r0 * nx + x] + f * s[r1 * nx + x];
+      if(v <= alphaFloor){ img.data[o+3] = 0; continue; }
+      const t = Math.min(1, (v - alphaFloor) / Math.max(alphaFull - alphaFloor, 1e-6));
+      const p = t * (ramp.length - 1), k = Math.min(ramp.length - 2, p | 0), fr = p - k;
+      img.data[o]   = ramp[k][0] + (ramp[k+1][0] - ramp[k][0]) * fr;
+      img.data[o+1] = ramp[k][1] + (ramp[k+1][1] - ramp[k][1]) * fr;
+      img.data[o+2] = ramp[k][2] + (ramp[k+1][2] - ramp[k][2]) * fr;
+      img.data[o+3] = 217 * t;
+    }
   }
   ctx.putImageData(img, 0, 0);
   return cv.toDataURL("image/png");
 }
 
 export function bounds(T){
-  return [[T.lat0, T.lon0],
-          [T.lat0 + (T.ny - 1) * T.cell,
-           T.lon0 + (T.nx - 1) * (T.cellLon ?? T.cell)]];
+  // T.lat0/T.lon0 are the CENTRE of the first (southernmost/westernmost)
+  // cell, not the edge of the scanned box. Leaflet's ImageOverlay stretches
+  // the picture so its outer pixel edges land exactly on the bounds it is
+  // given — so handing it cell centres pulls both edges inward by half a
+  // cell, which is small near the middle of the box but, right where it
+  // matters, means the outermost row/column of colour (often the strip
+  // hugging the coast) is drawn up to half a cell into the wrong side of
+  // the shoreline. Extend to the true outer edges instead, matching
+  // raster_bounds() in fish_finder.py.
+  const halfLat = T.cell / 2, halfLon = (T.cellLon ?? T.cell) / 2;
+  return [[T.lat0 - halfLat, T.lon0 - halfLon],
+          [T.lat0 + (T.ny - 1) * T.cell + halfLat,
+           T.lon0 + (T.nx - 1) * (T.cellLon ?? T.cell) + halfLon]];
 }

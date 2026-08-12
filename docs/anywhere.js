@@ -205,12 +205,12 @@ export async function forecastPoint(lat, lon, cfg, legalPack){
       workable: work[i] > wc.hard_floor, past: times[i] < nowIso,
       wind_regime: regimes[i].name,
     }));
-    const vals = hours.map(x => x.past ? -1 : x.score);
     let bw = null;
-    for(let j = 0; j + win <= vals.length; j++){
-      const s = vals.slice(j, j+win).reduce((a,b)=>a+b,0) / win;
+    for(let j = 0; j + win <= hours.length; j++){
+      const blk = hours.slice(j, j+win);
+      if(blk.some(x => x.past)) continue;
+      const s = blk.reduce((a,b)=>a+b.score,0) / win;
       if(s > 0 && (!bw || s > bw.score)){
-        const blk = hours.slice(j, j+win);
         bw = {start: blk[0].t, end: blk[win-1].t, score: +s.toFixed(3),
               viz_m: +(blk.reduce((a,b)=>a+b.viz_m,0)/win).toFixed(1),
               wave_m: +(blk.reduce((a,b)=>a+b.wave_m,0)/win).toFixed(2),
