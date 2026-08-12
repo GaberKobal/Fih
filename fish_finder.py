@@ -1147,22 +1147,26 @@ def best_window(h, daily, viz, work, move, cfg, now_iso, light=None):
                        else daylight_mask(times, daily).astype(float))
 
     future = np.array([t >= now_iso for t in times])
-    hourly = np.where(future, hourly, -1.0)
+    if not future.any():
+        return None
+    start0 = int(np.argmax(future))   # index of the first future hour
 
     win = cfg["conditions"]["window_hours"]
-    if len(hourly) < win:
+    avail = hourly[start0:]
+    if len(avail) < win:
         return None
     kern = np.ones(win) / win
-    rolled = np.convolve(hourly, kern, mode="valid")
+    rolled = np.convolve(avail, kern, mode="valid")
     if rolled.max() <= 0:
         # Do not manufacture a night-time "best" window just because the
         # weather is calm. A zero is useful: no daylight dive window remains.
         return None
-    i = int(np.argmax(rolled))
+    j = int(np.argmax(rolled))
+    i = j + start0
     return {
         "start": times[i],
         "end": times[i + win - 1],
-        "score": round(float(rolled[i]), 3),
+        "score": round(float(rolled[j]), 3),
         "wave_height_m": round(float(np.nanmean(h["wave_height"][i:i + win])), 2),
         "wind_speed_kmh": round(float(np.nanmean(h["wind_speed_10m"][i:i + win])), 1),
         "sea_temp_c": round(float(np.nanmean(h["sea_surface_temperature"][i:i + win])), 1),
@@ -1216,21 +1220,23 @@ def daily_breakdown(h, daily, viz, viz_m, work, move, cfg, now_iso,
             "past": h["time"][i] < now_iso,
         } for i in idx]
 
-        # best contiguous block of `win` hours inside this day
+        # best contiguous block of `win` hours inside this day, entirely future
         best = None
-        vals = [x["score"] if not x["past"] else -1.0 for x in hours]
-        if len(vals) >= win:
-            sums = [(sum(vals[j:j + win]) / win, j) for j in range(len(vals) - win + 1)]
-            top, j = max(sums)
-            if top > 0:
-                blk = hours[j:j + win]
-                best = {
-                    "start": blk[0]["t"], "end": blk[-1]["t"],
-                    "score": round(top, 3),
-                    "viz_m": round(sum(b["viz_m"] for b in blk) / win, 1),
-                    "wave_m": round(sum(b["wave_m"] for b in blk) / win, 2),
-                    "wind_kmh": round(sum(b["wind_kmh"] for b in blk) / win, 1),
-                }
+        if len(hours) >= win:
+            sums = [(sum(x["score"] for x in hours[j:j + win]) / win, j)
+                    for j in range(len(hours) - win + 1)
+                    if not any(x["past"] for x in hours[j:j + win])]
+            if sums:
+                top, j = max(sums)
+                if top > 0:
+                    blk = hours[j:j + win]
+                    best = {
+                        "start": blk[0]["t"], "end": blk[-1]["t"],
+                        "score": round(top, 3),
+                        "viz_m": round(sum(b["viz_m"] for b in blk) / win, 1),
+                        "wave_m": round(sum(b["wave_m"] for b in blk) / win, 2),
+                        "wind_kmh": round(sum(b["wind_kmh"] for b in blk) / win, 1),
+                    }
         peak = max((x for x in hours if not x["past"]),
                    key=lambda x: x["score"], default=None)
         days.append({
@@ -1502,6 +1508,15 @@ def species_spatial_score(sp, terms, depth_m, land, gates, cfg):
 
     if "habitat" in terms:
         parts["habitat"] = terms["habitat"]
+        denom += 1.0
+
+    # A charted wreck is real structure for any species that holds near
+    # relief at all — the general map already gets this via combine_score's
+    # weighted blend of every term in terms_d, including "wreck" when one is
+    # present. This hand-rolled combination was missing it, so a species map
+    # could stay flat right on top of a wreck the generic map lit up.
+    if "wreck" in terms:
+        parts["wreck"] = terms["wreck"]
         denom += 1.0
 
     structure = sum(parts.values()) / max(denom, 1e-9)
@@ -1819,17 +1834,6 @@ def run(cfg, selftest=False, out_dir=None):
                                for t in h["time"]]))
 
     viz, viz_m = visibility_series(h, cfg)
-
-    # A fitted correction from calibrate.py --fit-viz, if one exists. Written
-    # only when the model actually tracks reality, so its presence means the
-    # visibility number has been checked against real dives.
-    vzc = (json.loads((ROOT / "weights.json").read_text()).get("visibility_correction")
-           if (ROOT / "weights.json").exists() else None)
-    if vzc:
-        viz_m = np.clip(vzc["scale"] * viz_m + vzc["offset"], 0.3, 40.0)
-        log(f"visibility: applying fitted correction "
-            f"({vzc['scale']:.2f}x {vzc['offset']:+.1f} m, n={vzc['n']}, "
-            f"r={vzc['r']}, residual sd {vzc['residual_sd_m']} m)")
     work, sea_ok, air_ok = workability_series(h, cfg)
     move = movement_series(h, cfg)
     now_iso = h["time"][now_i]
@@ -1850,6 +1854,22 @@ def run(cfg, selftest=False, out_dir=None):
     vc = cfg["visibility"]
     viz_m = vc["viz_min_m"] + viz * (vc["viz_max_m"] - vc["viz_min_m"])
     work = np.clip(work * work_f, 0.0, 1.0)
+
+    # A fitted correction from calibrate.py --fit-viz, if one exists. Written
+    # only when the model actually tracks reality, so its presence means the
+    # visibility number has been checked against real dives. Applied last,
+    # to the final viz_m (after the wind-regime adjustment above) — that is
+    # the number calibrate.py was actually fitted against, since it is the
+    # one that reaches the log and the app. Correcting the pre-wind-regime
+    # value here would just get overwritten by the recompute above and the
+    # fit would silently have no effect.
+    vzc = (json.loads((ROOT / "weights.json").read_text()).get("visibility_correction")
+           if (ROOT / "weights.json").exists() else None)
+    if vzc:
+        viz_m = np.clip(vzc["scale"] * viz_m + vzc["offset"], 0.3, 40.0)
+        log(f"visibility: applying fitted correction "
+            f"({vzc['scale']:.2f}x {vzc['offset']:+.1f} m, n={vzc['n']}, "
+            f"r={vzc['r']}, residual sd {vzc['residual_sd_m']} m)")
 
     elev = solar_elevation_deg(h["time"], clat, clon, tz_offset)
     light = light_quality(elev, cfg)
