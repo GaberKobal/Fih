@@ -317,6 +317,29 @@ export function findSpots(T, s, o = defaults){
   return out;
 }
 
+/** One-cell dilation of the land mask, for painting only. Global bathymetry
+ *  occasionally disagrees with the vector coastline right at the coast —
+ *  river mouths, breakwaters, reclaimed land, park lagoons — by a cell or
+ *  two, which can otherwise show the colour wash sitting visibly on dry
+ *  land. This pulls the paint back from any detected shoreline as a
+ *  cosmetic margin; it does not touch T.land itself, so findSpots() can
+ *  still place a real spot right up to the true coastline. */
+function dilateLand(land, nx, ny){
+  const out = new Uint8Array(land.length);
+  for(let y = 0; y < ny; y++) for(let x = 0; x < nx; x++){
+    const i = y * nx + x;
+    if(land[i]){ out[i] = 1; continue; }
+    let hit = false;
+    for(let dy = -1; dy <= 1 && !hit; dy++) for(let dx = -1; dx <= 1; dx++){
+      const yy = y + dy, xx = x + dx;
+      if(yy < 0 || yy >= ny || xx < 0 || xx >= nx) continue;
+      if(land[yy * nx + xx]){ hit = true; break; }
+    }
+    out[i] = hit ? 1 : 0;
+  }
+  return out;
+}
+
 function mercatorY(latDeg){
   const lat = latDeg * Math.PI / 180;
   return Math.log(Math.tan(Math.PI / 4 + lat / 2));
@@ -334,6 +357,7 @@ export function toDataURL(T, s, alphaFloor = 0.35, alphaFull = 0.80){
   const img = ctx.createImageData(nx, ny);
   // viridis, sampled
   const ramp = [[68,1,84],[59,82,139],[33,145,140],[94,201,98],[253,231,37]];
+  const landEdge = land && dilateLand(land, nx, ny);
 
   // Leaflet stretches this canvas linearly in Mercator y across the plain
   // lat/lon corners bounds() gives it, but the source grid s[]/land[] is
@@ -354,7 +378,7 @@ export function toDataURL(T, s, alphaFloor = 0.35, alphaFull = 0.80){
     const rNear = f < 0.5 ? r0 : r1;
     for(let x = 0; x < nx; x++){
       const o = (y * nx + x) * 4;
-      if(land && land[rNear * nx + x]){ img.data[o+3] = 0; continue; }
+      if(landEdge && landEdge[rNear * nx + x]){ img.data[o+3] = 0; continue; }
       const v = (1 - f) * s[r0 * nx + x] + f * s[r1 * nx + x];
       if(v <= alphaFloor){ img.data[o+3] = 0; continue; }
       const t = Math.min(1, (v - alphaFloor) / Math.max(alphaFull - alphaFloor, 1e-6));
@@ -367,6 +391,121 @@ export function toDataURL(T, s, alphaFloor = 0.35, alphaFull = 0.80){
   }
   ctx.putImageData(img, 0, 0);
   return cv.toDataURL("image/png");
+}
+
+// Case -> pair(s) of edges crossed, for 4-corner marching squares. Corners
+// are bl=bit0, br=bit1, tr=bit2, tl=bit3, each set when depth > level.
+// Cases 5 and 10 are the ambiguous saddles and resolve to two segments.
+const MS_CASES = {
+  1: [["L","B"]],           2: [["B","R"]],
+  3: [["L","R"]],            4: [["R","T"]],
+  5: [["L","B"],["R","T"]],  6: [["B","T"]],
+  7: [["L","T"]],            8: [["T","L"]],
+  9: [["B","T"]],           10: [["B","R"],["T","L"]],
+  11:[["R","T"]],           12: [["L","R"]],
+  13:[["B","R"]],           14: [["L","B"]],
+};
+
+/** Depth contour lines via marching squares over the depth grid — a vector
+ *  result, so unlike toDataURL() there is no Mercator restretch to correct
+ *  for; each vertex is a true lat/lon and Leaflet projects it directly.
+ *  Land reads as a sentinel well below the shallowest level asked for, so no
+ *  line is ever drawn running onto the shore, matching depth_contours() in
+ *  fish_finder.py. */
+export function contourLines(T, levels = [5, 10, 15, 20, 30]){
+  const {nx, ny, land, depth, lat0, lon0, cell} = T;
+  const cellLon = T.cellLon ?? cell;
+
+  // Fill land with the local water mean before smoothing — the same
+  // technique buildTerrain() uses — so the coast does not read as a cliff
+  // and blur out a spurious ring of crossings right at the shoreline. Cells
+  // that actually touch land are still excluded below using the true mask,
+  // not this filled proxy, so a line can never end up drawn onto the shore.
+  let acc = 0, n = 0;
+  for(let i = 0; i < nx * ny; i++) if(!land[i]){ acc += depth[i]; n++; }
+  const mean = n ? acc / n : 0;
+  const filled = new Float32Array(nx * ny);
+  for(let i = 0; i < nx * ny; i++) filled[i] = land[i] ? mean : depth[i];
+  const sm = blur(filled, nx, ny, 1);
+
+  const lonAt = x => lon0 + x * cellLon;
+  const latAt = y => lat0 + y * cell;
+  const t = (level, va, vb) => vb === va ? 0.5 : (level - va) / (vb - va);
+
+  const feats = [];
+  for(const level of levels){
+    const lines = [];
+    for(let y = 0; y < ny - 1; y++){
+      for(let x = 0; x < nx - 1; x++){
+        if(land[y*nx+x] || land[y*nx+x+1] || land[(y+1)*nx+x] || land[(y+1)*nx+x+1])
+          continue;
+        const v00 = sm[y*nx+x], v10 = sm[y*nx+x+1],
+              v01 = sm[(y+1)*nx+x], v11 = sm[(y+1)*nx+x+1];
+        const c = (v00>level?1:0) | (v10>level?2:0) | (v11>level?4:0) | (v01>level?8:0);
+        const pairs = MS_CASES[c];
+        if(!pairs) continue;
+
+        const pt = edge => {
+          if(edge === "B") return [lonAt(x + t(level,v00,v10)), latAt(y)];
+          if(edge === "R") return [lonAt(x+1), latAt(y + t(level,v10,v11))];
+          if(edge === "T") return [lonAt(x + t(level,v01,v11)), latAt(y+1)];
+          return [lonAt(x), latAt(y + t(level,v00,v01))];            // "L"
+        };
+        for(const [e0, e1] of pairs) lines.push([pt(e0), pt(e1)]);
+      }
+    }
+    if(lines.length) feats.push({
+      type: "Feature", properties: {depth_m: level},
+      geometry: {type: "MultiLineString", coordinates: lines},
+    });
+  }
+  return {type: "FeatureCollection", features: feats};
+}
+
+const OVERPASS = "https://overpass-api.de/api/interpreter";
+
+/** Charted wrecks from OpenStreetMap via Overpass — same tags and shape as
+ *  fetch_wrecks() server-side, run directly from the browser since Overpass
+ *  is CORS-enabled. Nothing is cached: wrecks do not move, but a point scan
+ *  has no per-region data folder to keep a copy in. */
+export async function fetchWrecks(box){
+  const b = `${box.lat_min},${box.lon_min},${box.lat_max},${box.lon_max}`;
+  const q = `[out:json][timeout:25];(
+    node["seamark:type"="wreck"](${b});
+    way["seamark:type"="wreck"](${b});
+    node["historic"="wreck"](${b});
+    way["historic"="wreck"](${b});
+    node["seamark:type"="obstruction"](${b});
+  );out center tags;`;
+
+  let res;
+  try{
+    res = await fetch(OVERPASS, {method: "POST", body: "data=" + encodeURIComponent(q)});
+  }catch(e){
+    throw new Error("Overpass could not be reached from the browser");
+  }
+  if(!res.ok) throw new Error(`Overpass returned HTTP ${res.status}`);
+  const doc = await res.json();
+
+  const feats = [];
+  for(const el of doc.elements || []){
+    const lat = el.lat ?? el.center?.lat, lon = el.lon ?? el.center?.lon;
+    if(lat == null || lon == null) continue;
+    const tg = el.tags || {};
+    const depthRaw = tg["seamark:wreck:depth"] ?? tg.depth ?? null;
+    const depth = depthRaw != null && isFinite(+depthRaw) ? +depthRaw : null;
+    feats.push({
+      type: "Feature",
+      geometry: {type: "Point", coordinates: [+lon.toFixed(6), +lat.toFixed(6)]},
+      properties: {
+        name: tg["seamark:name"] || tg.name || "wreck",
+        kind: tg["seamark:type"] || tg.historic || "wreck",
+        category: tg["seamark:wreck:category"] || null,
+        depth_m: depth, osm_id: el.id,
+      },
+    });
+  }
+  return {type: "FeatureCollection", features: feats};
 }
 
 export function bounds(T){
