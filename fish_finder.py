@@ -67,9 +67,10 @@ from pathlib import Path
 
 import numpy as np
 from scipy.interpolate import RegularGridInterpolator
-from scipy.ndimage import (binary_opening, distance_transform_edt,
-                           gaussian_filter, gaussian_filter1d, label,
-                           maximum_filter, median_filter)
+from scipy.ndimage import (binary_dilation, binary_opening,
+                           distance_transform_edt, gaussian_filter,
+                           gaussian_filter1d, label, maximum_filter,
+                           median_filter)
 
 ROOT = Path(__file__).resolve().parent
 CACHE = ROOT / "cache"
@@ -1187,15 +1188,25 @@ def hourly_scores(h, daily, viz, work, move, cfg, light=None):
 
 
 def daily_breakdown(h, daily, viz, viz_m, work, move, cfg, now_iso,
-                    light=None, regimes=None):
+                    light=None, regimes=None, sea_ok=None, air_ok=None):
     """Group the forecast into local days so you can pick tomorrow's hour.
 
     Times are already local because the API is queried with timezone=auto,
     so slicing the date off the timestamp is enough.
+
+    Each hour also carries its own verdict/limited_by, computed the same way
+    as the headline "now" verdict. The page only regenerates once a day
+    (see .github/workflows/update.yml), so by the time someone loads it the
+    real local clock has usually moved on from generation time. Shipping a
+    verdict per hour lets the frontend re-anchor "now" to the real clock
+    instead of presenting a stale, possibly pre-dawn, snapshot for the next
+    24 hours.
     """
     scores, ok, light = hourly_scores(h, daily, viz, work, move, cfg, light)
     win = cfg["conditions"]["window_hours"]
     today = now_iso[:10]
+    wind_dir = h.get("wind_direction_10m")
+    current = h.get("ocean_current_velocity")
 
     by_date = {}
     for i, t in enumerate(h["time"]):
@@ -1205,20 +1216,33 @@ def daily_breakdown(h, daily, viz, viz_m, work, move, cfg, now_iso,
 
     days = []
     for date, idx in sorted(by_date.items()):
-        hours = [{
-            "t": h["time"][i],
-            "hour": int(h["time"][i][11:13]),
-            "score": round(float(scores[i]), 3),
-            "viz_m": round(float(viz_m[i]), 1),
-            "wave_m": round(float(h["wave_height"][i]), 2),
-            "wind_kmh": round(float(h["wind_speed_10m"][i]), 1),
-            "sea_temp_c": round(float(h["sea_surface_temperature"][i]), 1),
-            "daylight": bool(light[i] > 0),
-            "light": round(float(light[i]), 2),
-            "wind_regime": (regimes[i] if regimes else None),
-            "workable": bool(ok[i]),
-            "past": h["time"][i] < now_iso,
-        } for i in idx]
+        hours = []
+        for i in idx:
+            vw, lim, _ = verdict(
+                float(viz[i]), float(viz_m[i]), float(work[i]),
+                float(sea_ok[i]) if sea_ok is not None else 1.0,
+                float(air_ok[i]) if air_ok is not None else 1.0,
+                cfg, float(light[i]), True)
+            wd = float(wind_dir[i]) if wind_dir is not None else float("nan")
+            cur = float(current[i]) if current is not None else float("nan")
+            hours.append({
+                "t": h["time"][i],
+                "hour": int(h["time"][i][11:13]),
+                "score": round(float(scores[i]), 3),
+                "verdict": vw,
+                "limited_by": lim,
+                "viz_m": round(float(viz_m[i]), 1),
+                "wave_m": round(float(h["wave_height"][i]), 2),
+                "wind_kmh": round(float(h["wind_speed_10m"][i]), 1),
+                "wind_from_deg": round(wd) if np.isfinite(wd) else None,
+                "sea_temp_c": round(float(h["sea_surface_temperature"][i]), 1),
+                "current_ms": round(cur, 2) if np.isfinite(cur) else None,
+                "daylight": bool(light[i] > 0),
+                "light": round(float(light[i]), 2),
+                "wind_regime": (regimes[i] if regimes else None),
+                "workable": bool(ok[i]),
+                "past": h["time"][i] < now_iso,
+            })
 
         # best contiguous block of `win` hours inside this day, entirely future
         best = None
@@ -1634,7 +1658,16 @@ def write_overlay_png(score, lats, lons, path, land=None, cfg_overlay=None):
     # onto the shore. At 100 m cells that is a visible smear of colour on land.
     # Carry the land mask through with NEAREST sampling and force it clear.
     if land is not None:
-        lm = RegularGridInterpolator((lats, lons), land.astype(float),
+        # Pull the visible wash back one native cell from any detected
+        # shoreline. Global bathymetry occasionally disagrees with the
+        # vector coastline right at the coast — river mouths, breakwaters,
+        # reclaimed land — by a cell or two, which can otherwise show a
+        # colour wash sitting visibly on dry land. This is a cosmetic
+        # margin on what gets painted only; it does not touch the land mask
+        # used for scoring or spot-finding, so real nearshore spots are
+        # unaffected.
+        land_buffered = binary_dilation(land) if land.any() else land
+        lm = RegularGridInterpolator((lats, lons), land_buffered.astype(float),
                                      method="nearest",
                                      bounds_error=False, fill_value=1.0)
         resampled = np.where(lm(pts).reshape(gy.shape) > 0.5, 0.0, resampled)
@@ -1884,7 +1917,7 @@ def run(cfg, selftest=False, out_dir=None):
         float(light[now_i]), light_left)
     window = best_window(h, daily, viz, work, move, cfg, now_iso, light)
     days = daily_breakdown(h, daily, viz, viz_m, work, move, cfg, now_iso,
-                           light, regimes)
+                           light, regimes, sea_ok, air_ok)
     log(f"verdict: {word} (limited by {limiter}), viz ~{viz_m[now_i]:.0f} m")
 
     # ---- spatial terms ----
@@ -2053,7 +2086,7 @@ def run(cfg, selftest=False, out_dir=None):
     keep = slice(max(0, now_i - 24), min(len(h["time"]), now_i + 60))
     payload = {
         "generated": stamp,
-        "schema_version": 16,
+        "schema_version": 17,
         "region": cfg["region_name"],
         "region_id": cfg.get("region_id", "default"),
         "country": cfg.get("country", ""),
@@ -2217,7 +2250,7 @@ def main():
             model["legal"][f.stem] = json.loads(f.read_text())
         except Exception:
             pass
-    model["schema_version"] = 16
+    model["schema_version"] = 17
     mpath = ROOT / "docs" / "data" / "model.json"
     mpath.parent.mkdir(parents=True, exist_ok=True)
     mpath.write_text(json.dumps(model, indent=1))
@@ -2226,7 +2259,7 @@ def main():
     idx_path = ROOT / "docs" / "data" / "index.json"
     idx_path.parent.mkdir(parents=True, exist_ok=True)
     idx_path.write_text(json.dumps({
-        "schema_version": 16,
+        "schema_version": 17,
         "generated": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
         "regions": index,
         "failed": failed,
