@@ -401,7 +401,7 @@
 // Bumped whenever the page needs a matching fish_finder.py, and vice versa.
 // The two files live in different folders and get uploaded separately, so a
 // mismatch is easy to create and was previously invisible.
-const PAGE_VERSION = 16;
+const PAGE_VERSION = 17;
 
 // Offline: the app must open in a car park with one bar.
 if("serviceWorker" in navigator)
@@ -529,6 +529,26 @@ $("#scan").addEventListener("click", async () => {
       TERRAIN = STRUCT.buildTerrain(grid, opts);
       TERRAIN.opts = opts;
       scanBox = box;
+
+      // Depth lines: pure geometry off the bathymetry already in hand, so no
+      // extra network round trip.
+      if(contours){ map.removeLayer(contours); contours=null; }
+      contours = styleContours(STRUCT.contourLines(TERRAIN));
+      if($("#ctoggle").checked) contours.addTo(map);
+
+      // Wrecks: a real network call to Overpass, so it can fail (rate
+      // limited, offline) without breaking the scan itself.
+      if(wreckLayer){ map.removeLayer(wreckLayer); wreckLayer=null; }
+      btn.textContent = "Checking for wrecks…";
+      try{
+        const wgj = await STRUCT.fetchWrecks(box);
+        if(wgj.features.length){
+          wreckLayer = styleWrecks(wgj);
+          if($("#wtoggle").checked) wreckLayer.addTo(map);
+        }
+      }catch(e){
+        // Non-fatal: structure and depth lines still stand on their own.
+      }
     }
     await paintStructure();
     map.fitBounds(STRUCT.bounds(TERRAIN));
@@ -842,6 +862,32 @@ function renderSpecies(d){
 
 // Depth lines. A colour wash says a cell scores well; a 10 m line says
 // whether you can reach the bottom, which is the question that decides a dive.
+// Shared styling for depth-line and wreck layers, whether the GeoJSON came
+// from a precomputed region (server) or a scanned point (client-side, see
+// structure.js contourLines()/fetchWrecks()) — same look either way.
+function styleContours(gj){
+  const shade=d=>d<=5?"#7fd4ff":d<=10?"#4fb3e0":d<=15?"#2f8fbe":d<=20?"#1f6f9c":"#14506f";
+  return L.geoJSON(gj,{
+    style:f=>({color:shade(f.properties.depth_m), weight:1.1,
+               opacity:.65, dashArray:f.properties.depth_m%10?"3 3":null}),
+    onEachFeature:(f,l)=>l.bindTooltip(`${f.properties.depth_m} m`,
+      {sticky:true, direction:"top", className:"depthline"}),
+  });
+}
+function styleWrecks(gj){
+  return L.geoJSON(gj,{
+    pointToLayer:(f,ll)=>L.circleMarker(ll,{radius:5,color:"#E4573D",weight:2,
+      fillColor:"#0E2E3A",fillOpacity:.9}),
+    onEachFeature:(f,l)=>{
+      const p=f.properties||{};
+      l.bindPopup(`<b>${p.name||"wreck"}</b><br>${p.kind||""}`
+        + (p.depth_m!=null?`<br>charted depth ${p.depth_m} m`:"")
+        + `<br><span style="font-family:monospace">`
+        + `${f.geometry.coordinates[1].toFixed(5)}, ${f.geometry.coordinates[0].toFixed(5)}</span>`);
+    },
+  });
+}
+
 async function loadContours(){
   if(contours){ map.removeLayer(contours); contours=null; }
   let gj;
@@ -850,14 +896,7 @@ async function loadContours(){
     if(!r.ok) return;
     gj=await r.json();
   }catch(e){ return; }
-
-  const shade=d=>d<=5?"#7fd4ff":d<=10?"#4fb3e0":d<=15?"#2f8fbe":d<=20?"#1f6f9c":"#14506f";
-  contours=L.geoJSON(gj,{
-    style:f=>({color:shade(f.properties.depth_m), weight:1.1,
-               opacity:.65, dashArray:f.properties.depth_m%10?"3 3":null}),
-    onEachFeature:(f,l)=>l.bindTooltip(`${f.properties.depth_m} m`,
-      {sticky:true, direction:"top", className:"depthline"}),
-  });
+  contours=styleContours(gj);
   if($("#ctoggle").checked) contours.addTo(map);
 }
 
@@ -872,17 +911,7 @@ async function loadWrecks(){
     gj=await r.json();
   }catch(e){ return; }
   if(!gj.features || !gj.features.length) return;
-  wreckLayer=L.geoJSON(gj,{
-    pointToLayer:(f,ll)=>L.circleMarker(ll,{radius:5,color:"#E4573D",weight:2,
-      fillColor:"#0E2E3A",fillOpacity:.9}),
-    onEachFeature:(f,l)=>{
-      const p=f.properties||{};
-      l.bindPopup(`<b>${p.name||"wreck"}</b><br>${p.kind||""}`
-        + (p.depth_m!=null?`<br>charted depth ${p.depth_m} m`:"")
-        + `<br><span style="font-family:monospace">`
-        + `${f.geometry.coordinates[1].toFixed(5)}, ${f.geometry.coordinates[0].toFixed(5)}</span>`);
-    },
-  });
+  wreckLayer=styleWrecks(gj);
   if($("#wtoggle").checked) wreckLayer.addTo(map);
 }
 $("#wtoggle").addEventListener("change",e=>{
@@ -1083,7 +1112,71 @@ async function load(){
       `some features (day switching, the submit button) will not work.`;
   }
 
+  reanchorNow(d);
   renderAll(d, meta);
+}
+
+// The workflow that generates a region's data runs once a day, at a fixed
+// UTC hour (see .github/workflows/update.yml) — pre-dawn local time for
+// plenty of regions. "now" in the fetched JSON is only as fresh as that
+// last run, so anyone loading the page later the same day was seeing
+// generation-time conditions presented as current: calm midday sun showing
+// as "dark — no daylight" because the file was built at 4am, or the
+// reverse. Re-anchor "now" to the real clock using the hourly series
+// (d.days[].hours[]), which carries its own verdict per hour, computed the
+// same way as the headline one — see daily_breakdown() in fish_finder.py.
+function reanchorNow(d){
+  if(d.point || !d.days || !d.days.length || d.utc_offset_seconds == null) return;
+
+  const tz = d.utc_offset_seconds;
+  const nowLocal = new Date(Date.now() + tz * 1000);
+  const nowIso = nowLocal.toISOString().slice(0, 13) + ":00";
+
+  const allHours = d.days.flatMap(day => day.hours || []);
+  if(!allHours.length) return;
+
+  // Hour-strip greying, "day is over" messaging and best-window selection
+  // all read h.past, which was computed against generation-time, not real
+  // time. Refresh it, and drop any recommendation that has since elapsed.
+  for(const h of allHours) h.past = (h.t + "Z") < (nowIso + "Z");
+  for(const day of d.days){
+    if(day.best && (day.best.start + "Z") < (nowIso + "Z")) day.best = null;
+    if(day.peak_hour && (day.peak_hour + "Z") < (nowIso + "Z")){
+      day.peak_hour = null; day.peak_score = 0;
+    }
+  }
+
+  let match = null, best = Infinity;
+  for(const h of allHours){
+    const diff = Math.abs(new Date(h.t + "Z") - new Date(nowIso + "Z"));
+    if(diff < best){ best = diff; match = h; }
+  }
+  if(!match || match.t === d.now.time) return;   // generation-time hour was already the closest
+
+  d.now = {...d.now,
+    time: match.t, light: match.light, score: match.score,
+    visibility_m: match.viz_m, wave_height_m: match.wave_m,
+    wind_speed_kmh: match.wind_kmh, sea_temp_c: match.sea_temp_c,
+    wind_regime: match.wind_regime,
+  };
+  // Older cached data (pre schema v17) will not have these on the hour
+  // record — leave the stale value rather than overwriting with undefined.
+  if(match.verdict){ d.now.verdict = match.verdict; d.now.limited_by = match.limited_by; }
+  if(match.wind_from_deg != null){
+    d.now.wind_from_deg = match.wind_from_deg;
+    d.now.wind_from_deg_now = match.wind_from_deg;
+  }
+  if(match.current_ms != null) d.now.current_ms = match.current_ms;
+
+  // Keep the spark/gradient graph's "now" marker lined up with the same hour.
+  if(d.series && d.series.time && d.series.time.length){
+    let si = 0, sbest = Infinity;
+    for(let i = 0; i < d.series.time.length; i++){
+      const diff = Math.abs(new Date(d.series.time[i] + "Z") - new Date(nowIso + "Z"));
+      if(diff < sbest){ sbest = diff; si = i; }
+    }
+    d.now_index = si;
+  }
 }
 
 function renderAll(d, meta){
