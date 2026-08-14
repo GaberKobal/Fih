@@ -279,7 +279,7 @@
         "lon_max": -8.5,
         "lat_max": 37.15
       },
-      "species_file": null,
+      "species_file": "species.json",
       "exclusions_file": null,
       "depth": {
         "min_m": 3.0,
@@ -289,7 +289,7 @@
         ],
         "max_m": 40.0
       },
-      "note": "Atlantic, not Mediterranean: different species entirely, real tides and real swell. No pack exists for it, so structure and conditions only."
+      "note": "Atlantic, not Mediterranean, but the same species pack applies: sargus, vulgaris, aurata, labrax, dentex, umbra, octopus and sepia are all Atlanto-Mediterranean species with real Atlantic Iberian ranges, and legal/PT.json already carries size and season entries for exactly this list. Depth and season fields are still Adriatic-tuned and colder, tidal Atlantic water will read them low - real tides and real swell here too."
     },
     {
       "id": "cyclades",
@@ -334,9 +334,9 @@
         ],
         "max_m": 45.0
       },
-      "note": "Mid-Atlantic volcanic. EMODnet reaches here so the structure map is at full resolution, but the species are Atlantic, not Mediterranean.",
+      "note": "Mid-Atlantic volcanic. EMODnet reaches here so the structure map is at full resolution. Own species pack (species_azores.json) - amberjack, blacktail comber and barracuda country rather than the Mediterranean's Diplodus/Sparus mix. Note: spearfishing for dusky grouper is banned regionally in the Azores even though it is present here; it is deliberately left off the species list.",
       "enabled": false,
-      "species_file": null,
+      "species_file": "species_azores.json",
       "exclusions_file": null,
       "wind_regimes": null
     },
@@ -359,9 +359,9 @@
         ],
         "max_m": 40.0
       },
-      "note": "EMODnet coverage, so full-resolution structure. Subtropical Atlantic species.",
+      "note": "EMODnet coverage, so full-resolution structure. legal/ES.json already carries size and season entries for the same 8-species pack used elsewhere, and sargus, vulgaris, dentex, umbra, octopus and sepia are all well documented in Canarian waters; aurata and labrax range here too but are less dominant than on the mainland. Two genuinely common local targets - vieja (Sparisoma cretense) and mero (Epinephelus marginatus) - are not in this pack yet.",
       "enabled": false,
-      "species_file": null,
+      "species_file": "species.json",
       "exclusions_file": null,
       "wind_regimes": null
     },
@@ -384,9 +384,9 @@
         ],
         "max_m": 40.0
       },
-      "note": "Global bathymetry tier only. Hawaii has excellent NOAA CUDEM coverage at 3-10 m that this does not yet use - that would be the single biggest upgrade here.",
+      "note": "Global bathymetry tier only. Hawaii has excellent NOAA CUDEM coverage at 3-10 m that this does not yet use - that would be the single biggest upgrade here. Own species pack (species_oahu.json): uhu, kumu, omilu, ulua, roi and mu.",
       "enabled": false,
-      "species_file": null,
+      "species_file": "species_oahu.json",
       "exclusions_file": null,
       "wind_regimes": null
     },
@@ -409,9 +409,9 @@
         ],
         "max_m": 40.0
       },
-      "note": "Kelp forest diving. California has its own licence and species rules that are NOT encoded.",
+      "note": "Kelp forest diving. California has its own licence and species rules that are NOT encoded. Own species pack (species_socal.json): sheephead, kelp bass, halibut, lingcod, white seabass, yellowtail.",
       "enabled": false,
-      "species_file": null,
+      "species_file": "species_socal.json",
       "exclusions_file": null,
       "wind_regimes": null
     },
@@ -434,9 +434,9 @@
         ],
         "max_m": 30.0
       },
-      "note": "Reef. Large protected areas where spearfishing is banned outright and none of them are encoded here.",
+      "note": "Reef. Large protected areas where spearfishing is banned outright and none of them are encoded here. Own species pack (species_florida_keys.json): hogfish, mutton/yellowtail/mangrove snapper, black/gag grouper.",
       "enabled": false,
-      "species_file": null,
+      "species_file": "species_florida_keys.json",
       "exclusions_file": null,
       "wind_regimes": null
     },
@@ -459,9 +459,9 @@
         ],
         "max_m": 35.0
       },
-      "note": "Cold, surgy, and shark country. The model knows nothing about any of that.",
+      "note": "Cold, surgy, and shark country. The model knows nothing about any of that. Own species pack (species_capetown.json): galjoen, red roman, hottentot, yellowtail.",
       "enabled": false,
-      "species_file": null,
+      "species_file": "species_capetown.json",
       "exclusions_file": null,
       "wind_regimes": null
     },
@@ -484,9 +484,9 @@
         ],
         "max_m": 40.0
       },
-      "note": "AusSeabed publishes much finer bathymetry than the global tier used here.",
+      "note": "AusSeabed publishes much finer bathymetry than the global tier used here. Own species pack (species_rottnest.json): dhufish, pink snapper, samson fish, baldchin groper, breaksea cod. Rottnest's own sanctuary zones are NOT masked.",
       "enabled": false,
-      "species_file": null,
+      "species_file": "species_rottnest.json",
       "exclusions_file": null,
       "wind_regimes": null
     },
@@ -509,9 +509,9 @@
         ],
         "max_m": 45.0
       },
-      "note": "The Poor Knights themselves are a no-take marine reserve. This region covers the wider coast; the reserve is NOT masked.",
+      "note": "The Poor Knights themselves are a no-take marine reserve. This region covers the wider coast; the reserve is NOT masked. Own species pack (species_poorknights.json): kingfish, snapper, trevally, John Dory - describes the fishable coast, not the reserve.",
       "enabled": false,
-      "species_file": null,
+      "species_file": "species_poorknights.json",
       "exclusions_file": null,
       "wind_regimes": null
     },
@@ -534,9 +534,9 @@
         ],
         "max_m": 40.0
       },
-      "note": "Indo-Pacific reef, a completely different species assemblage from anything encoded here.",
+      "note": "Indo-Pacific reef. Own species pack (species_bali.json): coral trout, red bass, GT, green jobfish, barracuda. Parrotfish deliberately left off - many local communities avoid spearing them for reef health.",
       "enabled": false,
-      "species_file": null,
+      "species_file": "species_bali.json",
       "exclusions_file": null,
       "wind_regimes": null
     },
@@ -559,9 +559,9 @@
         ],
         "max_m": 40.0
       },
-      "note": "Subtropical reef. Japanese prefectural rules on spearfishing are strict and vary; none are encoded.",
+      "note": "Subtropical reef. Japanese prefectural rules on spearfishing are strict and vary; none are encoded. Own species pack (species_okinawa.json): irabucha, mibai, akajin, taman, snapper. Humphead wrasse deliberately left off - it is IUCN Endangered.",
       "enabled": false,
-      "species_file": null,
+      "species_file": "species_okinawa.json",
       "exclusions_file": null,
       "wind_regimes": null
     }

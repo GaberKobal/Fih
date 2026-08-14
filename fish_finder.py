@@ -952,7 +952,7 @@ def fetch_conditions(lat, lon, cfg):
     ]
     weather_vars = [
         "precipitation", "wind_speed_10m", "wind_direction_10m",
-        "wind_gusts_10m", "cloud_cover",
+        "wind_gusts_10m", "cloud_cover", "pressure_msl",
     ]
 
     m = http_json(f"{OPENMETEO_MARINE}?" + urllib.parse.urlencode({
@@ -1010,17 +1010,30 @@ def solar_elevation_deg(times_local, lat, lon, tz_offset_s):
     return np.array(out)
 
 
-def light_quality(elev_deg, cfg):
+def light_quality(elev_deg, cfg, cloud_pct=None):
     """0 when the sun is down, best at low sun, worst at high noon.
 
     Hard zero below the horizon is deliberate and not just about fish:
     spearfishing at night is prohibited in Croatia.
+
+    Cloud cover, when available, eases the high-noon penalty rather than
+    fixing it at a constant: heavy overcast diffuses the overhead glare that
+    the penalty exists to model in the first place. It never raises
+    dawn/dusk quality above 1.0 and never reopens the night gate.
     """
     c = cfg.get("light", {})
     golden = c.get("golden_max_deg", 12.0)
     high = c.get("high_sun_deg", 45.0)
     floor = c.get("high_sun_factor", 0.6)
-    q = 1.0 - (1.0 - floor) * np.clip((elev_deg - golden) / max(high - golden, 1e-6), 0, 1)
+
+    floor_eff = floor
+    if cloud_pct is not None:
+        soften = c.get("cloud_softening", 0.5)
+        cloud_frac = np.clip(np.nan_to_num(np.asarray(cloud_pct, dtype=float),
+                                           nan=0.0) / 100.0, 0.0, 1.0)
+        floor_eff = floor + (1.0 - floor) * soften * cloud_frac
+
+    q = 1.0 - (1.0 - floor_eff) * np.clip((elev_deg - golden) / max(high - golden, 1e-6), 0, 1)
     return np.where(elev_deg > 0, q, 0.0)
 
 
@@ -1108,9 +1121,47 @@ def workability_series(h, cfg):
     c = cfg["workability"]
     hs = np.nan_to_num(h["wave_height"], nan=1.0)
     wind = np.nan_to_num(h["wind_speed_10m"], nan=30.0)
-    sea = 1.0 - norm(hs, c["hs_good_m"], c["hs_bad_m"])
+
+    # A given significant height feels very different depending on period:
+    # short-period wind chop is steep and tiring to work in, long-period
+    # ground swell of the same height is smooth. Scale the height fed to the
+    # comfort test by how its period compares to a reference, rather than
+    # judging height alone. Bounded so a bad/missing reading cannot swing the
+    # result too far — this is a real but secondary effect next to height.
+    ref = c.get("period_ref_s", 8.0)
+    period = np.nan_to_num(h.get("wave_period", np.array([])), nan=ref)
+    if period.size != hs.size:
+        period = np.full_like(hs, ref)
+    period = np.clip(period, 2.0, 20.0)
+    hs_eff = hs * np.clip(ref / period, 0.6, 1.6)
+
+    sea = 1.0 - norm(hs_eff, c["hs_good_m"], c["hs_bad_m"])
     air = 1.0 - norm(wind, c["wind_good_kmh"], c["wind_bad_kmh"])
     return np.minimum(sea, air), sea, air
+
+
+def pressure_factor_series(h, cfg):
+    """A falling barometer ahead of a front is a well-worn angling
+    heuristic; the evidence for it is much weaker than for visibility or
+    sea state, so this only ever nudges the composite score by a few
+    percent. It is applied to the score alone — never to workability,
+    never to the verdict gate, and it is never surfaced as a 'limited by'
+    reason. Returns None (no-op) if pressure was not fetched.
+    """
+    c = cfg.get("pressure") or {}
+    if "pressure_msl" not in h:
+        return None
+    p = np.nan_to_num(np.asarray(h["pressure_msl"], dtype=float), nan=np.nan)
+    if np.all(np.isnan(p)):
+        return None
+    win = max(1, int(c.get("trend_window_h", 3)))
+    sens = c.get("sensitivity", 0.02)
+    cap = c.get("max_swing", 0.08)
+    trend = np.full(p.shape, np.nan)          # hPa/h; negative = falling
+    if p.size > win:
+        trend[win:] = (p[win:] - p[:-win]) / win
+    trend = np.nan_to_num(trend, nan=0.0)
+    return 1.0 + np.clip(-trend * sens, -cap, cap)
 
 
 def movement_series(h, cfg):
@@ -1143,6 +1194,9 @@ def best_window(h, daily, viz, work, move, cfg, now_iso, light=None):
     base = (cfg["day_weights"]["visibility"] * viz
             + cfg["day_weights"]["workability"] * work
             + cfg["day_weights"]["movement"] * move)
+    pf = pressure_factor_series(h, cfg)
+    if pf is not None:
+        base = base * pf
     hourly = base * (work > cfg["workability"]["hard_floor"])
     hourly = hourly * (light if light is not None
                        else daylight_mask(times, daily).astype(float))
@@ -1179,6 +1233,9 @@ def hourly_scores(h, daily, viz, work, move, cfg, light=None):
     base = (cfg["day_weights"]["visibility"] * viz
             + cfg["day_weights"]["workability"] * work
             + cfg["day_weights"]["movement"] * move)
+    pf = pressure_factor_series(h, cfg)
+    if pf is not None:
+        base = base * pf
     ok = work > cfg["workability"]["hard_floor"]
     if light is None:
         light = daylight_mask(h["time"], daily).astype(float)
@@ -1853,6 +1910,7 @@ def run(cfg, selftest=False, out_dir=None):
         h["wind_direction_10m"] = np.full(n, 130.0)
         h["wind_gusts_10m"] = h["wind_speed_10m"] * 1.4
         h["cloud_cover"] = np.full(n, 20.0)
+        h["pressure_msl"] = 1015.0 - 3.0 * np.linspace(0, 1, n)   # slow, steady fall
         daily = {"sunrise": [f"2026-07-{28+d}T03:30" for d in range(4)],
                  "sunset": [f"2026-07-{28+d}T18:40" for d in range(4)]}
         now_i = 24
@@ -1905,7 +1963,7 @@ def run(cfg, selftest=False, out_dir=None):
             f"r={vzc['r']}, residual sd {vzc['residual_sd_m']} m)")
 
     elev = solar_elevation_deg(h["time"], clat, clon, tz_offset)
-    light = light_quality(elev, cfg)
+    light = light_quality(elev, cfg, h.get("cloud_cover"))
 
     today_str = now_iso[:10]
     light_left = any(light[i] > 0 and work[i] > cfg["workability"]["hard_floor"]
@@ -2086,7 +2144,7 @@ def run(cfg, selftest=False, out_dir=None):
     keep = slice(max(0, now_i - 24), min(len(h["time"]), now_i + 60))
     payload = {
         "generated": stamp,
-        "schema_version": 17,
+        "schema_version": 18,
         "region": cfg["region_name"],
         "region_id": cfg.get("region_id", "default"),
         "country": cfg.get("country", ""),
@@ -2211,6 +2269,7 @@ def main():
             "jurisdiction": r.get("jurisdiction", ""),
             "note": r.get("note", ""),
             "has_species": bool(r.get("species_file")),
+            "species_file": r.get("species_file"),
             "has_exclusions": bool(r.get("exclusions_file")),
             "bathymetry_provider": payload.get("bathymetry_provider"),
             "bathymetry_native_m": payload.get("bathymetry_native_m"),
@@ -2232,12 +2291,21 @@ def main():
 
     model_keys = ("visibility", "workability", "movement", "light",
                   "wind_regimes", "gust", "day_weights", "verdict",
-                  "conditions", "thermocline", "shelter")
+                  "conditions", "thermocline", "shelter", "pressure")
     model = {k: base.get(k) for k in model_keys}
-    try:
-        model["species"] = json.loads((ROOT / "species.json").read_text())["species"]
-    except Exception:
-        model["species"] = []
+
+    # Every species file any region declares, plus the ocean-basin fallback
+    # packs used for points outside every defined region (see
+    # biomeSpeciesFile() in docs/index.html) - bundled once here so tapping
+    # an arbitrary point anywhere on Earth costs zero extra fetches.
+    species_filenames = {r.get("species_file") for r in regions if r.get("species_file")}
+    species_filenames |= {"species_nwatlantic.json", "species_indian_tropical.json"}
+    model["species_packs"] = {}
+    for name in sorted(species_filenames):
+        try:
+            model["species_packs"][name] = json.loads((ROOT / name).read_text())["species"]
+        except Exception as e:
+            log(f"species pack {name} failed to load: {e}")
     model["legal"] = {}
     legal_files = list((ROOT / "legal").glob("*.json")) if (ROOT / "legal").exists() else []
     for r in regions:
@@ -2250,7 +2318,7 @@ def main():
             model["legal"][f.stem] = json.loads(f.read_text())
         except Exception:
             pass
-    model["schema_version"] = 17
+    model["schema_version"] = 18
     mpath = ROOT / "docs" / "data" / "model.json"
     mpath.parent.mkdir(parents=True, exist_ok=True)
     mpath.write_text(json.dumps(model, indent=1))
@@ -2259,7 +2327,7 @@ def main():
     idx_path = ROOT / "docs" / "data" / "index.json"
     idx_path.parent.mkdir(parents=True, exist_ok=True)
     idx_path.write_text(json.dumps({
-        "schema_version": 17,
+        "schema_version": 18,
         "generated": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
         "regions": index,
         "failed": failed,

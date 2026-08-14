@@ -78,7 +78,9 @@
     "hs_bad_m": 0.9,
     "wind_good_kmh": 10.0,
     "wind_bad_kmh": 35.0,
-    "hard_floor": 0.2
+    "hard_floor": 0.2,
+    "period_ref_s": 8.0,
+    "_period_note": "Reference swell period in seconds; no adjustment at this period. Shorter periods (steep wind chop) scale wave height up toward the bad threshold, longer periods (smooth ground swell) scale it down, capped at 0.6x-1.6x."
   },
   "movement": {
     "tide_rate_ref_m_per_h": 0.08,
@@ -119,7 +121,15 @@
     "_note": "Sun elevation shapes the hourly score. 0 below the horizon (night spearfishing is prohibited in Croatia); best at low sun; worst under flat high sun.",
     "golden_max_deg": 12.0,
     "high_sun_deg": 45.0,
-    "high_sun_factor": 0.6
+    "high_sun_factor": 0.6,
+    "cloud_softening": 0.5,
+    "_cloud_note": "0-1, how much of the high-sun penalty heavy overcast can undo (0.5 = up to half the gap back at 100% cloud cover). Does not touch the night gate or raise dawn/dusk quality above 1.0."
+  },
+  "pressure": {
+    "_note": "Falling-barometer-before-a-front is a common angling heuristic with much weaker evidence behind it than visibility or sea state, so this only ever nudges the score by a few percent - it never gates a verdict or becomes a 'limited by' reason. Set sensitivity to 0 to disable.",
+    "trend_window_h": 3,
+    "sensitivity": 0.02,
+    "max_swing": 0.08
   },
   "wind_regimes": {
     "_note": "Direction the wind blows FROM, degrees. First match wins.",
