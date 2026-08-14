@@ -401,7 +401,7 @@
 // Bumped whenever the page needs a matching fish_finder.py, and vice versa.
 // The two files live in different folders and get uploaded separately, so a
 // mismatch is easy to create and was previously invisible.
-const PAGE_VERSION = 17;
+const PAGE_VERSION = 18;
 
 // Offline: the app must open in a car park with one bar.
 if("serviceWorker" in navigator)
@@ -430,7 +430,7 @@ L.DomEvent.disableScrollPropagation(mapTools);
 let overlay=null, marks=[], DATA=null, sel=null;   // sel: null = structure map
 let INDEX=null, REGION=null, contours=null, wreckLayer=null, meMarker=null;
 let MODEL=null, POINT=null, ptMarker=null, REGION_SPECIES=null; // POINT set = "anywhere" mode
-let STRUCT=null, TERRAIN=null, scanBox=null;    // client-side structure model
+let STRUCT=null, TERRAIN=null, scanBox=null, WRECKS=null;    // client-side structure model
 let overlayOpacity=0.75;
 
 // Every data file now lives under its region's folder.
@@ -446,9 +446,51 @@ function regionContaining(lat, lon){
     && lon >= r.bbox.lon_min && lon <= r.bbox.lon_max);
 }
 
+// Very coarse worldwide fallback for points outside every defined region: a
+// fixed, ordered list of rectangular lon/lat boxes, first match wins, each
+// pointing at the species pack in MODEL.species_packs that is the closest
+// available ecological match for that stretch of ocean. This exists so a
+// tap anywhere on Earth returns *something* rather than nothing; it is
+// deliberately coarser than a hand-tuned region (see regions.json) and is
+// used only when regionContaining() finds no match. It never implies a
+// legal pack applies - with no specific jurisdiction there is nothing to
+// merge in, so species shown this way carry no size/season claims at all.
+// Some stretches of ocean (Chile/Peru, mainland Japan/Korea/China,
+// tropical West Africa away from the Mediterranean, deep Southern Ocean)
+// have no confident match and correctly fall through to structure-only.
+const BIOME_RULES = [
+  // Enclosed / semi-enclosed seas - distinct fauna, checked before the
+  // broader ocean-basin boxes they sit inside of.
+  {file: "species.json",                lon: [-6.5, 36.5], lat: [30, 47]},    // Mediterranean & Black Sea
+  {file: "species_indian_tropical.json",lon: [32, 44],     lat: [12, 30]},    // Red Sea
+  {file: "species_florida_keys.json",   lon: [-98, -60],   lat: [8, 31]},     // Caribbean & Gulf of Mexico
+  // Atlantic
+  {file: "species_azores.json",         lon: [-32, -13],   lat: [27, 41]},    // Macaronesia (Azores/Madeira/Canaries)
+  {file: "species.json",                lon: [-20, 10],    lat: [30, 65]},    // NE Atlantic Europe
+  {file: "species_nwatlantic.json",     lon: [-80, -50],   lat: [24, 50]},    // NW Atlantic US/Canada
+  {file: "species_capetown.json",       lon: [-20, 22],    lat: [-35, 5]},    // SE Atlantic / SW Africa (Benguela-influenced), extended to cover Cape Point/False Bay
+  // Indian Ocean
+  {file: "species_indian_tropical.json",lon: [20, 95],     lat: [-35, 30]},   // wider western Indian Ocean
+  // Pacific
+  {file: "species_bali.json",           lon: [95, 160],    lat: [-12, 22]},   // Coral Triangle / SE Asia
+  {file: "species_okinawa.json",        lon: [118, 150],   lat: [18, 36]},    // NW Pacific subtropical (Japan/Taiwan/Ryukyu)
+  {file: "species_oahu.json",           lon: [160, 180],   lat: [-25, 25]},   // Central/West Pacific islands
+  {file: "species_oahu.json",           lon: [-180, -140], lat: [-25, 25]},   // Central/East Pacific islands (antimeridian wrap)
+  {file: "species_socal.json",          lon: [-135, -108], lat: [15, 48]},    // NE Pacific (Baja to southern BC)
+  {file: "species_poorknights.json",    lon: [145, 180],   lat: [-47, -25]},  // SW Pacific temperate (SE Australia/NZ)
+  {file: "species_rottnest.json",       lon: [108, 145],   lat: [-45, -20]},  // SW/S Australia temperate
+];
+
+function biomeSpeciesFile(lat, lon){
+  const hit = BIOME_RULES.find(r => lon >= r.lon[0] && lon <= r.lon[1]
+                                   && lat >= r.lat[0] && lat <= r.lat[1]);
+  return hit ? hit.file : null;
+}
+
 function clearSpatial(){
   [overlay, contours, wreckLayer].forEach(l => l && map.removeLayer(l));
   overlay = contours = wreckLayer = null;
+  TERRAIN = scanBox = WRECKS = null;
 }
 
 async function loadPoint(lat, lon){
@@ -469,15 +511,33 @@ async function loadPoint(lat, lon){
     if(!MODEL) MODEL = await (await fetch("data/model.json",{cache:"no-store"})).json();
     const { forecastPoint } = await import("./anywhere.js");
     const host = regionContaining(lat, lon);
-    // Species and legal rules only where a validated pack actually applies.
     const cfg = {...MODEL};
+
+    // Species: prefer the region's own hand-tuned pack; fall back to the
+    // coarse worldwide biome classifier outside every defined region;
+    // otherwise none. Legal status is a separate, stricter question - a
+    // biome match never carries one, since there is no specific
+    // jurisdiction to merge law in from.
+    let speciesSource = null;
+    if(host && host.species_file && MODEL.species_packs?.[host.species_file]){
+      cfg.species = MODEL.species_packs[host.species_file];
+      speciesSource = "region";
+    }else{
+      const biomeFile = biomeSpeciesFile(lat, lon);
+      if(biomeFile && MODEL.species_packs?.[biomeFile]){
+        cfg.species = MODEL.species_packs[biomeFile];
+        speciesSource = "biome";
+      }else{
+        cfg.species = [];
+      }
+    }
     const pack = host && host.has_species && host.jurisdiction
                ? MODEL.legal[host.jurisdiction] : null;
-    if(!pack) cfg.species = [];
     if(!host) cfg.wind_regimes = null;       // named winds are regional
     const d = await forecastPoint(lat, lon, cfg, pack);
     // Point forecasts inherit a guide only inside a configured region.
     d.region_id = host?.id || null;
+    d.species_source = speciesSource;
     $("#err").style.display = "none";
     DATA = d; sel = null;
     renderAll(d, host);
@@ -499,7 +559,7 @@ async function paintStructure(){
   const day = dayData();
   const wind = day.wind_from_deg ?? DATA.now.wind_from_deg ?? 0;
   const swell = day.swell_from_deg ?? null;
-  const {score} = STRUCT.score(TERRAIN, wind, swell, TERRAIN.opts);
+  const {score} = STRUCT.score(TERRAIN, wind, swell, TERRAIN.opts, WRECKS);
   if(overlay) map.removeLayer(overlay);
   overlay = L.imageOverlay(STRUCT.toDataURL(TERRAIN, score),
                            STRUCT.bounds(TERRAIN), {opacity: overlayOpacity}).addTo(map);
@@ -508,7 +568,8 @@ async function paintStructure(){
   renderSpots(DATA, spots);
   $("#scanmsg").innerHTML =
     `${spots.length} spots · relief and slope cached · shelter recomputed for `
-    + `wind ${Math.round(wind)}°${swell!=null?` and swell ${Math.round(swell)}°`:""}.`;
+    + `wind ${Math.round(wind)}°${swell!=null?` and swell ${Math.round(swell)}°`:""}`
+    + `${WRECKS ? ` · ${WRECKS.features.length} charted wreck${WRECKS.features.length===1?"":"s"} boosting nearby score` : ""}.`;
 }
 
 $("#scan").addEventListener("click", async () => {
@@ -539,10 +600,12 @@ $("#scan").addEventListener("click", async () => {
       // Wrecks: a real network call to Overpass, so it can fail (rate
       // limited, offline) without breaking the scan itself.
       if(wreckLayer){ map.removeLayer(wreckLayer); wreckLayer=null; }
+      WRECKS = null;
       btn.textContent = "Checking for wrecks…";
       try{
         const wgj = await STRUCT.fetchWrecks(box);
         if(wgj.features.length){
+          WRECKS = wgj;
           wreckLayer = styleWrecks(wgj);
           if($("#wtoggle").checked) wreckLayer.addTo(map);
         }
@@ -1072,8 +1135,13 @@ async function load(){
             + "<b>Scan structure</b> on the map to fetch bathymetry and score "
             + "relief, slope and shelter around it."
             + (host ? ` This point is also inside <b>${host.name}</b>, which has a precomputed map with wrecks, contours and exclusion zones.` : ""));
-    if(!DATA.has_species)
-      warn.push("No species or legal rules for this point — no validated pack covers it.");
+    if(DATA.species_source === "biome")
+      warn.push("Species here are a coarse worldwide approximation — the nearest matching "
+              + "ocean-basin reference list, not a pack tuned to this spot — and carry no "
+              + "legal size or season information at all.");
+    else if(!DATA.has_species)
+      warn.push("No species data for this point — even the worldwide fallback has no "
+              + "confident match for this stretch of ocean.");
   }
   if(DATA && DATA.relief_meaningful===false)
     warn.push(`Bathymetry here is ~${DATA.bathymetry_native_m} m per cell `
