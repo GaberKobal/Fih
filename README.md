@@ -110,18 +110,91 @@ renders precomputed output, so a region that has never run has nothing to
 show and would only say "no forecast yet". `enabled` is read by the daily
 GitHub Actions job, not by the browser.
 
-**Every region in `regions.json` is therefore enabled** — all 55. Budget
-roughly 600 KB and a few seconds each, so the artifact is larger and the run
-is longer; `timeout-minutes` in the workflow is 180 to match. The bathymetry
-cache means only the first run after adding a region is slow.
-
-**That is also what improves the species list.** Point mode covers conditions
-and structure anywhere on Earth, but the species it names come from
+**That is what improves the species list.** Point mode covers conditions and
+structure anywhere on Earth, but the species it names come from
 `regionContaining()` in `docs/index.html`, and that only sees regions that
 actually ran. Outside every one of them the app falls back to the coarse
 ocean-basin classifier in `BIOME_RULES` — a reference list for that stretch
 of ocean rather than a pack tuned to the coast, carrying no legal sizes or
 seasons at all.
+
+### Turning regions on
+
+`regions.json` has **264 regions in 21 groups**, and one — `novigrad` — is
+enabled, so the site is never empty and tests stay fast. Three ways to run
+more, none of which need a code change:
+
+```bash
+python fish_finder.py --groups                    # what exists
+python fish_finder.py --select med-west           # a whole group, once
+python fish_finder.py --select cascais,elba,malta # named regions, once
+python fish_finder.py --select all                # everything
+```
+
+For the scheduled job, set the **`FISH_REGIONS` repository variable**
+(Settings → Secrets and variables → Actions → Variables) to the same kind of
+string — `med-west,adriatic`, or `all`. No commit required. The manual
+*Run workflow* button takes the same value as an input. Failing all that, it
+falls back to whatever has `"enabled": true` in `regions.json`, which is the
+setting to change if you want it permanent.
+
+Groups: `adriatic`, `med-west`, `med-east`, `med-south`, `iberia-atlantic`,
+`macaronesia`, `nw-europe`, `africa-west`, `africa-south`, `red-sea`,
+`indian-west`, `coral-triangle`, `pacific-nw`, `pacific-islands`,
+`pacific-ne`, `atlantic-nw`, `atlantic-sw`, `caribbean`,
+`australia-temperate`, `australia-tropical`, `nz`.
+
+**Enable a group at a time, not everything at once.** The first run of a
+region downloads its bathymetry and its coastline; after that both are
+cached and it is roughly forty times cheaper. See the numbers below.
+
+### How many regions can this actually carry?
+
+Measured, not estimated, on this hardware:
+
+| | per region | 264 regions |
+| --- | --- | --- |
+| **first ever run** (cold bathymetry + coastline), 6 workers | ~32 s | ~2.3 h |
+| **first ever run**, serial | ~56 s | ~4.1 h |
+| **every run after that**, 6 workers | **~2.5 s** | **~11 min** |
+| pure compute, no network (`--selftest`, 6 workers) | 1.9 s | 8.3 min |
+| output | 434 KB, 28 files | **129 MB, 6,408 files** |
+| Open-Meteo calls | 2 | 528 per run |
+
+The warm figure comes from 16 real regions spread across the world, which is
+a fair mix of easy and hard — small Mediterranean boxes alone come in nearer
+0.9 s each, Lofoten and its 2,965 coastline ways very much do not.
+
+So the steady state for an 8-hourly schedule is **about 11 minutes of
+compute plus CI overhead, three times a day**. The binding limits, in the
+order you will hit them:
+
+1. **The first run.** Cold bathymetry dominates everything else by a factor
+   of thirty. Turning on all 264 at once is a ~2.3 hour job. Enable a group
+   at a time and each subsequent run is minutes.
+2. **Open-Meteo's free tier** — 10,000 calls a day, 600 a minute. Two calls
+   per region per run, three runs a day: 264 regions uses 1,584 a day, about
+   16%. That leaves room to roughly **1,600 regions** before the daily quota
+   binds. The per-minute limit is handled in code by a cross-thread throttle
+   (`_HOST_MIN_INTERVAL`), which holds the whole process to ~400/min no
+   matter how many workers run.
+3. **GitHub Pages** will not publish a site over 1 GB, and the artifact
+   upload degrades well before that. 264 regions is already 129 MB and 6,408
+   files, so at this rate the hard stop is near 2,000 regions and the
+   *uncomfortable* one is nearer **700**, where upload and deploy start to
+   dominate the run.
+4. **Actions minutes** — free and unlimited on a public repository. On a
+   private one, 3 runs a day at ~14 minutes is ~1,260 of the 2,000 free
+   monthly minutes, which is fine but no longer roomy.
+
+**So: 264 is comfortable, ~500 is the sensible ceiling on the current
+design, and past that the artifact — not the compute — is what stops you.**
+The two changes that lift it are batching the conditions fetch and shipping
+terrain instead of rendered maps; both are in the roadmap below.
+
+Note that only 264 regions' worth of *bathymetry* is cached. Everything else
+is recomputed every run, which is why the warm number is a real 11 minutes
+rather than nothing.
 
 **Coverage is deliberately uneven, and the app says so.** Three things are
 region-specific and do not travel:
@@ -239,10 +312,111 @@ most; the script says so rather than quietly producing numbers.
 ```bash
 pip install -r requirements.txt
 python fish_finder.py --selftest   # synthetic seabed, no network at all
-python fish_finder.py              # the real thing
+python fish_finder.py              # whatever is enabled
 ```
 
-`--selftest` is the fastest way to check the pipeline after editing anything.
+`--selftest` is the fastest way to check the pipeline after editing anything;
+it exercises all 264 regions without touching the network.
+
+Useful flags:
+
+```bash
+python fish_finder.py --groups              # the 21 groups and their sizes
+python fish_finder.py --list                # every region, one per line
+python fish_finder.py --select med-west     # a group, ignoring enabled flags
+python fish_finder.py --region cascais      # exactly one
+python fish_finder.py --jobs 8              # regions computed at once
+```
+
+Everything reads UTF-8 explicitly and the log is UTF-8 with replacement, so
+region names with a `č` or an em dash no longer break the run on a Windows
+console — which they did, fatally and half way through, until v3.
+
+## Where this should go next
+
+Ordered by how much they would improve the thing, not by how hard they are.
+The first three are all bigger wins than adding more coasts.
+
+### 1. Protected areas, automatically
+
+Every one of the 264 regions says *"no exclusion zones defined — check
+protected areas yourself"*, because `exclusions.geojson` was hand-drawn for
+Novigrad and nowhere else. Several of the coasts now in the catalogue sit
+inside a reserve where spearfishing is banned outright: the Plemmirio, the
+Calanques, Tabarca, the Kornati, Ses Salines, Cabo Pulmo, Ningaloo, the
+Poor Knights.
+
+Unlike fishing *law*, this is automatable. The **World Database on Protected
+Areas** publishes global MPA polygons, and `rasterize_polygons()` already
+takes GeoJSON. Fetch the polygons intersecting each bbox, cache them next to
+the bathymetry, and the existing exclusion gate does the rest. It turns a
+warning that everyone learns to ignore into an actual mask, and it is the
+single highest-value thing left in this repo.
+
+It does not make the app a legal authority and must not be described as one —
+a WDPA polygon is a research dataset, not a chart — but "the model refuses to
+mark this reef" is a much better failure mode than a footnote.
+
+### 2. Calibration
+
+`weights` in `config.json` are still guesses, and a map built from guessed
+weights looks exactly as confident as one built from fitted weights. That is
+the most dishonest thing about the whole model. `calibrate.py` already fits
+them against `dive_log.csv` — it needs about 30 logged dives, blanks
+included, and blanks matter more than the good days. The same applies to
+`visibility.baseline`, which is now the number that most directly decides
+whether a day looks worth driving to: `calibrate.py --fit-viz` will replace
+the 0.35 guess with a fit as soon as there is a log to fit it to.
+
+### 3. Real bathymetry outside Europe
+
+EMODnet gives European coasts ~90 m and the relief term genuinely finds
+structure. Everywhere else falls to GMRT or SRTM15+ at 300–450 m, where a
+reef is smaller than one cell and the app has to say so. Two national
+sources would fix most of the new catalogue:
+
+- **NOAA CUDEM** — US coasts at 3–10 m, which would transform Hawaii, the
+  Keys, California and the whole US east coast
+- **AusSeabed** — Australia, same story
+
+The provider abstraction in `fetch_bathymetry()` is built to take them.
+
+### 4. Batch the conditions fetch
+
+The next scaling step past ~1,000 regions is not more workers. Open-Meteo
+accepts **multiple coordinates in one request**, so a run that currently
+makes two calls per region could make two calls per hundred regions. That
+turns the daily quota from the second-tightest constraint into a non-issue
+and removes most of the per-region latency at the same time.
+
+### 5. Ship terrain, not pictures
+
+Per-species PNGs are the entire output budget. The browser can already score
+a species itself — `speciesScore()` in `docs/structure.js` does exactly that
+for scanned points. If a region shipped its *terrain* (relief, slope, depth,
+land as four compact rasters) instead of eleven rendered maps, the app could
+compute any species, on any day, for any wind, at a similar file size — and
+the `species_maps_days` compromise would disappear entirely.
+
+### 6. Tides that are actually tides
+
+Open-Meteo's sea level is an 8 km model, and the app already flags anything
+over 1.5 m as macrotidal. That flag now fires on a lot of the catalogue —
+Brittany, Normandy, Pembrokeshire, Cascais, Darwin, Puerto Madryn. On those
+coasts the timing is driven by tide rather than wind, so a real harmonic
+tide source would matter more than any other single input.
+
+### 7. Smaller things worth having
+
+- **Alerts** — "tell me when Cascais goes green", which is the actual
+  question a spearo has and one the region index already answers daily.
+- **More species packs.** Twelve cover the world only approximately; the
+  Humboldt current has none at all, which is why Chile and Peru correctly
+  return nothing.
+- **More legal packs.** Seventeen jurisdictions in the catalogue have none,
+  so they show no sizes and no seasons — a gap, never permission.
+- **Offline pinning** of a region before a trip, on top of the existing
+  service worker.
 
 ## Limits worth keeping in mind
 

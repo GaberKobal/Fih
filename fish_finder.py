@@ -60,6 +60,7 @@ import math
 import os
 import sys
 import time
+import threading
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -67,6 +68,18 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import numpy as np
+
+# Imported HERE, once, on the main thread — not lazily inside the functions
+# that draw. matplotlib's first import is not thread-safe: with regions
+# running in parallel, several workers reached `import matplotlib`
+# simultaneously and one of them got a half-built module
+# ("partially initialized module 'matplotlib' has no attribute 'rcParams'"),
+# which failed that region for the day. Getting it out of the way before any
+# worker starts removes the race entirely.
+import matplotlib
+matplotlib.use("Agg")
+from matplotlib.figure import Figure
+
 from scipy.interpolate import RegularGridInterpolator
 from scipy.ndimage import (binary_dilation, binary_opening,
                            distance_transform_edt, gaussian_filter,
@@ -106,14 +119,89 @@ for _stream in (sys.stdout, sys.stderr):
         pass          # not a real stream (piped, captured, very old Python)
 
 
+# With regions running concurrently the log becomes a braid of several
+# regions at once, and an untagged line is worse than useless when you are
+# trying to work out which coast just refused its coastline. Each worker
+# stamps its own id here.
+_LOG = threading.local()
+
+
+def log_tag(tag: str) -> None:
+    _LOG.tag = tag
+
+
 def log(msg: str) -> None:
-    print(f"[{dt.datetime.now(dt.timezone.utc):%H:%M:%S}] {msg}", flush=True)
+    tag = getattr(_LOG, "tag", "")
+    print(f"[{dt.datetime.now(dt.timezone.utc):%H:%M:%S}] "
+          f"{tag}{msg}", flush=True)
 
 
-def http_get(url: str, timeout: int = 120) -> bytes:
-    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        return resp.read()
+# Open-Meteo's free tier allows 600 calls a minute, 5000 an hour and 10000 a
+# day, and every region needs two of them. Running regions in parallel means
+# those arrive in bursts, and a burst that trips the limit used to surface as
+# a bare HTTPError that failed the whole region — losing its map for the day
+# over something that would have succeeded a second later. Retry politely
+# instead, and honour Retry-After when the server sends one.
+_RETRY_STATUS = (408, 425, 429, 500, 502, 503, 504)
+
+# Minimum spacing between requests to a given host, in seconds, enforced
+# across ALL worker threads. Open-Meteo's free ceiling is 600 calls a
+# minute; six workers each finishing a warm region in about a second would
+# issue roughly 720, so the limit gets tripped by success rather than by
+# volume. 0.15 s holds the whole process to about 400 a minute no matter how
+# many workers are running, which is the difference between adding regions
+# and adding failures. Everything else is unthrottled.
+_HOST_MIN_INTERVAL = {
+    "api.open-meteo.com": 0.15,
+    "marine-api.open-meteo.com": 0.15,
+}
+_HOST_GATE = threading.Lock()
+_HOST_LAST: dict = {}
+
+
+def _throttle(url: str) -> None:
+    host = urllib.parse.urlparse(url).hostname or ""
+    gap = _HOST_MIN_INTERVAL.get(host)
+    if not gap:
+        return
+    while True:
+        with _HOST_GATE:
+            now = time.monotonic()
+            ready = _HOST_LAST.get(host, 0.0) + gap
+            if now >= ready:
+                _HOST_LAST[host] = now
+                return
+            wait = ready - now
+        time.sleep(wait)          # released the lock first, so others queue
+
+
+def http_get(url: str, timeout: int = 120, attempts: int = 4) -> bytes:
+    delay = 2.0
+    last = None
+    for i in range(attempts):
+        try:
+            _throttle(url)
+            req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                return resp.read()
+        except urllib.error.HTTPError as e:
+            last = e
+            if e.code not in _RETRY_STATUS:
+                raise                       # a real error; retrying is pointless
+            wait = delay
+            hdr = e.headers.get("Retry-After") if e.headers else None
+            if hdr:
+                try:
+                    wait = max(wait, float(hdr))
+                except ValueError:
+                    pass
+        except (urllib.error.URLError, TimeoutError, OSError) as e:
+            last = e                        # transient network, worth another go
+            wait = delay
+        if i + 1 < attempts:
+            time.sleep(min(wait, 30.0))
+            delay *= 2
+    raise last or RuntimeError(f"gave up fetching {url}")
 
 
 def http_json(url: str, timeout: int = 60) -> dict:
@@ -145,6 +233,53 @@ def haversine_m(lat1, lon1, lat2, lon2):
 def load_regions(path=None):
     doc = json.loads((path or (ROOT / "regions.json")).read_text(encoding="utf-8"))
     return doc.get("regions", [])
+
+
+def select_regions(regions, one=None, select=""):
+    """Work out which regions to compute.
+
+    Three ways in, so that turning a coast on never requires a code change:
+
+      --region <id>     exactly one, the old flag, unchanged
+      --select ...      a comma-separated mix of region ids and GROUP names,
+                        or "all", or "enabled". Also read from the
+                        FISH_REGIONS environment variable, which is what
+                        lets the scheduled job be repointed from repository
+                        settings without a commit.
+      (nothing)         every region with "enabled": true in regions.json
+
+    Order is preserved and duplicates are dropped, so
+    "--select adriatic,novigrad" runs the group once.
+    """
+    if one:
+        hit = [r for r in regions if r["id"] == one]
+        if not hit:
+            raise SystemExit(f"no region with id {one!r} (try --list)")
+        return hit
+
+    select = (select or "").strip()
+    if not select or select.lower() == "enabled":
+        return [r for r in regions if r.get("enabled")]
+    if select.lower() == "all":
+        return list(regions)
+
+    wanted = [w.strip().lower() for w in select.split(",") if w.strip()]
+    ids = {r["id"].lower() for r in regions}
+    groups = {(r.get("group") or "").lower() for r in regions} - {""}
+    unknown = [w for w in wanted if w not in ids and w not in groups]
+    if unknown:
+        raise SystemExit(
+            f"unknown region or group: {', '.join(unknown)}\n"
+            f"  --list shows every region, --groups shows every group")
+
+    out, seen = [], set()
+    for r in regions:
+        if r["id"] in seen:
+            continue
+        if r["id"].lower() in wanted or (r.get("group") or "").lower() in wanted:
+            out.append(r)
+            seen.add(r["id"])
+    return out
 
 
 def region_config(base, region):
@@ -701,10 +836,6 @@ def depth_contours(depth_m, land, lats, lons, cfg):
     you can reach the bottom. Decimated hard - these are for orientation, not
     navigation.
     """
-    import matplotlib
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-
     c = (cfg.get("contours") or {})
     levels = c.get("levels_m", [5, 10, 15, 20, 30])
     every = max(1, int(c.get("decimate", 3)))
@@ -724,9 +855,9 @@ def depth_contours(depth_m, land, lats, lons, cfg):
     field = np.ma.masked_array(gaussian_filter(filled, sigma=1.5), mask=land)
 
     feats = []
-    fig = plt.figure()
+    fig = Figure()
     try:
-        cs = plt.contour(lons, lats, field, levels=levels)
+        cs = fig.add_subplot(111).contour(lons, lats, field, levels=levels)
         for lvl, segs in zip(cs.levels, cs.allsegs):
             for seg in segs:
                 if len(seg) < min_pts:
@@ -742,7 +873,7 @@ def depth_contours(depth_m, land, lats, lons, cfg):
                                                   round(float(y), 5)] for x, y in pts]},
                 })
     finally:
-        plt.close(fig)
+        fig.clear()          # a bare Figure holds no global state to close
     return {"type": "FeatureCollection", "features": feats}
 
 
@@ -854,29 +985,38 @@ OVERPASS_MIRRORS = [
 ]
 
 
-def overpass_query(q, attempts=2):
-    """POST one Overpass query, walking the mirrors and backing off.
+def overpass_query(q, timeout=75, deadline_s=200):
+    """POST one Overpass query, walking the mirrors once each.
 
-    Raises only when every mirror has refused on every attempt.
+    Bounded on purpose. Some coastlines are enormous — Lofoten is thousands
+    of islands and skerries — and Overpass can sit on a query like that for
+    minutes before answering or giving up. With a 180 s socket timeout, three
+    mirrors and two rounds of retries, ONE region could occupy a worker for
+    the better part of twenty minutes and stall the whole run behind it.
+
+    So: one pass over the mirrors, a shorter per-request timeout, and a hard
+    overall deadline. Coming back empty-handed is not a disaster — the caller
+    falls back to the bathymetric land edge and says so, and the spot gates
+    in find_spots() still hold the line. Waiting forever is worse than that.
     """
+    started = time.monotonic()
     last = None
-    for attempt in range(attempts):
-        for url in OVERPASS_MIRRORS:
-            try:
-                req = urllib.request.Request(
-                    url, data=urllib.parse.urlencode({"data": q}).encode(),
-                    headers={"User-Agent": USER_AGENT})
-                with urllib.request.urlopen(req, timeout=180) as r:
-                    return json.loads(r.read())
-            except urllib.error.HTTPError as e:
-                last = e
-                if e.code not in (429, 502, 504):
-                    raise                      # a real error, not congestion
-            except Exception as e:
-                last = e
-        if attempt + 1 < attempts:
-            time.sleep(5 * (attempt + 1))      # let the throttle clear
-    raise last or RuntimeError("no Overpass mirror answered")
+    for url in OVERPASS_MIRRORS:
+        if time.monotonic() - started > deadline_s:
+            break
+        try:
+            req = urllib.request.Request(
+                url, data=urllib.parse.urlencode({"data": q}).encode(),
+                headers={"User-Agent": USER_AGENT})
+            with urllib.request.urlopen(req, timeout=timeout) as r:
+                return json.loads(r.read())
+        except urllib.error.HTTPError as e:
+            last = e
+            if e.code not in (429, 502, 503, 504):
+                raise                      # a real error, not congestion
+        except Exception as e:
+            last = e
+    raise last or RuntimeError("no Overpass mirror answered in time")
 
 
 def fetch_osm_context(bbox, cfg, region_id):
@@ -909,7 +1049,7 @@ def fetch_osm_context(bbox, cfg, region_id):
 
     b = (f'{bbox["lat_min"]},{bbox["lon_min"]},'
          f'{bbox["lat_max"]},{bbox["lon_max"]}')
-    q = f"""[out:json][timeout:120];
+    q = f"""[out:json][timeout:60];
 (
   way["natural"="coastline"]({b});
   node["seamark:type"="wreck"]({b});
@@ -979,20 +1119,54 @@ def coastline_mask(lines, lats, lons):
     lat0, lon0 = float(lats[0]), float(lons[0])
     dlat, dlon = float(lats[1] - lats[0]), float(lons[1] - lons[0])
 
+    # Every segment of every way at once. This was a Python loop per segment,
+    # which is fine for the 6,800 vertices Novigrad's coastline has and not
+    # fine for the tens of thousands a fjord or an archipelago brings — the
+    # Bay of Islands alone is 610 ways and 25,757 vertices, and Lofoten is
+    # far worse. Vectorised it is one pass over a handful of arrays.
+    xs, ys = [], []
     for line in lines:
         arr = np.asarray(line, dtype=float)
         if arr.ndim != 2 or arr.shape[0] < 2:
             continue
-        xs = (arr[:, 0] - lon0) / dlon
-        ys = (arr[:, 1] - lat0) / dlat
-        for k in range(1, len(arr)):
-            x0, y0, x1, y1 = xs[k - 1], ys[k - 1], xs[k], ys[k]
-            n = int(2 * max(abs(x1 - x0), abs(y1 - y0))) + 1
-            t = np.linspace(0.0, 1.0, n + 1)
-            xi = np.rint(x0 + (x1 - x0) * t).astype(int)
-            yi = np.rint(y0 + (y1 - y0) * t).astype(int)
-            ok = (xi >= 0) & (xi < nx) & (yi >= 0) & (yi < ny)
-            blocked[yi[ok], xi[ok]] = True
+        xs.append((arr[:, 0] - lon0) / dlon)
+        ys.append((arr[:, 1] - lat0) / dlat)
+    if not xs:
+        return blocked
+
+    x0 = np.concatenate([a[:-1] for a in xs])
+    x1 = np.concatenate([a[1:] for a in xs])
+    y0 = np.concatenate([a[:-1] for a in ys])
+    y1 = np.concatenate([a[1:] for a in ys])
+
+    # Sample each segment at half-cell steps so a diagonal cannot slip
+    # between two cells and leave a hole for the flood fill to escape.
+    steps = np.maximum(1, np.ceil(2 * np.maximum(np.abs(x1 - x0),
+                                                 np.abs(y1 - y0))).astype(np.int64))
+    counts = steps + 1
+
+    # Chunked so a pathological coastline cannot allocate a gigabyte here.
+    CHUNK = 2_000_000
+    start = 0
+    while start < len(counts):
+        stop = start
+        taken = 0
+        while stop < len(counts) and taken + counts[stop] <= CHUNK:
+            taken += int(counts[stop])
+            stop += 1
+        stop = max(stop, start + 1)              # always make progress
+        c = counts[start:stop]
+        total = int(c.sum())
+        seg = np.repeat(np.arange(stop - start), c)
+        offs = np.concatenate(([0], np.cumsum(c)[:-1]))
+        t = (np.arange(total) - offs[seg]) / np.maximum(c[seg] - 1, 1)
+        sx0, sx1 = x0[start:stop], x1[start:stop]
+        sy0, sy1 = y0[start:stop], y1[start:stop]
+        xi = np.rint(sx0[seg] + (sx1[seg] - sx0[seg]) * t).astype(np.int64)
+        yi = np.rint(sy0[seg] + (sy1[seg] - sy0[seg]) * t).astype(np.int64)
+        ok = (xi >= 0) & (xi < nx) & (yi >= 0) & (yi < ny)
+        blocked[yi[ok], xi[ok]] = True
+        start = stop
     return blocked
 
 
@@ -1882,9 +2056,6 @@ def write_overlay_png(score, lats, lons, path, land=None, cfg_overlay=None):
     # Was placed above the string literal, which demoted the docstring to a
     # discarded expression and left this function undocumented to help().
     cfg_overlay = cfg_overlay or {}
-    import matplotlib
-    matplotlib.use("Agg")
-
     # Supersample. The grid is 100 m, which at dive zoom is a block the size of
     # a building; drawing it 1:1 with crisp edges is accurate and unreadable.
     # Interpolating inside the water and masking the land with nearest-
@@ -1957,8 +2128,11 @@ def write_overlay_png(score, lats, lons, path, land=None, cfg_overlay=None):
         im.quantize(colors=int(cfg_overlay.get("palette_colors", 32)),
                     method=Image.Quantize.FASTOCTREE).save(path, optimize=True)
     except Exception:
-        import matplotlib.pyplot as plt
-        plt.imsave(path, np.flipud(rgba))
+        # Pillow missing or the quantiser refused. Write the RGBA straight
+        # out; matplotlib.image.imsave is the pyplot-free equivalent and,
+        # unlike plt.imsave, touches no global figure state.
+        from matplotlib.image import imsave
+        imsave(path, np.flipud(rgba))
     log(f"wrote {path}")
 
 
@@ -2023,8 +2197,11 @@ def synthetic_bathymetry(bbox, res_deg):
 
 
 def run(cfg, selftest=False, out_dir=None):
-    global OUT
-    OUT = out_dir or OUT
+    # OUT is a LOCAL, not the module global it used to reassign. Two regions
+    # computed at the same time would otherwise race on it and write each
+    # other's PNGs into the wrong folder — which is the one thing that has to
+    # be true before regions can run in parallel at all.
+    OUT = out_dir or (ROOT / "docs" / "data")
     OUT.mkdir(parents=True, exist_ok=True)
     bbox = cfg["bbox"]
     res_deg = cfg["grid_resolution_m"] / 111320.0
@@ -2331,6 +2508,16 @@ def run(cfg, selftest=False, out_dir=None):
         month_d = int(day["date"][5:7])
         date_d = dt.date.fromisoformat(day["date"])
 
+        # Per-species MAPS are the whole output budget: three days times
+        # eight species is 24 PNGs and 24 GPX files per region per run, on
+        # top of the three general ones. Scores, spots and legal status
+        # still come out for every day - those are a few kilobytes of JSON -
+        # but the rasters can be limited to the first N days. The app falls
+        # back to day 0's map for later days and says so (see selectTarget()
+        # in docs/index.html), which is a small honesty cost for roughly a
+        # 60% cut in artifact size and write time.
+        write_species_maps = di < int(cfg.get("species_maps_days", 3))
+
         sp_out = []
         for sp in species_defs:
             fac = species_day_factors(sp, temp_d, float(viz[ri]), month_d,
@@ -2338,11 +2525,12 @@ def run(cfg, selftest=False, out_dir=None):
             smap = species_spatial_score(sp, terms_d, depth_m, land, gates, cfg)
             smap[land] = 0.0
             ss = find_spots(smap, lats, lons, depth_m, terms_d, cfg, limit=sp_cap)
-            write_overlay_png(smap, lats, lons,
-                              OUT / f"score_{sp['id']}_d{di}.png", land,
-                              cfg.get("overlay"))
-            write_gpx(ss, OUT / f"spots_{sp['id']}_d{di}.gpx",
-                      f"{sp.get('name_en', sp['common'])} {day['date']}")
+            if write_species_maps:
+                write_overlay_png(smap, lats, lons,
+                                  OUT / f"score_{sp['id']}_d{di}.png", land,
+                                  cfg.get("overlay"))
+                write_gpx(ss, OUT / f"spots_{sp['id']}_d{di}.gpx",
+                          f"{sp.get('name_en', sp['common'])} {day['date']}")
             sp_out.append({
                 "id": sp["id"], "common": sp["common"],
                 "name_en": sp.get("name_en", sp["common"]),
@@ -2457,6 +2645,9 @@ def run(cfg, selftest=False, out_dir=None):
         "tide_range_m": round(tide_range, 2),
         "macrotidal": macrotidal,
         "species_top_spots": sp_cap,
+        # How many days actually have a per-species raster on disk. The app
+        # reads this instead of discovering the 404 the hard way.
+        "species_maps_days": int(cfg.get("species_maps_days", 3)),
         "visibility_calibrated": bool(vzc),
         "visibility_correction": vzc,
         "temp_source": ("Copernicus Marine measured profile" if profile
@@ -2477,7 +2668,21 @@ def main():
     ap.add_argument("--regions", default=str(ROOT / "regions.json"))
     ap.add_argument("--region", default=None,
                     help="run one region by id; default is every enabled one")
+    ap.add_argument("--select", default=os.environ.get("FISH_REGIONS", ""),
+                    help="comma-separated region ids and/or group names, or "
+                         "'all', or 'enabled'. Overrides the enabled flags in "
+                         "regions.json. Also read from the FISH_REGIONS "
+                         "environment variable, so the schedule can be "
+                         "changed from repository settings without a commit.")
+    ap.add_argument("--jobs", type=int,
+                    default=int(os.environ.get("FISH_JOBS", "4")),
+                    help="how many regions to compute at once (default 4). "
+                         "The work is dominated by waiting on EMODnet, "
+                         "Overpass and Open-Meteo, so this is close to a "
+                         "linear speed-up until the services start throttling.")
     ap.add_argument("--list", action="store_true", help="list regions and exit")
+    ap.add_argument("--groups", action="store_true",
+                    help="list the region groups and how many are in each")
     ap.add_argument("--selftest", action="store_true",
                     help="run the whole pipeline on synthetic data, no network")
     args = ap.parse_args()
@@ -2485,44 +2690,60 @@ def main():
     base = json.loads(Path(args.config).read_text(encoding="utf-8"))
     regions = load_regions(Path(args.regions))
 
+    if args.groups:
+        counts = {}
+        for r in regions:
+            g = r.get("group", "ungrouped")
+            counts.setdefault(g, [0, 0])
+            counts[g][0] += 1
+            counts[g][1] += 1 if r.get("enabled") else 0
+        print(f"  {'group':<22} {'total':>6} {'on':>4}")
+        for g in sorted(counts):
+            n, on = counts[g]
+            print(f"  {g:<22} {n:>6} {on:>4}")
+        print(f"\n  {len(regions)} regions, "
+              f"{sum(1 for r in regions if r.get('enabled'))} enabled")
+        print("\n  Run a whole group without editing anything:")
+        print("      python fish_finder.py --select med-west")
+        return
+
     if args.list:
         for r in regions:
             flags = []
             if r.get("species_file"):    flags.append("species")
             if r.get("exclusions_file"): flags.append("exclusions")
-            print(f"  {'on ' if r.get('enabled') else 'off'} {r['id']:<14} "
-                  f"{r['name']:<28} {r.get('country',''):<10} "
+            print(f"  {'on ' if r.get('enabled') else 'off'} {r['id']:<20} "
+                  f"{r.get('group',''):<16} {r['name']:<34} "
+                  f"{r.get('country',''):<14} "
                   f"{'+'.join(flags) or 'structure only'}")
         return
 
-    if args.region:
-        chosen = [r for r in regions if r["id"] == args.region]
-        if not chosen:
-            raise SystemExit(f"no region with id {args.region!r} "
-                             f"(try --list)")
-    else:
-        chosen = [r for r in regions if r.get("enabled")]
-        if not chosen:
-            raise SystemExit("no enabled regions in regions.json")
+    chosen = select_regions(regions, args.region, args.select)
+    if not chosen:
+        raise SystemExit(
+            "no regions selected.\n"
+            "  Turn some on with \"enabled\": true in regions.json, or pick "
+            "them for one run without editing anything:\n"
+            "      python fish_finder.py --select novigrad,cascais\n"
+            "      python fish_finder.py --select med-west   (a whole group; "
+            "see --groups)\n"
+            "      python fish_finder.py --select all")
 
-    log(f"running {len(chosen)} region(s): "
-        + ", ".join(r["id"] for r in chosen))
+    log(f"running {len(chosen)} region(s) on {max(1, args.jobs)} worker(s): "
+        + ", ".join(r["id"] for r in chosen[:12])
+        + (f" … and {len(chosen) - 12} more" if len(chosen) > 12 else ""))
 
-    index, failed = [], []
-    for r in chosen:
+    def compute(r):
+        """One region, start to finish. Runs on a worker thread."""
+        log_tag(f"{r['id']}: ")
         cfg = region_config(base, r)
         out = ROOT / "docs" / "data" / r["id"]
-        log(f"--- {r['id']}: {r['name']} ---")
-        try:
-            payload = run(cfg, selftest=args.selftest, out_dir=out)
-        except Exception as e:
-            # One region failing must not take the others down with it.
-            log(f"{r['id']} FAILED: {e.__class__.__name__}: {e}")
-            failed.append(r["id"])
-            continue
-        index.append({
+        log(f"--- {r['name']} ---")
+        payload = run(cfg, selftest=args.selftest, out_dir=out)
+        return {
             "id": r["id"], "name": r["name"], "country": r.get("country", ""),
             "jurisdiction": r.get("jurisdiction", ""),
+            "group": r.get("group", ""),
             "note": r.get("note", ""),
             "has_species": bool(r.get("species_file")),
             "species_file": r.get("species_file"),
@@ -2530,6 +2751,7 @@ def main():
             "bathymetry_provider": payload.get("bathymetry_provider"),
             "bathymetry_native_m": payload.get("bathymetry_native_m"),
             "relief_meaningful": payload.get("relief_meaningful"),
+            "coastline_applied": payload.get("coastline_applied"),
             "macrotidal": payload.get("macrotidal"),
             "bbox": r["bbox"],
             "centre": [round((r["bbox"]["lat_min"] + r["bbox"]["lat_max"]) / 2, 4),
@@ -2540,7 +2762,52 @@ def main():
             "wind_from_deg": payload["now"]["wind_from_deg"],
             "best_window": payload.get("best_window"),
             "generated": payload["generated"],
-        })
+        }
+
+    # Regions in parallel. Almost all of the wall time is spent waiting on
+    # EMODnet, Overpass and Open-Meteo rather than computing, and numpy
+    # releases the GIL for the array work that is left, so threads give
+    # close to a linear speed-up here without any of the pickling that
+    # processes would need. run() writes only into its own region folder and
+    # keeps no global state, which is what makes this safe.
+    index, failed = [], []
+    t_start = time.time()
+    jobs = max(1, min(int(args.jobs), len(chosen)))
+    if jobs == 1:
+        results = []
+        for r in chosen:
+            try:
+                results.append((r, compute(r), None))
+            except Exception as e:
+                results.append((r, None, e))
+    else:
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=jobs) as pool:
+            futures = {pool.submit(compute, r): r for r in chosen}
+            results = []
+            for fut, r in futures.items():
+                try:
+                    results.append((r, fut.result(), None))
+                except Exception as e:
+                    results.append((r, None, e))
+    log_tag("")
+
+    # Keep the catalogue in the order regions.json declares them, not the
+    # order the threads happened to finish in, so the region picker does not
+    # reshuffle itself between runs.
+    order = {r["id"]: i for i, r in enumerate(chosen)}
+    for r, entry, err in sorted(results, key=lambda x: order[x[0]["id"]]):
+        if err is not None:
+            # One region failing must not take the others down with it.
+            log(f"{r['id']} FAILED: {err.__class__.__name__}: {err}")
+            failed.append(r["id"])
+        else:
+            index.append(entry)
+
+    elapsed = time.time() - t_start
+    log(f"computed {len(index)} region(s) in {elapsed:.0f} s "
+        f"({elapsed / max(len(index), 1):.1f} s each, {jobs} worker(s))"
+        + (f" — {len(failed)} failed" if failed else ""))
 
     if not index:
         raise SystemExit("every region failed - nothing written")

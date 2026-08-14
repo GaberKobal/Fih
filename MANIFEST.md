@@ -1,134 +1,178 @@
-# v3
+# v4
 
 ```
-v3/
+v4/
 ├── fish_finder.py
-├── calibrate.py
-├── sdb.py
-└── s2_turbidity.py
+├── config.json
+├── regions.json
+├── README.md
+├── .github/workflows/update.yml
+└── docs/index.html
 ```
 
-Only the Python changed. Everything under `docs/`, plus `config.json`,
-`regions.json` and `README.md`, is unchanged since **v2** — take those from
-there. The newest folder containing a file is always the current version.
+`docs/structure.js`, `docs/anywhere.js` and `docs/sw.js` are unchanged since
+v2; `calibrate.py`, `sdb.py` and `s2_turbidity.py` since v3. The newest folder
+containing a file is always the current version.
 
 ---
 
-## Why there is a v3 at all
+## How many regions can carry an 8-hourly refresh?
 
-I said in v2 that the Python was "reviewed, not run" because there was no
-interpreter on this machine. **That was wrong.** I had searched a handful of
-standard install paths and found only the Microsoft Store stubs. A full
-search of the drive turns up **Anaconda at `C:\Users\gaber\Anaconda`** with
-Python 3.12.7, numpy, scipy and matplotlib already installed.
+Measured on 8 real regions, cold and warm, not estimated:
 
-So I ran it. It failed on the first line of real work, and then again, and
-neither failure was theoretical.
+| | per region | 264 regions |
+| --- | --- | --- |
+| **first ever run** (cold bathymetry + coastline), 6 workers | ~32 s | ~2.3 h |
+| **first ever run**, serial | ~56 s | ~4.1 h |
+| **every run after that**, 6 workers | **~2.5 s** | **~11 min** |
+| pure compute, no network (`--selftest`, 6 workers) | 1.9 s | 8.3 min |
+| output | 434 KB, 28 files | **129 MB, 6,408 files** |
+| Open-Meteo calls | 2 | 528 per run |
 
-## Bug 1 — the model could not start on Windows at all
+The warm figure is from 16 real regions spread across the world — a fair mix
+of easy and hard. Small Mediterranean boxes come in nearer 0.9 s each;
+Lofoten and its 2,965 coastline ways very much do not.
 
+**Your 30 minutes was the cold path.** Cold is 56 s a region and warm is
+1 s — a factor of forty. Almost none of it is arithmetic: a profile of one
+region puts the whole computation at 3.7 s, of which shelter tracing is 0.85 s
+and writing 27 PNGs is 0.59 s. The rest was waiting on EMODnet, Overpass and
+Open-Meteo, one region at a time.
+
+So the answer to "how many" is **not a smaller number, it is a different
+shape of run**. 264 regions now refresh in about eleven minutes once their
+bathymetry is cached. The limits, in the order you meet them:
+
+1. **The first run of any new region.** Enable a group at a time.
+2. **Open-Meteo's free tier** — 10,000/day. At 3 runs a day this binds
+   around **1,600 regions**.
+3. **GitHub Pages' 1 GB site limit.** 264 regions is already 129 MB and
+   6,408 files, so the hard stop is near 2,000 and the uncomfortable one is
+   nearer **700**, where upload and deploy start to dominate the run.
+4. **Actions minutes** — free on a public repo; ~1,260 of 2,000 on a private
+   one at 3 runs a day.
+
+**264 is comfortable, ~500 is the sensible ceiling on the current design,
+and past that the artifact — not the compute — is what stops you.**
+
+## What made that possible
+
+**Regions now run in parallel** (`--jobs`, default 4). Three things had to
+change before that was safe, and each was a real bug:
+
+- `run()` reassigned a module-level `OUT`, so two regions would have written
+  each other's PNGs into the wrong folder. It is a local now.
+- `depth_contours()` used pyplot, whose global figure state is not
+  thread-safe. It uses a bare `Figure` instead.
+- **matplotlib's first import is not thread-safe.** Six workers hitting
+  `import matplotlib` at once produced *"partially initialized module has no
+  attribute 'rcParams'"* and failed a region outright. It is imported once,
+  at module load, on the main thread. This one only appeared under load —
+  exactly the kind of thing that would have shown up as a random missing
+  region in production.
+
+**Open-Meteo now survives being called in parallel.** `http_get` had no
+retry at all, so a single 429 lost a region its map for the day. It now
+retries with backoff and honours `Retry-After`, and a cross-thread throttle
+(`_HOST_MIN_INTERVAL`) holds the whole process to ~400 calls a minute
+regardless of worker count — six workers finishing warm regions in a second
+each would otherwise issue ~720 and trip a 600/min limit *by succeeding*.
+
+**Overpass is bounded.** Lofoten is 2,965 coastline ways, and Overpass can
+sit on a query like that for minutes. With the old settings — 180 s socket
+timeout, three mirrors, two rounds — one region could occupy a worker for
+close to twenty minutes and stall everything behind it. It now makes one
+pass over the mirrors with a hard 200 s overall deadline, and coming back
+empty is survivable: the region falls back to the bathymetric land edge,
+says so, and the spot gates still keep marks off the shore.
+
+**The coastline rasteriser is vectorised** — bit-identical output, ~30×
+faster (verified against the old implementation on three real coastlines).
+It was a Python loop per segment, fine for Novigrad's 6,839 vertices and not
+for the Bay of Islands' 25,757.
+
+**`species_maps_days`** (default 1) caps how many days get a per-species
+raster. Three days × eight species was 24 PNGs and 24 GPX per region per
+run; at 1 that is 8. Scores, spots, seasons and legal status are still
+produced for every day — only the picture is capped, and the app falls back
+to today's map for later days with a note saying so.
+
+## Regions: 55 → 264, in 21 groups
+
+All disabled except `novigrad`, so tests stay fast and the site is never
+empty. Twenty-one groups: `adriatic` (15), `med-west` (38), `med-east` (19),
+`med-south` (7), `iberia-atlantic` (18), `macaronesia` (13), `nw-europe`
+(12), `africa-west` (6), `africa-south` (6), `red-sea` (7), `indian-west`
+(17), `coral-triangle` (17), `pacific-nw` (7), `pacific-islands` (15),
+`pacific-ne` (11), `atlantic-nw` (8), `atlantic-sw` (9), `caribbean` (21),
+`australia-temperate` (8), `australia-tropical` (4), `nz` (6).
+
+### Turning them on — three ways, none needing a code change
+
+```bash
+python fish_finder.py --groups              # what exists
+python fish_finder.py --select med-west     # a whole group, once
+python fish_finder.py --select cascais,elba # named regions, once
+python fish_finder.py --select all          # everything
 ```
-UnicodeDecodeError: 'charmap' codec can't decode byte 0x8d in position 13240
-```
 
-`Path.read_text()` with no `encoding` uses the platform default, which is
-**cp1252** on Windows. `regions.json` is UTF-8 and contains em dashes in
-region names. The file could not be read, so the program never started.
+For the **scheduled** job, set the `FISH_REGIONS` repository variable
+(Settings → Secrets and variables → Actions → Variables) to the same kind of
+string. No commit. The manual *Run workflow* button takes it as an input too.
+Falling through all of those, `"enabled": true` in `regions.json` still
+decides.
 
-It works on the GitHub Actions runner because Linux defaults to UTF-8, which
-is exactly why it survived this long: CI was green and the thing was simply
-unrunnable on your own machine.
+The cron is now `40 3,11,19 * * *` — every 8 hours.
 
-Every `read_text()` and `write_text()` across all four scripts now passes
-`encoding="utf-8"` explicitly, and `calibrate.py` opens `dive_log.csv` the
-same way — that file will carry accented species names and note text.
+### A caveat that matters
 
-## Bug 2 — a region name could kill the run half way through
+The 209 new regions are **auto-generated from a table**: their bboxes, depth
+bands and visibility baselines are reasonable starting values, not surveyed
+ones. Each note says so. I sanity-checked every box for shape and size, and
+smoke-tested 16 spread across the world — Adriatic, Ligurian, Aegean,
+Moroccan, Red Sea, Zanzibar, Komodo, Okinawa, Hawaii, California, Cape Cod,
+Bonaire, Brazil, Sydney, New Zealand, Lofoten. All 16 produced 26–88% water
+coverage and sensible depths, and all 16 completed in **41 s** warm with six
+workers. But a box you intend to dive deserves a look at the map before you
+trust a mark in it.
 
-```
-UnicodeEncodeError: 'charmap' codec can't encode character '\u010d'
-```
+Regions with a bad bbox fail loudly and alone: `run()` raises when under 5%
+of a box is water, the region is logged and skipped, and the others still
+publish.
 
-`log()` printing "Split and Brač channel" to a cp1252 console. This one is
-worse than it looks: it fired **after two regions had already written their
-output**, so `docs/data/` was left half updated and `index.json` — written
-only at the very end — never appeared at all. A log line must never be able
-to do that. `sys.stdout` and `sys.stderr` are now reconfigured to UTF-8 with
-`errors="replace"` at import time.
+## What else is worth adding
 
-## Bug 3 — the daily run would have lost most of its coastlines
+Full write-up in the README. Ordered by value, the first three all beat
+adding more coasts:
 
-Running Novigrad for real produced:
+1. **Protected areas, automatically.** All 264 regions say "no exclusion
+   zones defined". Unlike fishing law this is automatable — the World
+   Database on Protected Areas publishes global MPA polygons and
+   `rasterize_polygons()` already takes GeoJSON. Several regions now in the
+   catalogue sit inside reserves where spearfishing is banned outright.
+2. **Calibration.** The weights are still guesses, and `visibility.baseline`
+   is now the number that most decides whether a day looks worth driving to.
+   `calibrate.py` needs ~30 logged dives, blanks included.
+3. **Real bathymetry outside Europe** — NOAA CUDEM (US, 3–10 m) and
+   AusSeabed. Everything outside EMODnet is on a 300–450 m grid where a reef
+   is smaller than one cell.
+4. **Batch the conditions fetch.** Open-Meteo takes multiple coordinates per
+   request; two calls per *hundred* regions instead of per region removes
+   the daily-quota ceiling entirely.
+5. **Ship terrain, not pictures.** The browser can already score a species
+   itself (`speciesScore()`). A region shipping four compact terrain rasters
+   instead of eleven rendered maps could compute any species, any day, any
+   wind, at similar size — and `species_maps_days` would disappear.
+6. **Real tide tables** for the macrotidal coasts, which the new catalogue
+   has a lot of.
 
-```
-coastline: 64 OSM way(s) applied; water now 54% of the box
-wrecks: unavailable (HTTPError) - continuing without
-```
+## Verification
 
-The coastline succeeded and the wrecks were rate-limited — the *same* race I
-fixed on the client in v2 but had left in place server-side. With all 55
-regions enabled that is **110 Overpass requests in one run**, back to back.
-Most of them would have been refused, and every refusal silently costs a
-region its land mask or its wrecks.
-
-Both now come from **one request per region**, through
-`fetch_osm_context()`, with three mirrors and a backoff retry
-(`overpass_query()`). The superseded `fetch_wrecks()` is deleted. Re-running
-Novigrad with the cache cleared:
-
-```
-coastline: 64 OSM way(s) applied; water now 54% of the box
-wrecks: none charted here          <- answered, not refused
-```
-
-## What is now actually verified
-
-Not reviewed — executed.
-
-**`--selftest`, all 55 regions, exit 0**, no traceback, no failure, no
-warning. Plus 14 assertions over the generated output: every region wrote
-`latest.json`, every depth band matches its region config, no spot shallower
-than its region minimum, visibility never pins at the ceiling in any region,
-no hour claims "no daylight left" while light still follows it, `model.json`
-bundles all twelve biome packs and carries the depth band, weights, baseline
-and the affinities the client species maps need.
-
-**Four regions run for real, with live network** — EMODnet at 86–90 m,
-Overpass, Open-Meteo:
-
-| region | coastline | visibility | note |
-| --- | --- | --- | --- |
-| novigrad | 64 ways, water 54% | 7 m | exclusions 2.6% masked |
-| versilia | 6 ways, water 45% | 6 m | 2 wrecks found |
-| faro-ria-formosa | 82 ways, water 56% | 7 m | the barrier islands |
-| cascais | 17 ways, water 70% | 4 m | flagged macrotidal, 3.3 m |
-
-Visibility 4–7 m against the old model's flat 11 m, on real forecasts.
-
-**The land question, checked directly on real output.** I rebuilt each
-region's land mask from cache and measured every published spot against it:
-
-| region | grid | spots | on land | closer than buffer | nearest to land |
-| --- | --- | --- | --- | --- | --- |
-| novigrad | 100 m | 12 | 0 | 0 | 600 m |
-| versilia | 100 m | 1 | 0 | 0 | 300 m |
-| faro-ria-formosa | 100 m | 30 | 0 | 0 | 500 m |
-| cascais | 277 m | 30 | 0 | 0 | 277 m |
-
-Versilia yielding a single spot is correct, not a bug: it is flat sand with
-no structure, which is what the region note says to expect.
-
-`python -m py_compile` passes on all four scripts.
-
-## Notes
-
-- `rasterio` is in `requirements.txt` and CI installs it, but it was absent
-  from your Anaconda. The first Cascais run therefore fell EMODnet → GMRT →
-  SRTM15+ and finished on the global tier at 416 m — the fallback chain
-  working as designed. I installed rasterio into a scratch directory only;
-  **your Anaconda is untouched** (numpy still 1.26.4).
-- `docs/data/` has been deleted. It is gitignored, it was mixed real and
-  synthetic output by the end of testing, and CI regenerates it.
-- `legal/HR.json` is still missing, and the real runs confirm the
-  consequence: `legal: no rules pack for jurisdiction HR - sizes and seasons
-  will not be shown`. Novigrad, Zadar and Dubrovnik are all affected.
+- `--selftest --select all` across **all 264 regions**, 6 workers: exit 0,
+  no failures.
+- 14 assertions over generated output (depth bands, spot depths, visibility
+  never at the ceiling, daylight consistency, model.json completeness).
+- 16 real regions worldwide, live network: 0 failures, 41 s warm.
+- Coastline rasteriser proven bit-identical to the old one on three real
+  coastlines while ~30× faster.
+- `py_compile` clean; `docs/index.html` parses.

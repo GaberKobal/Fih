@@ -101,6 +101,8 @@
   },
   "species_file": "species.json",
   "species_ids": null,
+  "species_maps_days": 1,
+  "_species_maps_days_note": "How many forecast days get a per-species PNG and GPX. This is the single biggest lever on run time and artifact size: three days x eight species is 24 rasters per region per run on top of the three general ones, and at 1 that drops to 8. Scores, spots, seasons and legal status are still produced for EVERY day either way - those are a few kB of JSON - so only the picture is capped, and the app falls back to today's map for later days with a note saying so. Set it to 3 to restore a per-species map for every day; raise the region count instead if you would rather spend the budget on coverage.",
   "thermocline": {
     "_note": "How much colder it is at depth than at the surface, by month (Jan..Dec). The north Adriatic stratifies hard in summer, so surface temperature says nothing about where a demersal fish actually sits. These are estimates - check them against your dive computer and edit.",
     "monthly_drop_c": [
@@ -236,6 +238,7 @@
   },
   "coastline": {
     "_note": "The real shoreline from OpenStreetMap, used to decide what is land. Bathymetry alone reports the average of what is under each cell, so a barrier island or a spit narrower than a cell or two averages out to negative elevation and gets scored as open water - which is how the colour wash and the depth contours ended up painted across the beach at Faro. Cached per region in cache/. Set enabled to false to fall back to the bathymetric land edge alone.",
+    "_cost_note": "Fetched once per region, in the SAME Overpass request as the wrecks, then cached forever. Some coasts are enormous - Lofoten is 2965 ways - and Overpass can take a couple of minutes over one. That cost is bounded (see overpass_query) and paid once; if it is exceeded the region falls back to the bathymetric land edge, says so, and the spot gates in find_spots still keep marks off the shore.",
     "enabled": true
   },
   "wrecks": {
