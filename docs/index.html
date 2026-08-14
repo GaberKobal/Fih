@@ -6,11 +6,30 @@
 <meta name="theme-color" content="#071A22">
 <title>Novigrad — dive forecast</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" media="print" onload="this.media='all'"
+      href="https://fonts.googleapis.com/css2?family=Nunito+Sans:opsz,wght@6..12,400;6..12,600;6..12,700&display=swap">
 <style>
   /* ---------------------------------------------------------------
-     No webfonts on purpose. This page gets opened in a car park on a
-     bad coastal signal; system faces render instantly and work from
-     cache. The character comes from weight, tracking and scale.
+     TYPE. This used to be system faces only, on the grounds that the
+     page opens in a car park on one bar of signal. That constraint is
+     still real, so the change is made in a way that respects it:
+
+       * Nunito Sans is a humanist face with open apertures and soft
+         terminals — the "less robotic" part. It loads non-blocking
+         (media=print swapped to all on load) with display=swap, so the
+         page paints in the system fallback immediately and reflows to
+         Nunito when it arrives. It is precached by sw.js, so after the
+         first visit it is instant and works with no signal at all.
+       * Readouts moved off the monospace face onto tabular-lining
+         figures in the same family. Monospace is what made a viz number
+         read like a terminal; tnum keeps the digits from jittering as
+         they tick, which is the only thing mono was buying.
+       * ALL-CAPS with wide tracking was the other robotic tell. Labels
+         are sentence case now and lean on colour and weight instead.
+
+     Monospace survives in exactly one place: the CSV row in the dive
+     log, where column alignment is the actual point.
      --------------------------------------------------------------- */
   :root{
     --abyss:#071A22;      /* page ground: deep petrol, not neutral black */
@@ -23,22 +42,23 @@
     --flag:#E4573D;       /* dive-flag red */
     --kelp:#5FBFA0;
 
-    --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --sans: "Nunito Sans", ui-rounded, -apple-system, "Segoe UI Variable Text",
+            "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
     --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
   }
   *{box-sizing:border-box}
   html,body{margin:0;height:100%}
   body{
     background:var(--abyss); color:var(--chart); font-family:var(--sans);
-    -webkit-font-smoothing:antialiased;
+    -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
+    line-height:1.5;
     display:flex; flex-direction:column;
     padding-bottom:env(safe-area-inset-bottom);
   }
   .eyebrow{
-    font-size:11.5px; font-weight:700; letter-spacing:.14em; text-transform:uppercase;
+    font-size:12px; font-weight:700; letter-spacing:.01em;
     color:var(--sound);
   }
-  .num{font-family:var(--mono); font-variant-numeric:tabular-nums}
 
   /* ---- region bar: which coast, and where else is good today ---- */
   #regionbar{
@@ -48,13 +68,12 @@
   }
   #regionbar .nm{font-size:14px; font-weight:600}
   #regionbar .sub{font-size:12px; color:var(--sound); margin-top:2px}
-  #regionbar .chev{color:var(--buoy); font-size:13px}
   #regionpanel{display:none; background:var(--abyss);
     border-bottom:1px solid var(--line); flex:0 0 auto; max-height:52vh;
     overflow-y:auto}
   #regionpanel.open{display:block}
-  #regionpanel .grp{padding:8px 16px 2px; font:700 9.5px/1 var(--sans);
-    letter-spacing:.18em; text-transform:uppercase; color:var(--sound)}
+  #regionpanel .grp{padding:10px 16px 3px; font:700 11.5px/1.3 var(--sans);
+    letter-spacing:.01em; color:var(--sound)}
   .rg{
     width:100%; display:grid; grid-template-columns:1fr auto auto; gap:10px;
     align-items:center; text-align:left; cursor:pointer;
@@ -63,11 +82,11 @@
   }
   .rg:hover{background:var(--shelf)}
   .rg[aria-current="true"]{background:var(--shoal)}
-  .rg .n{font-size:13.5px}
-  .rg .w{font-family:var(--mono); font-size:13px}
-  .rg .v{font-family:var(--mono); font-size:12px; color:var(--sound)}
-  .rg .tag{font-size:11px; color:var(--sound); letter-spacing:.08em;
-    text-transform:uppercase; display:block; margin-top:2px}
+  .rg .n{font-size:14px}
+  .rg .w{font-size:13.5px; font-weight:600}
+  .rg .v{font-size:12.5px; color:var(--sound)}
+  .rg .tag{font-size:11.5px; color:var(--sound); letter-spacing:.01em;
+    display:block; margin-top:2px}
   #regionwarn{padding:9px 16px; font-size:11.5px; color:var(--buoy);
     background:rgba(242,177,56,.08); border-bottom:1px solid var(--line); display:none}
 
@@ -85,17 +104,17 @@
   #verdict > .row{position:relative}
   .row{display:flex; align-items:baseline; justify-content:space-between; gap:12px}
   #word{
-    font-size:clamp(30px,10vw,44px); font-weight:300; letter-spacing:-.03em;
-    line-height:1;
+    font-size:clamp(30px,10vw,44px); font-weight:600; letter-spacing:-.015em;
+    line-height:1.05;
   }
   #word[data-v="go"]{color:var(--kelp)}
   #word[data-v="marginal"]{color:var(--buoy)}
   #word[data-v="poor"],#word[data-v="stay home"]{color:var(--flag)}
   #word[data-v="not now"]{color:var(--sound)}
-  #limit{font-size:13px; color:var(--sound); margin-top:6px}
+  #limit{font-size:13.5px; color:var(--sound); margin-top:6px}
   #vitals{display:flex; gap:16px; margin-top:12px; flex-wrap:wrap}
   #vitals div{min-width:56px}
-  #vitals b{display:block; font-family:var(--mono); font-size:17px; font-weight:500}
+  #vitals b{display:block; font-size:18px; font-weight:600; margin-top:1px}
 
   /* ---- species strip: ranked by how catchable each is today ---- */
   #species{
@@ -121,7 +140,7 @@
   .sp .nm{display:block; font-size:12px; font-weight:600; line-height:1.25;
     max-width:130px; white-space:normal}
   .sp .sc{
-    display:block; font-family:var(--mono); font-size:15px; margin-top:3px;
+    display:block; font-size:16px; font-weight:700; margin-top:3px;
   }
   .sp .why{display:block; font-size:11.5px; color:var(--sound); margin-top:2px; white-space:nowrap}
   .sp.out .nm,.sp.out .sc{color:var(--sound)}
@@ -145,11 +164,25 @@
   .mark{
     width:26px;height:26px;border-radius:50%;
     display:grid;place-items:center;
-    font:600 11px/1 var(--mono); color:var(--abyss);
+    font:700 12px/1 var(--sans); color:var(--abyss);
     background:var(--buoy); border:1.5px solid var(--abyss);
     box-shadow:0 0 0 1px rgba(242,177,56,.55);
   }
   .mark.dim{background:var(--sound); box-shadow:none}
+  /* Charted wrecks. A plain red dot was indistinguishable from the point
+     marker and from OpenSeaMap's own symbology underneath; this is a
+     deliberately different shape — a rotated square with a cross — so a
+     wreck never reads as "a spot the model picked". */
+  .wreckmark{
+    width:18px;height:18px;transform:rotate(45deg);
+    background:rgba(228,87,61,.22); border:1.6px solid var(--flag);
+    border-radius:3px; box-sizing:border-box; position:relative;
+  }
+  .wreckmark::before,.wreckmark::after{
+    content:""; position:absolute; background:var(--flag);
+  }
+  .wreckmark::before{left:50%; top:2px; bottom:2px; width:1.6px; margin-left:-.8px}
+  .wreckmark::after{top:50%; left:2px; right:2px; height:1.6px; margin-top:-.8px}
 
   /* ---- map furniture: legend, opacity, locate ---- */
   #maptools{
@@ -161,11 +194,11 @@
   #ramp{height:9px; border-radius:2px; margin-bottom:3px;
     background:linear-gradient(90deg,#440154,#3b528b,#21918c,#5ec962,#fde725)}
   #ramplab{display:flex; justify-content:space-between;
-    font:400 9.5px/1 var(--mono); color:var(--sound)}
+    font:400 11px/1 var(--sans); color:var(--sound)}
   #maptools label{display:flex; align-items:center; gap:6px; margin-top:8px;
-    font-size:12px; color:var(--chart); cursor:pointer}
+    font-size:12.5px; color:var(--chart); cursor:pointer}
   #maptools input[type=range]{width:100%; accent-color:var(--buoy)}
-  .depthline{font:600 9px/1 var(--mono)}
+  .depthline{font:600 10.5px/1 var(--sans)}
   #locate{
     position:absolute; z-index:500; right:10px; top:10px; width:34px; height:34px;
     border-radius:3px; background:rgba(7,26,34,.88); border:1px solid var(--line);
@@ -180,7 +213,7 @@
   }
   .band{padding:12px 16px; border-bottom:1px solid var(--line)}
   #window{display:flex; align-items:baseline; gap:10px; flex-wrap:wrap}
-  #window .when{font-family:var(--mono); font-size:16px; color:var(--buoy)}
+  #window .when{font-size:17px; font-weight:700; color:var(--buoy)}
   #spark{display:block; width:100%; height:46px; margin-top:10px}
 
   /* ---- day tabs + hour-by-hour strip ---- */
@@ -191,9 +224,9 @@
     padding:7px 9px; color:var(--chart); font-family:var(--sans);
   }
   .day[aria-pressed="true"]{border-color:var(--buoy); background:var(--shoal)}
-  .day .dl{display:block; font:700 10.5px/1 var(--sans); letter-spacing:.13em;
-    text-transform:uppercase; color:var(--sound)}
-  .day .dt{display:block; font-family:var(--mono); font-size:14px; margin-top:4px}
+  .day .dl{display:block; font:700 12px/1.2 var(--sans); letter-spacing:.01em;
+    color:var(--sound)}
+  .day .dt{display:block; font-size:15px; font-weight:600; margin-top:4px}
   #hours{display:flex; gap:2px; align-items:flex-end; height:64px; margin-top:12px}
   #hours .hr{
     flex:1 1 0; min-width:0; height:100%; position:relative; cursor:pointer;
@@ -208,9 +241,9 @@
   }
   #hours .hr[aria-pressed="true"] span{outline:1px solid var(--chart)}
   #hourax{display:flex; justify-content:space-between; margin-top:4px;
-    font:400 9.5px/1 var(--mono); color:var(--sound)}
-  #hourdet{margin-top:9px; font-size:12.5px; color:var(--sound); min-height:18px}
-  #hourdet b{color:var(--chart); font-family:var(--mono); font-weight:500}
+    font:400 11px/1 var(--sans); color:var(--sound)}
+  #hourdet{margin-top:9px; font-size:13px; color:var(--sound); min-height:18px}
+  #hourdet b{color:var(--chart); font-weight:700}
 
   ol#spots{list-style:none; margin:0; padding:0}
   ol#spots li{
@@ -219,20 +252,20 @@
   }
   ol#spots li:hover,ol#spots li:focus-visible{background:var(--shoal); outline:none}
   ol#spots li .rank{
-    font:600 11px/26px var(--mono); text-align:center; color:var(--abyss);
+    font:700 12px/26px var(--sans); text-align:center; color:var(--abyss);
     background:var(--buoy); border-radius:50%; height:26px;
   }
-  .coords{font-family:var(--mono); font-size:12.5px}
+  .coords{font-size:13.5px; letter-spacing:.005em}
   .bars{display:flex; gap:3px; margin-top:5px}
   .bars i{height:3px; width:26px; background:var(--shoal); border-radius:2px; display:block}
   .bars i span{display:block; height:100%; background:var(--sound); border-radius:2px}
-  .depth{font-family:var(--mono); font-size:15px; color:var(--buoy); white-space:nowrap}
+  .depth{font-size:16px; font-weight:700; color:var(--buoy); white-space:nowrap}
 
   .actions{display:flex; gap:8px; padding:12px 16px 16px; flex-wrap:wrap}
   .actions a,.actions button{
-    font:600 12.5px/1 var(--sans); letter-spacing:.08em; text-transform:uppercase;
+    font:600 13.5px/1 var(--sans); letter-spacing:.005em;
     color:var(--chart); background:var(--shoal); border:1px solid var(--line);
-    border-radius:2px; padding:10px 13px; text-decoration:none; cursor:pointer;
+    border-radius:6px; padding:10px 14px; text-decoration:none; cursor:pointer;
   }
   .actions a:hover,.actions button:hover{background:var(--line)}
   :focus-visible{outline:2px solid var(--buoy); outline-offset:2px}
@@ -241,26 +274,26 @@
   details#log{border-bottom:1px solid var(--line)}
   details#log > summary{
     padding:12px 16px; cursor:pointer; list-style:none;
-    font:700 11.5px/1 var(--sans); letter-spacing:.14em; text-transform:uppercase;
+    font:700 14px/1.3 var(--sans); letter-spacing:.005em;
     color:var(--buoy);
   }
   details#log > summary::-webkit-details-marker{display:none}
   details#log > summary::before{content:"+ "; }
   details#log[open] > summary::before{content:"– "; }
   .form{padding:0 16px 14px; display:grid; grid-template-columns:1fr 1fr; gap:9px}
-  .form label{display:flex; flex-direction:column; gap:4px; font-size:11.5px;
-    letter-spacing:.1em; text-transform:uppercase; color:var(--sound); font-weight:700}
+  .form label{display:flex; flex-direction:column; gap:4px; font-size:12.5px;
+    letter-spacing:.005em; color:var(--sound); font-weight:600}
   .form label.wide{grid-column:1 / -1}
   .form input,.form select,.form textarea{
     background:var(--abyss); color:var(--chart); border:1px solid var(--line);
-    border-radius:2px; padding:8px; font:400 16px/1.3 var(--mono); width:100%;
+    border-radius:6px; padding:9px; font:400 16px/1.4 var(--sans); width:100%;
   }
-  .form textarea{font-family:var(--sans); resize:vertical; min-height:44px}
+  .form textarea{resize:vertical; min-height:44px}
   .toggle{display:flex; gap:6px}
   .toggle button{
-    flex:1; padding:9px; border:1px solid var(--line); border-radius:2px;
+    flex:1; padding:9px; border:1px solid var(--line); border-radius:6px;
     background:var(--abyss); color:var(--sound); cursor:pointer;
-    font:600 12.5px/1 var(--sans); letter-spacing:.08em; text-transform:uppercase;
+    font:600 13.5px/1 var(--sans); letter-spacing:.005em;
   }
   .toggle button[aria-pressed="true"]{background:var(--shoal); color:var(--chart); border-color:var(--buoy)}
   #rowout{
@@ -270,6 +303,21 @@
   }
   #stamp{padding:10px 16px 16px; font-size:11px; color:var(--sound)}
   #err{padding:20px 16px; color:var(--flag); font-size:14px; display:none}
+  /* Tabular lining figures: digits keep their column as a value ticks over,
+     which is the only thing the monospace face was really buying.
+     ---------------------------------------------------------------------
+     This has to sit AFTER every rule above that uses the `font:` shorthand.
+     The shorthand resets font-variant to normal, so declaring tabular-nums
+     earlier in the sheet would be silently undone for .mark, #hourax,
+     .depthline, #ramplab, the spot ranks and the log inputs — every readout
+     that jitters most when it changes. */
+  .num,#vitals b,.rg .w,.rg .v,.sp .sc,.mark,#ramplab,.depthline,
+  #window .when,.day .dt,#hourax,#hourdet b,ol#spots li .rank,
+  .coords,.depth,.form input,.form select{
+    font-variant-numeric:tabular-nums lining-nums;
+    font-feature-settings:"tnum" 1,"lnum" 1;
+  }
+
   @media (prefers-reduced-motion:no-preference){
     #verdict{animation:rise .4s ease-out both}
     @keyframes rise{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
@@ -295,12 +343,15 @@
 <body>
 
 <div id="left">
-  <div id="regionbar" role="button" tabindex="0" aria-expanded="false">
+  <!-- The "full maps ▾" toggle that used to sit here is gone. The bar itself
+       is still the control that opens the coast list — #rgsub says so — so
+       nothing became unreachable, there is just no separate widget for it. -->
+  <div id="regionbar" role="button" tabindex="0" aria-expanded="false"
+       aria-controls="regionpanel">
     <span>
       <span class="nm" id="rgname">Tap a coast</span>
       <span class="sub" id="rgsub"></span>
     </span>
-    <span class="chev" id="rgchev">full maps ▾</span>
   </div>
   <div id="regionpanel"></div>
   <div id="regionwarn"></div>
@@ -381,11 +432,11 @@
     </label>
     <div id="scanbox" style="display:none;margin-top:9px;border-top:1px solid var(--line);padding-top:8px">
       <button type="button" id="scan" style="width:100%;padding:9px;border:1px solid var(--buoy);
-        border-radius:2px;background:var(--shoal);color:var(--chart);cursor:pointer;
-        font:600 12.5px/1 var(--sans);letter-spacing:.08em;text-transform:uppercase">Scan structure</button>
+        border-radius:6px;background:var(--shoal);color:var(--chart);cursor:pointer;
+        font:600 13.5px/1 var(--sans)">Scan structure</button>
       <label style="margin-top:6px">Radius
         <select id="radius" style="flex:1;background:var(--abyss);color:var(--chart);
-          border:1px solid var(--line);border-radius:2px;padding:4px;font:400 14px var(--mono)">
+          border:1px solid var(--line);border-radius:6px;padding:5px;font:400 14px var(--sans)">
           <option value="15">15 km</option>
           <option value="30" selected>30 km</option>
           <option value="50">50 km</option>
@@ -455,29 +506,54 @@ function regionContaining(lat, lon){
 // used only when regionContaining() finds no match. It never implies a
 // legal pack applies - with no specific jurisdiction there is nothing to
 // merge in, so species shown this way carry no size/season claims at all.
-// Some stretches of ocean (Chile/Peru, mainland Japan/Korea/China,
-// tropical West Africa away from the Mediterranean, deep Southern Ocean)
-// have no confident match and correctly fall through to structure-only.
+// Coverage was left with large holes — the whole Atlantic side of South
+// America, the Great Barrier Reef, mainland Japan and Korea, tropical West
+// Africa, the Baltic and Norway, the Arabian Gulf, the eastern Black Sea —
+// and a tap in any of them returned "no species data for this point". The
+// list below closes those, ordered so the tighter, more confident boxes are
+// tested before the broad ocean-basin ones they sit inside.
+//
+// The honesty rule is unchanged and still the important part: a biome match
+// is a REFERENCE LIST for that stretch of ocean, never a claim that the pack
+// was tuned there and never a legal claim, and the app labels it as such
+// (see DATA.species_source === "biome" in load()). Where no pack is even
+// roughly right — the Southern Ocean, the Arctic, the Humboldt upwelling off
+// Chile and Peru, which is a genuinely distinct cold assemblage with no pack
+// in this repo — the correct answer is still nothing, and these stay out.
 const BIOME_RULES = [
   // Enclosed / semi-enclosed seas - distinct fauna, checked before the
   // broader ocean-basin boxes they sit inside of.
-  {file: "species.json",                lon: [-6.5, 36.5], lat: [30, 47]},    // Mediterranean & Black Sea
+  {file: "species.json",                lon: [-6.5, 42],   lat: [30, 48]},    // Mediterranean, Adriatic, Aegean & Black Sea (east to the Georgian coast)
   {file: "species_indian_tropical.json",lon: [32, 44],     lat: [12, 30]},    // Red Sea
-  {file: "species_florida_keys.json",   lon: [-98, -60],   lat: [8, 31]},     // Caribbean & Gulf of Mexico
+  {file: "species_indian_tropical.json",lon: [46, 60],     lat: [22, 31]},    // Persian/Arabian Gulf & Gulf of Oman
+  {file: "species_florida_keys.json",   lon: [-98, -58],   lat: [7, 31]},     // Caribbean & Gulf of Mexico
   // Atlantic
   {file: "species_azores.json",         lon: [-32, -13],   lat: [27, 41]},    // Macaronesia (Azores/Madeira/Canaries)
-  {file: "species.json",                lon: [-20, 10],    lat: [30, 65]},    // NE Atlantic Europe
-  {file: "species_nwatlantic.json",     lon: [-80, -50],   lat: [24, 50]},    // NW Atlantic US/Canada
-  {file: "species_capetown.json",       lon: [-20, 22],    lat: [-35, 5]},    // SE Atlantic / SW Africa (Benguela-influenced), extended to cover Cape Point/False Bay
+  {file: "species_azores.json",         lon: [-26, -22],   lat: [14, 18]},    // Cabo Verde — same Macaronesian province, south of the box above
+  // NE Atlantic Europe, the North Sea and the Norwegian coast. Deliberately
+  // stops at 14 E: the Baltic proper is brackish at 6-8 PSU with no sparids
+  // in it at all, so the Atlanto-Mediterranean pack would be confidently
+  // wrong there rather than merely approximate. Structure-only is the honest
+  // answer, the same call this file already makes for the Humboldt current.
+  {file: "species.json",                lon: [-20, 14],    lat: [30, 71]},
+  {file: "species.json",                lon: [-20, -6],    lat: [8, 30]},     // NW Africa: Morocco to Senegal — Atlanto-Mediterranean overlap
+  {file: "species_capetown.json",       lon: [-20, 22],    lat: [-35, 8]},    // SE Atlantic / W Africa, Gulf of Guinea down to Benguela and False Bay
+  {file: "species_capetown.json",       lon: [22, 32],     lat: [-35, -25]},  // South Africa east coast (Agulhas side)
+  {file: "species_nwatlantic.json",     lon: [-80, -50],   lat: [24, 55]},    // NW Atlantic US/Canada, extended over the Maritimes
+  {file: "species_florida_keys.json",   lon: [-58, -30],   lat: [-24, 8]},    // Tropical W Atlantic: Guianas and Brazil to about Rio
+  {file: "species_nwatlantic.json",     lon: [-62, -50],   lat: [-45, -24]},  // Temperate SW Atlantic: Uruguay, N Argentine shelf
   // Indian Ocean
-  {file: "species_indian_tropical.json",lon: [20, 95],     lat: [-35, 30]},   // wider western Indian Ocean
+  {file: "species_indian_tropical.json",lon: [20, 100],    lat: [-35, 30]},   // wider western Indian Ocean, Sri Lanka and the Andaman side
   // Pacific
-  {file: "species_bali.json",           lon: [95, 160],    lat: [-12, 22]},   // Coral Triangle / SE Asia
-  {file: "species_okinawa.json",        lon: [118, 150],   lat: [18, 36]},    // NW Pacific subtropical (Japan/Taiwan/Ryukyu)
-  {file: "species_oahu.json",           lon: [160, 180],   lat: [-25, 25]},   // Central/West Pacific islands
-  {file: "species_oahu.json",           lon: [-180, -140], lat: [-25, 25]},   // Central/East Pacific islands (antimeridian wrap)
-  {file: "species_socal.json",          lon: [-135, -108], lat: [15, 48]},    // NE Pacific (Baja to southern BC)
-  {file: "species_poorknights.json",    lon: [145, 180],   lat: [-47, -25]},  // SW Pacific temperate (SE Australia/NZ)
+  {file: "species_bali.json",           lon: [95, 165],    lat: [-12, 22]},   // Coral Triangle / SE Asia / Melanesia
+  {file: "species_bali.json",           lon: [141, 158],   lat: [-25, -10]},  // Great Barrier Reef and the Coral Sea
+  {file: "species_okinawa.json",        lon: [117, 132],   lat: [18, 41]},    // East China Sea, Taiwan, Yellow Sea and the Korean coast
+  {file: "species_okinawa.json",        lon: [128, 150],   lat: [30, 46]},    // Mainland Japan, Honshu to Hokkaido
+  {file: "species_oahu.json",           lon: [155, 180],   lat: [-30, 30]},   // Central/West Pacific islands
+  {file: "species_oahu.json",           lon: [-180, -130], lat: [-30, 30]},   // Central/East Pacific islands (antimeridian wrap), incl. Hawaii and Galapagos
+  {file: "species_socal.json",          lon: [-135, -105], lat: [15, 52]},    // NE Pacific (Baja to Vancouver Island)
+  {file: "species_poorknights.json",    lon: [145, 180],   lat: [-50, -25]},  // SW Pacific temperate (SE Australia/NZ)
+  {file: "species_poorknights.json",    lon: [-180, -172], lat: [-50, -30]},  // Chatham Rise side of NZ (antimeridian wrap)
   {file: "species_rottnest.json",       lon: [108, 145],   lat: [-45, -20]},  // SW/S Australia temperate
 ];
 
@@ -502,7 +578,8 @@ async function loadPoint(lat, lon){
     fillColor:"#0E2E3A", fillOpacity:.9}).addTo(map);
 
   $("#rgname").textContent = `${lat.toFixed(4)}, ${lon.toFixed(4)}`;
-  $("#rgsub").textContent  = "tap the map to move · Scan structure for relief and shelter";
+  $("#rgsub").textContent  = "tap the map to move · tap here to switch coast "
+                           + "· Scan structure for relief and shelter";
   $("#err").style.display = "block";
   $("#err").style.color = "var(--sound)";
   $("#err").textContent = "Fetching conditions for this point…";
@@ -561,7 +638,9 @@ async function paintStructure(){
   const swell = day.swell_from_deg ?? null;
   const {score} = STRUCT.score(TERRAIN, wind, swell, TERRAIN.opts, WRECKS);
   if(overlay) map.removeLayer(overlay);
-  overlay = L.imageOverlay(STRUCT.toDataURL(TERRAIN, score),
+  // Pass the options through: toDataURL needs land_buffer_m from them to
+  // know how far to hold the wash back from the shoreline.
+  overlay = L.imageOverlay(STRUCT.toDataURL(TERRAIN, score, 0.35, 0.80, TERRAIN.opts),
                            STRUCT.bounds(TERRAIN), {opacity: overlayOpacity}).addTo(map);
   const spots = STRUCT.findSpots(TERRAIN, score, TERRAIN.opts);
   DATA.spots = spots;
@@ -585,8 +664,9 @@ $("#scan").addEventListener("click", async () => {
     if(!same || !TERRAIN){
       const grid = await STRUCT.fetchBathymetry(box);
       btn.textContent = "Building terrain…";
-      const opts = {...STRUCT.defaults, radius_km: r,
-                    depth_min_m: 2, depth_best: [4, 18], depth_max_m: 30};
+      // Depth band comes from STRUCT.defaults (2 / 4-18 / 25 m), which now
+      // matches config.json rather than silently overriding it with 30.
+      const opts = {...STRUCT.defaults, radius_km: r};
       TERRAIN = STRUCT.buildTerrain(grid, opts);
       TERRAIN.opts = opts;
       scanBox = box;
@@ -754,8 +834,19 @@ function selectTarget(id){
          `Size: ${L.min_size_source}</div>`:"");
   }
 
-  $("#gpx").href = sp ? dataUrl(`spots_${sp.id}${suf}.gpx`) : dataUrl(`spots${suf}.gpx`);
-  $("#gpx").textContent = sp ? `GPX · ${sp.name_en || sp.common}` : "Download GPX";
+  // GPX files are written per region by the daily job; a point scan has no
+  // folder to hold one, so the link pointed at "data/null/spots.gpx" and
+  // downloaded a 404 page. Offer it only where a file exists.
+  const gpx = $("#gpx");
+  if(d.point || !REGION){
+    gpx.removeAttribute("href");
+    gpx.textContent = "GPX — precomputed regions only";
+    gpx.style.opacity = ".5";
+  }else{
+    gpx.style.opacity = "";
+    gpx.href = sp ? dataUrl(`spots_${sp.id}${suf}.gpx`) : dataUrl(`spots${suf}.gpx`);
+    gpx.textContent = sp ? `GPX · ${sp.name_en || sp.common}` : "Download GPX";
+  }
 
   if(d.point){ renderSpots(d, d.spots || []); return; }
   const b=L.latLngBounds(d.bounds);
@@ -939,8 +1030,15 @@ function styleContours(gj){
 }
 function styleWrecks(gj){
   return L.geoJSON(gj,{
-    pointToLayer:(f,ll)=>L.circleMarker(ll,{radius:5,color:"#E4573D",weight:2,
-      fillColor:"#0E2E3A",fillOpacity:.9}),
+    // A rotated crossed square, not a dot. The old red circleMarker was the
+    // same primitive as the "you are here" point marker and sat on top of
+    // OpenSeaMap's own wreck symbology, so three different things on the map
+    // looked alike. See .wreckmark in the stylesheet.
+    pointToLayer:(f,ll)=>L.marker(ll,{
+      icon:L.divIcon({className:"", iconSize:[18,18], iconAnchor:[9,9],
+                      html:'<div class="wreckmark"></div>'}),
+      title:(f.properties&&f.properties.name)||"wreck",
+      keyboard:false}),
     onEachFeature:(f,l)=>{
       const p=f.properties||{};
       l.bindPopup(`<b>${p.name||"wreck"}</b><br>${p.kind||""}`
@@ -1015,7 +1113,6 @@ function renderRegions(){
   any.addEventListener("click",()=>{
     $("#regionpanel").classList.remove("open");
     $("#regionbar").setAttribute("aria-expanded","false");
-    $("#rgchev").textContent="full maps ▾";
     const c=map.getCenter();
     if(map.getZoom()>6) map.setZoom(6);
     loadPoint(c.lat, c.lng);
@@ -1050,7 +1147,6 @@ function renderRegions(){
         POINT=null; if(ptMarker){map.removeLayer(ptMarker); ptMarker=null;}
         $("#regionpanel").classList.remove("open");
         $("#regionbar").setAttribute("aria-expanded","false");
-        $("#rgchev").textContent="full maps ▾";
         if(r.id!==REGION){ REGION=r.id; location.hash=r.id; sel=null;
                            overlay=null; load(); }
       });
@@ -1062,7 +1158,6 @@ function renderRegions(){
 function toggleRegions(){
   const open=$("#regionpanel").classList.toggle("open");
   $("#regionbar").setAttribute("aria-expanded", String(open));
-  $("#rgchev").textContent = open ? "close ▴" : "full maps ▾";
 }
 $("#regionbar").addEventListener("click",toggleRegions);
 $("#regionbar").addEventListener("keydown",e=>{
@@ -1097,67 +1192,11 @@ async function load(){
   }
   const meta = INDEX.regions.find(r=>r.id===REGION) || {};
   $("#rgname").textContent = meta.name || REGION;
-  $("#rgsub").textContent  = `${meta.country||""} · ${INDEX.regions.length} regions available`;
+  // The bar is the control that opens the coast list now that the separate
+  // "full maps" toggle is gone, so say so here.
+  $("#rgsub").textContent  = `${meta.country||""} · tap to switch coast `
+                           + `(${INDEX.regions.length} available)`;
   renderRegions();
-
-  // Rules panel: framework law for this jurisdiction, with its confidence
-  // stated rather than implied.
-  const LP = (DATA && DATA.legal_pack) || {};
-  const rp = $("#rules");
-  if(LP.framework){
-    const F=LP.framework, no=v=>v?"allowed":"<b style='color:var(--flag)'>prohibited</b>";
-    rp.style.display="block";
-    rp.innerHTML =
-      `<div class="eyebrow">Rules · ${LP.country||""} (${LP.jurisdiction||""})</div>
-       <div style="margin-top:6px;font-size:12.5px;line-height:1.55">
-         Licence: ${F.licence}<br>
-         At night: ${no(F.night_spearfishing_allowed)} ·
-         On scuba: ${no(F.scuba_allowed)} ·
-         Selling catch: ${no(F.sale_of_catch_allowed)}<br>
-         ${F.surface_marker}. ${F.distance_rules}
-       </div>
-       <div style="margin-top:6px;font-size:11px;color:var(--sound)">
-         ${LP.confidence==="researched"
-           ? "Checked against the national regulator; still verify before the season."
-           : "<b style='color:var(--buoy)'>Framework only</b> — widely reported, not taken from the primary source. Verify at "
-             + (LP.official_source||"the national regulator") + " before you dive."}
-         ${LP.closed_seasons_researched ? "" :
-           "<br>Closed seasons for this country are <b>not encoded</b>. An open species here means unknown, not legal."}
-       </div>`;
-  }else{
-    rp.style.display="none";
-  }
-
-  const warn=[];
-  if(DATA && DATA.point){
-    const host = regionContaining(POINT.lat, POINT.lon);
-    warn.push("Point forecast. Conditions are live for this exact spot; press "
-            + "<b>Scan structure</b> on the map to fetch bathymetry and score "
-            + "relief, slope and shelter around it."
-            + (host ? ` This point is also inside <b>${host.name}</b>, which has a precomputed map with wrecks, contours and exclusion zones.` : ""));
-    if(DATA.species_source === "biome")
-      warn.push("Species here are a coarse worldwide approximation — the nearest matching "
-              + "ocean-basin reference list, not a pack tuned to this spot — and carry no "
-              + "legal size or season information at all.");
-    else if(!DATA.has_species)
-      warn.push("No species data for this point — even the worldwide fallback has no "
-              + "confident match for this stretch of ocean.");
-  }
-  if(DATA && DATA.relief_meaningful===false)
-    warn.push(`Bathymetry here is ~${DATA.bathymetry_native_m} m per cell `
-            + `(${DATA.bathymetry_provider}). A reef is smaller than one cell, so the `
-            + `structure map shows broad slope only — read a mark as "the shelf does `
-            + `something here", not as a spot.`);
-  if(DATA && DATA.macrotidal)
-    warn.push(`Tidal range ${DATA.tide_range_m} m — macrotidal. The 8 km tide model `
-            + `behind the timing is not adequate here; use a real tide table.`);
-  if(meta.has_species===false)
-    warn.push("No validated species pack for this region — structure and conditions only. "
-            + "Croatian closed seasons are NOT applied here.");
-  if(meta.has_exclusions===false)
-    warn.push("No exclusion zones defined — check protected areas and port limits yourself.");
-  $("#regionwarn").style.display = warn.length ? "block" : "none";
-  $("#regionwarn").innerHTML = warn.join("<br>");
 
   let d;
   try{
@@ -1169,6 +1208,12 @@ async function load(){
     $("#err").textContent=`No forecast for ${REGION} yet. Run the Update dive forecast workflow, then reload.`;
     return;
   }
+
+  // Clear whatever the previous view failed at. Without this, an error left
+  // over from a point forecast ("Could not get a forecast here…") stayed
+  // pinned to the top of a region that had loaded perfectly well.
+  $("#err").style.display = "none";
+  $("#err").style.color = "var(--flag)";
 
   const dataV = d.schema_version || 1;
   if(dataV !== PAGE_VERSION){
@@ -1247,8 +1292,81 @@ function reanchorNow(d){
   }
 }
 
+// Rules panel and the amber caveat banner, for the payload being rendered.
+//
+// This used to live inline in load(), ABOVE the fetch, and read the global
+// DATA — which at that moment still held the PREVIOUS map. So the panel was
+// permanently one load behind: switching from a point to a region carried
+// the "Point forecast, press Scan structure" banner across onto the region,
+// a region's legal pack only appeared on the second visit, and the very
+// first load showed no rules at all. Both entry points call this now, with
+// the payload they are about to draw.
+function renderContext(d, meta){
+  meta = meta || {};
+  const LP = d.legal_pack || {};
+  const rp = $("#rules");
+  if(LP.framework){
+    const F=LP.framework, no=v=>v?"allowed":"<b style='color:var(--flag)'>prohibited</b>";
+    rp.style.display="block";
+    rp.innerHTML =
+      `<div class="eyebrow">Rules · ${LP.country||""} (${LP.jurisdiction||""})</div>
+       <div style="margin-top:6px;font-size:13px;line-height:1.6">
+         Licence: ${F.licence}<br>
+         At night: ${no(F.night_spearfishing_allowed)} ·
+         On scuba: ${no(F.scuba_allowed)} ·
+         Selling catch: ${no(F.sale_of_catch_allowed)}<br>
+         ${F.surface_marker}. ${F.distance_rules}
+       </div>
+       <div style="margin-top:6px;font-size:11.5px;color:var(--sound)">
+         ${LP.confidence==="researched"
+           ? "Checked against the national regulator; still verify before the season."
+           : "<b style='color:var(--buoy)'>Framework only</b> — widely reported, not taken from the primary source. Verify at "
+             + (LP.official_source||"the national regulator") + " before you dive."}
+         ${LP.closed_seasons_researched ? "" :
+           "<br>Closed seasons for this country are <b>not encoded</b>. An open species here means unknown, not legal."}
+       </div>`;
+  }else{
+    rp.style.display="none";
+  }
+
+  const warn=[];
+  if(d.point){
+    const host = POINT ? regionContaining(POINT.lat, POINT.lon) : null;
+    warn.push("Point forecast. Conditions are live for this exact spot; press "
+            + "<b>Scan structure</b> on the map to fetch bathymetry and score "
+            + "relief, slope and shelter around it."
+            + (host ? ` This point is also inside <b>${host.name}</b>, which has a precomputed map with wrecks, contours and exclusion zones.` : ""));
+    if(d.species_source === "biome")
+      warn.push("Species here are a coarse worldwide approximation — the nearest matching "
+              + "ocean-basin reference list, not a pack tuned to this spot — and carry no "
+              + "legal size or season information at all.");
+    else if(!d.has_species)
+      warn.push("No species data for this point — even the worldwide fallback has no "
+              + "confident match for this stretch of ocean.");
+  }else{
+    // Region-only caveats. These come from the region catalogue, so they
+    // must not be shown while a point forecast is on screen.
+    if(meta.has_species===false)
+      warn.push("No validated species pack for this region — structure and conditions only. "
+              + "Croatian closed seasons are NOT applied here.");
+    if(meta.has_exclusions===false)
+      warn.push("No exclusion zones defined — check protected areas and port limits yourself.");
+  }
+  if(d.relief_meaningful===false)
+    warn.push(`Bathymetry here is ~${d.bathymetry_native_m} m per cell `
+            + `(${d.bathymetry_provider}). A reef is smaller than one cell, so the `
+            + `structure map shows broad slope only — read a mark as "the shelf does `
+            + `something here", not as a spot.`);
+  if(d.macrotidal)
+    warn.push(`Tidal range ${d.tide_range_m} m — macrotidal. The 8 km tide model `
+            + `behind the timing is not adequate here; use a real tide table.`);
+  $("#regionwarn").style.display = warn.length ? "block" : "none";
+  $("#regionwarn").innerHTML = warn.join("<br>");
+}
+
 function renderAll(d, meta){
   meta = meta || {};
+  renderContext(d, meta);
   $("#region").textContent = d.region;
   // A cached forecast may predate the night gate. Never present a calm local
   // 02:30 as diveable when the current-hour light value says it is dark.
@@ -1257,7 +1375,12 @@ function renderAll(d, meta){
   $("#word").textContent = vw.charAt(0).toUpperCase() + vw.slice(1);
   $("#word").dataset.v = vw;
   if(vw === "not now"){
-    if(isDark) d.now.limited_by = "dark - no daylight at this local hour";
+    // Only supply a reason if the payload did not already give a specific
+    // one. The model now distinguishes "waiting for first light" from "no
+    // daylight left today", and overwriting both with one generic string
+    // threw that away.
+    if(isDark && !/dark/i.test(d.now.limited_by || ""))
+      d.now.limited_by = "dark — no daylight at this local hour";
     // Use the per-day daylight-gated windows, never the legacy overall value
     // which older data may have calculated without a light check.
     const w = (d.days||[]).find(day=>day.best)?.best || null;
@@ -1271,15 +1394,24 @@ function renderAll(d, meta){
 
   // Satellite water clarity, if a recent scene was processed. Optional file:
   // absent until s2_turbidity.py has run successfully.
-  fetch(dataUrl("s2_turbidity.json"),{cache:"no-store"})
+  //
+  // A point forecast has no region folder, so there is nothing to fetch and
+  // the request would 404 against "data/null/". Skip it outright rather
+  // than firing a doomed request on every tap.
+  const oldS2 = document.getElementById("s2band");
+  if(oldS2) oldS2.remove();
+  if(!d.point && REGION) fetch(dataUrl("s2_turbidity.json"),{cache:"no-store"})
     .then(r => r.ok ? r.json() : null)
     .then(s2 => {
-      if(!s2) return;
+      if(!s2 || (d.region_id || REGION) !== REGION) return;
       const T = s2.turbidity_relative_fnu || {};
       const age = Math.round((Date.now() - new Date(s2.scene_datetime)) / 86400000);
       const when = age <= 0 ? "today" : age + " day" + (age === 1 ? "" : "s") + " ago";
+      // Identified and removed above on every render. Without that, every
+      // Refresh or region switch appended ANOTHER copy of this panel and the
+      // sheet grew a stack of stale turbidity readings.
       const el = document.createElement("div");
-      el.className = "band";
+      el.className = "band"; el.id = "s2band";
       el.innerHTML =
         `<div class="eyebrow">Satellite water clarity</div>
          <div style="margin-top:6px;font-size:13.5px">
@@ -1316,26 +1448,57 @@ function renderAll(d, meta){
 
   DATA=d;
   if(!d.point && !overlay) map.fitBounds(L.latLngBounds(d.bounds));
-  addEventListener("hashchange",()=>{
-    const want=(location.hash||"").replace("#","");
-    if(want && want!==REGION && INDEX.regions.some(r=>r.id===want)){
-      REGION=want; sel=null; if(overlay){map.removeLayer(overlay); overlay=null;} load();
-    }
-  },{once:true});
   renderSpecies(d);
   initLog(d);
   $("#scanbox").style.display = d.point ? "block" : "none";
   if(!d.point){ loadContours(); loadWrecks(); TERRAIN=null; scanBox=null; }
   selectTarget(sel && (d.species||[]).some(x=>x.id===sel) ? sel : null);
 
+  // Defensive on every optional field. This block is the last thing
+  // renderAll does, and an unguarded d.depth_range_m[0] threw on every
+  // point forecast — which is the DEFAULT mode — aborting the render and
+  // replacing the panel with "Could not get a forecast here". The payload
+  // now carries these (see anywhere.js), but a cached older one will not,
+  // and a missing footer must never cost the whole page.
   const t=new Date(d.generated);
+  const band = Array.isArray(d.depth_range_m)
+    ? `${d.depth_range_m[0]}–${d.depth_range_m[1]} m` : "unknown";
+  const wts = Object.entries(d.weights || {})
+    .map(([k,v])=>k+" "+v).join(" · ") || "defaults";
+  // A point forecast has no raster, so bathymetry_native_m and
+  // grid_resolution_m are null and printed as "~null m · grid null m".
+  const bathy = d.bathymetry_native_m == null
+    ? `Bathymetry: ${d.bathymetry_provider || "none"} — press Scan structure to fetch it`
+    : `Bathymetry ${d.bathymetry_provider} ~${d.bathymetry_native_m} m`
+      + (d.grid_resolution_m != null ? ` · grid ${d.grid_resolution_m} m` : "");
   $("#stamp").innerHTML =
-    `Updated ${t.toLocaleString()} · depth band ${d.depth_range_m[0]}–${d.depth_range_m[1]} m<br>
-     Weights: ${Object.entries(d.weights).map(([k,v])=>k+" "+v).join(" · ")}<br>
+    `Updated ${t.toLocaleString()} · depth band ${band}<br>
+     Weights: ${wts}<br>
      Water temp: ${d.temp_source || "unknown"}<br>
-     Bathymetry ${d.bathymetry_provider} ~${d.bathymetry_native_m} m · grid ${d.grid_resolution_m} m · conditions Open-Meteo. Model output, not a chart. Check the
+     ${bathy} · conditions Open-Meteo. Model output, not a chart. Check the
      rules and the protected areas before you get in.`;
 }
+
+// Deep links. This used to be registered INSIDE renderAll with {once:true},
+// so a fresh listener was added on every render and the ones from earlier
+// renders were still queued: after four map loads a single back-button press
+// ran four handlers, each calling load(). Register it once, at module level.
+addEventListener("hashchange",()=>{
+  const want=(location.hash||"").replace("#","");
+  if(!want || !INDEX) return;
+  if(want.startsWith("@")){
+    const [la,lo]=want.slice(1).split(",").map(Number);
+    if(isFinite(la)&&isFinite(lo)&&(!POINT||POINT.lat!==la||POINT.lon!==lo))
+      loadPoint(la,lo);
+    return;
+  }
+  if(want!==REGION && INDEX.regions.some(r=>r.id===want)){
+    POINT=null; if(ptMarker){map.removeLayer(ptMarker); ptMarker=null;}
+    REGION=want; sel=null;
+    if(overlay){map.removeLayer(overlay); overlay=null;}
+    load();
+  }
+});
 
 // Vertical wheel scrolls the species strip horizontally when it overflows.
 $("#species").addEventListener("wheel",e=>{
@@ -1404,7 +1567,13 @@ $("#f_here").addEventListener("click",()=>{
 });
 
 function initLog(d){
-  $("#f_date").value=new Date().toISOString().slice(0,10);
+  // The user's own calendar day, not UTC. toISOString() is UTC, so anyone
+  // logging an evening dive west of Greenwich — or a pre-dawn one east of
+  // it — got the wrong date prefilled, which then went into dive_log.csv
+  // and quietly misaligned the calibration against the conditions series.
+  const n=new Date();
+  $("#f_date").value=`${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,"0")}`
+                   + `-${String(n.getDate()).padStart(2,"0")}`;
   $("#f_viz").value=Math.round(d.now.visibility_m);
   $("#f_wind").value=d.now.wind_from_deg;
   $("#f_species").innerHTML=((d.days&&d.days[0]&&d.days[0].species)||d.species||[])
@@ -1412,11 +1581,21 @@ function initLog(d){
   buildRow();
 }
 
-$("#refresh").addEventListener("click",load);
+// In point mode there is no REGION, so the old unconditional load() built
+// the URL "data/null/latest.json", 404ed, and told the user there was no
+// forecast for null — from a button whose whole job is to get a fresher
+// one. Refresh the thing that is actually on screen.
+$("#refresh").addEventListener("click",()=>{
+  if(POINT) loadPoint(POINT.lat, POINT.lon); else load();
+});
+
+// Redrawing the gradient needs the series that is already in memory. Going
+// back to the network for it re-fetched a region file that does not exist in
+// point mode and, in region mode, could repaint from a cached older payload
+// than the one on screen. DATA is the payload being displayed.
 addEventListener("resize",()=>{
-  const el=$("#vgrad");
-  if(el.width) fetch(dataUrl("latest.json"),{cache:"force-cache"})
-    .then(r=>r.json()).then(d=>drawVerdictGradient(d.series,d.now_index)).catch(()=>{});
+  if(!DATA || !DATA.series || !$("#vgrad").width) return;
+  drawVerdictGradient(DATA.series, DATA.now_index);
 });
 load();
 </script>
