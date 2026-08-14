@@ -22,7 +22,7 @@ const GMRT = "https://www.gmrt.org/services/GridServer";
 const BATHY_CACHE = "bathy-v1";
 
 export const defaults = {
-  radius_km: 30,          // half-width of the box around the tapped point
+  width_km: 30,           // the scanned box is this many km ACROSS
   cell_m: 200,            // working grid; GMRT resolves ~100 m at best
   // Working depth band, matching depth.min_m / best_m / max_m in config.json.
   // The scan used to top out at 30 m while every region map stopped at 24,
@@ -37,15 +37,30 @@ export const defaults = {
   // Cosmetic only: how far the colour wash is held back from any detected
   // shoreline, in metres. See dilateLand()/toDataURL().
   land_buffer_m: 220,
+  // Shelter's pull on a SPECIES map, matching weights.shelter in
+  // config.json. Kept separate from w_shelter above, which is the
+  // structure map's own normalised weight.
+  species_shelter_weight: 0.3,
 };
 
 /* ---------------------------------------------------------------- fetching */
 
-export function boxAround(lat, lon, radiusKm){
-  const dLat = radiusKm / 111.32;
-  const dLon = radiusKm / (111.32 * Math.cos(lat * Math.PI / 180));
-  return {lat_min: lat - dLat, lat_max: lat + dLat,
-          lon_min: lon - dLon, lon_max: lon + dLon};
+/** A square box `widthKm` ACROSS, centred on the point.
+ *
+ *  This took a radius before, so "50 km" scanned a box 100 km on a side —
+ *  four times the area anyone reading the menu expected, and a visibly
+ *  enormous jump when the map fitted itself to the result. The caller now
+ *  passes the width it means and gets a box that size.
+ *
+ *  Longitude is clamped rather than wrapped: a box that straddles the
+ *  antimeridian would confuse every consumer downstream, and none of the
+ *  scan sizes offered can reach it from anywhere you would dive. */
+export function boxAround(lat, lon, widthKm){
+  const half = widthKm / 2;
+  const dLat = half / 111.32;
+  const dLon = half / (111.32 * Math.max(0.05, Math.cos(lat * Math.PI / 180)));
+  return {lat_min: Math.max(-89.9, lat - dLat), lat_max: Math.min(89.9, lat + dLat),
+          lon_min: Math.max(-180, lon - dLon), lon_max: Math.min(180, lon + dLon)};
 }
 
 /** ArcInfo ASCII grid — six header lines then rows, north to south. */
@@ -180,11 +195,15 @@ const blur = (src, nx, ny, r) =>
   boxBlur(boxBlur(boxBlur(src, nx, ny, r), nx, ny, r), nx, ny, r);
 
 /** Keep only water reachable from the deepest cell — kills inland lakes,
- *  river valleys and marina basins without needing a full labelling pass. */
-function openSea(land, nx, ny, depth){
+ *  river valleys and marina basins without needing a full labelling pass.
+ *
+ *  `blocked`, when given, is an extra wall the flood cannot cross: the
+ *  rasterised OpenStreetMap coastline. See coastlineMask(). */
+function openSea(land, nx, ny, depth, blocked){
+  const wall = i => land[i] || (blocked && blocked[i]);
   let seed = -1, deepest = -Infinity;
   for(let i = 0; i < land.length; i++)
-    if(!land[i] && depth[i] > deepest){ deepest = depth[i]; seed = i; }
+    if(!wall(i) && depth[i] > deepest){ deepest = depth[i]; seed = i; }
   const keep = new Uint8Array(land.length);
   if(seed < 0) return keep;
   const stack = [seed]; keep[seed] = 1;
@@ -194,14 +213,80 @@ function openSea(land, nx, ny, depth){
       const ny2 = y + dy, nx2 = x + dx;
       if(ny2 < 0 || ny2 >= ny || nx2 < 0 || nx2 >= nx) continue;
       const j = ny2 * nx + nx2;
-      if(!land[j] && !keep[j]){ keep[j] = 1; stack.push(j); }
+      if(!wall(j) && !keep[j]){ keep[j] = 1; stack.push(j); }
     }
   }
   return keep;
 }
 
-/** Static half: everything derivable from bathymetry alone. */
-export function buildTerrain(grid, o = defaults){
+/** The real coastline, from OpenStreetMap.
+ *
+ *  This exists because bathymetry alone cannot answer "is this land". A
+ *  global grid cell is 100-450 m across and it reports the AVERAGE of what
+ *  is under it, so any strip of land narrower than a cell or two averages
+ *  out to a negative elevation and is classified as perfectly good diving
+ *  water. The Ria Formosa barrier islands off Faro are 200-600 m wide, and
+ *  that is exactly what happened there: the score wash and the depth
+ *  contours were painted straight across the beach, the dunes and the
+ *  lagoon behind them, because as far as the depth grid was concerned that
+ *  was 8 m of open sea.
+ *
+ *  No amount of buffering the bathymetric mask fixes that — the mask was
+ *  not merely a bit small, it was absent. OSM's `natural=coastline` ways are
+ *  a genuine vector shoreline at a few metres' accuracy, they are free and
+ *  CORS-enabled through the same Overpass endpoint the wreck layer already
+ *  uses, and they are the correct authority for this one question.
+ *
+ *  Returns an array of polylines, each an array of [lon, lat]. */
+export async function fetchCoastline(box){
+  const b = `${box.lat_min},${box.lon_min},${box.lat_max},${box.lon_max}`;
+  const q = `[out:json][timeout:60];way["natural"="coastline"](${b});out geom;`;
+  let res;
+  try{
+    res = await fetch(OVERPASS, {method: "POST", body: "data=" + encodeURIComponent(q)});
+  }catch(e){
+    throw new Error("Overpass could not be reached for the coastline");
+  }
+  if(!res.ok) throw new Error(`Overpass returned HTTP ${res.status} for the coastline`);
+  const doc = await res.json();
+  const lines = [];
+  for(const el of doc.elements || []){
+    if(!el.geometry || el.geometry.length < 2) continue;
+    lines.push(el.geometry.map(p => [p.lon, p.lat]));
+  }
+  return lines;
+}
+
+/** Burn the coastline polylines onto the grid as an impassable wall.
+ *
+ *  Sampled at half-cell steps so a segment running diagonally cannot slip
+ *  between two cells and leave a hole for the flood fill to escape through,
+ *  which is the one failure mode that would matter — a single gap lets the
+ *  sea leak inland and the mask becomes worse than useless. */
+function coastlineMask(nx, ny, lat0, lon0, cell, cellLon, lines){
+  const blocked = new Uint8Array(nx * ny);
+  const put = (x, y) => {
+    if(x >= 0 && x < nx && y >= 0 && y < ny) blocked[y * nx + x] = 1;
+  };
+  for(const line of lines){
+    for(let k = 1; k < line.length; k++){
+      const ax = (line[k-1][0] - lon0) / cellLon, ay = (line[k-1][1] - lat0) / cell;
+      const bx = (line[k][0]   - lon0) / cellLon, by = (line[k][1]   - lat0) / cell;
+      const steps = Math.max(1, Math.ceil(2 * Math.max(Math.abs(bx-ax), Math.abs(by-ay))));
+      for(let s = 0; s <= steps; s++){
+        const t = s / steps;
+        put(Math.round(ax + (bx-ax)*t), Math.round(ay + (by-ay)*t));
+      }
+    }
+  }
+  return blocked;
+}
+
+/** Static half: everything derivable from bathymetry alone.
+ *
+ *  `coast` is the optional OSM coastline from fetchCoastline(). Passing it
+ *  is what stops a sub-cell barrier island being scored as open water. */
+export function buildTerrain(grid, o = defaults, coast = null){
   const {nx, ny, elev, cell, lat0, lon0} = grid;
   const cellLon = grid.cellLon ?? cell;
   const latMid = lat0 + (ny / 2) * cell;
@@ -214,8 +299,34 @@ export function buildTerrain(grid, o = defaults){
     land[i] = (!isFinite(e) || e >= 0) ? 1 : 0;
     depth[i] = land[i] ? NaN : -e;
   }
-  const sea = openSea(land, nx, ny, depth);
-  for(let i = 0; i < nx * ny; i++) if(!sea[i]) land[i] = 1;
+
+  // Flood the sea inward from the deepest cell. With a coastline supplied
+  // the shoreline is a wall, so anything the sea cannot reach across it —
+  // barrier islands, spits, lagoons, harbour basins — comes out as land
+  // however deep the bathymetry claims it is.
+  let coastUsed = false;
+  const bathyWater = land.reduce((a, v) => a + (v ? 0 : 1), 0);
+  if(coast && coast.length){
+    const blocked = coastlineMask(nx, ny, lat0, lon0, cell, cellLon, coast);
+    const sea2 = openSea(land, nx, ny, depth, blocked);
+    let kept = 0;
+    for(let i = 0; i < nx * ny; i++) if(sea2[i]) kept++;
+    // Sanity gate. Overpass clips ways at the bbox, so a coastline can
+    // arrive with an open end; if the wall has a hole the fill leaks and we
+    // are no worse off than before, but if the box is mostly enclosed the
+    // fill can instead be strangled down to a puddle. Refusing the mask
+    // when it would delete most of the sea keeps a bad fetch from turning
+    // the whole map to land — the failure that would actually cost a dive.
+    if(kept > 0.2 * bathyWater){
+      for(let i = 0; i < nx * ny; i++) if(!sea2[i]) land[i] = 1;
+      coastUsed = true;
+    }
+  }
+  if(!coastUsed){
+    const sea = openSea(land, nx, ny, depth);
+    for(let i = 0; i < nx * ny; i++) if(!sea[i]) land[i] = 1;
+  }
+  for(let i = 0; i < nx * ny; i++) if(land[i]) depth[i] = NaN;
 
   // Fill land with the local median-ish value so the coast does not read as a
   // cliff in the derivatives.
@@ -251,7 +362,59 @@ export function buildTerrain(grid, o = defaults){
       Math.min(1, (d - o.depth_min_m) / Math.max(bLo - o.depth_min_m, 1e-6)),
       Math.min(1, (o.depth_max_m - d) / Math.max(o.depth_max_m - bHi, 1e-6))));
   }
-  return {...grid, cellLon, land, depth, relief, slope, dfit, dyM, dxM, latMid};
+  return {...grid, cellLon, land, depth, relief, slope, dfit, dyM, dxM, latMid,
+          coastUsed};
+}
+
+/** Species depth envelope, intersected with what you can actually dive.
+ *  Mirrors species_depth_fit() in fish_finder.py. */
+function speciesDepthFit(T, sp, o){
+  const n = T.nx * T.ny;
+  const out = new Float32Array(n);
+  const lo = Math.max(sp.depth_m[0], o.depth_min_m);
+  const hi = Math.min(sp.depth_m[1], o.depth_max_m);
+  if(hi <= lo) return out;                      // dives shallower than it lives
+  const blo = Math.min(Math.max(sp.depth_best_m[0], lo), hi);
+  const bhi = Math.max(Math.min(sp.depth_best_m[1], hi), lo);
+  for(let i = 0; i < n; i++){
+    const d = T.depth[i];
+    if(T.land[i] || !isFinite(d)) continue;
+    out[i] = Math.max(0, Math.min(
+      Math.min(1, (d - lo) / Math.max(blo - lo, 1e-9)),
+      Math.min(1, (hi - d) / Math.max(hi - bhi, 1e-9))));
+  }
+  return out;
+}
+
+/** Where THIS species should be, not where structure is in general.
+ *
+ *  Mirrors species_spatial_score() in fish_finder.py so a scanned point and
+ *  a precomputed region answer the same question the same way: reweight
+ *  relief and slope by what the animal actually associates with, keep
+ *  shelter at its configured pull because that is about whether YOU can
+ *  hunt rather than about the fish, then gate on the species' own depth
+ *  envelope intersected with your working depth band.
+ *
+ *  Takes the shelter and wreck fields already computed by score(), so
+ *  switching target costs no extra fetch and no re-tracing of fetch rays. */
+export function speciesScore(T, sp, shelter, wreck, o = defaults){
+  const n = T.nx * T.ny;
+  const r = sp.relief_affinity ?? 0.5, sl = sp.slope_affinity ?? 0.5;
+  let denom = r + sl;
+  const hasWreck = !!wreck;
+  if(hasWreck) denom += 1;
+  const ws = o.species_shelter_weight ?? 0.3;
+  const dfit = speciesDepthFit(T, sp, o);
+  const out = new Float32Array(n);
+  for(let i = 0; i < n; i++){
+    if(T.land[i]) continue;
+    let parts = r * T.relief[i] + sl * T.slope[i];
+    if(hasWreck) parts += wreck[i];
+    const structure = parts / Math.max(denom, 1e-9);
+    const v = (1 - ws) * structure + ws * shelter[i];
+    out[i] = Math.max(0, Math.min(1, v * dfit[i]));
+  }
+  return out;
 }
 
 /** Dynamic half: fetch traced from wherever the wind and swell are today. */

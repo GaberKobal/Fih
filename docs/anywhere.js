@@ -139,9 +139,16 @@ function speciesDayFactors(sp, sst, vizScore, date, cfg, legalPack){
                : pref === "murky" ? 1 - 0.65 * vizScore
                : 0.55 + 0.45 * vizScore;
   return {
-    id: sp.id, name_en: sp.name_en || sp.common, name_local: sp.name_local,
+    id: sp.id, name_en: sp.name_en || sp.common, common: sp.common,
+    name_local: sp.name_local,
     scientific: sp.scientific, note: sp.note, viz_pref: pref,
-    depth_best_m: sp.depth_best_m,
+    // Carried through so the client-side structure scan can draw a map for
+    // THIS species — speciesScore() in structure.js needs the affinities
+    // and the full depth envelope, not just the preferred band. Without
+    // them, selecting a target in point mode could only change the text.
+    depth_best_m: sp.depth_best_m, depth_m: sp.depth_m,
+    relief_affinity: sp.relief_affinity, slope_affinity: sp.slope_affinity,
+    substrate: sp.substrate, wary: sp.wary,
     temp_fit: +tempFit.toFixed(3), viz_fit: +vizFit.toFixed(3),
     season_fit: seasonFit, temp_at_depth_c: +tAt.toFixed(1),
     today: +(tempFit * seasonFit * vizFit).toFixed(3),

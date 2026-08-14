@@ -8,7 +8,7 @@
 //   tiles   cache-first with a cap - map tiles never change and are the
 //           slowest thing on a bad connection
 
-const VERSION = "v19";
+const VERSION = "v20";
 const SHELL = `shell-${VERSION}`;
 const DATA = `data-${VERSION}`;
 const TILES = "tiles";
