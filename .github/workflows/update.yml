@@ -36,7 +36,12 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # Every region in regions.json is enabled now, and a region that has
+    # never been computed has to download its bathymetry first. That happens
+    # once, then the cache below carries it, but the first run after adding
+    # regions is long and a timeout here loses the WHOLE run: index.json is
+    # written at the end, so a kill leaves the site on yesterday's data.
+    timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4
 
