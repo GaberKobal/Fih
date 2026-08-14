@@ -985,6 +985,14 @@ OVERPASS_MIRRORS = [
 ]
 
 
+# Overpass gives each client a small number of concurrent query slots — two,
+# typically — and hands out 429s beyond that. Six workers each asking for a
+# coastline at once would spend most of its budget being refused, so the
+# whole process is held to two in flight regardless of worker count. The
+# other workers are computing while they wait, so this costs almost nothing.
+_OVERPASS_SLOTS = threading.Semaphore(2)
+
+
 def overpass_query(q, timeout=75, deadline_s=200):
     """POST one Overpass query, walking the mirrors once each.
 
@@ -1001,21 +1009,22 @@ def overpass_query(q, timeout=75, deadline_s=200):
     """
     started = time.monotonic()
     last = None
-    for url in OVERPASS_MIRRORS:
-        if time.monotonic() - started > deadline_s:
-            break
-        try:
-            req = urllib.request.Request(
-                url, data=urllib.parse.urlencode({"data": q}).encode(),
-                headers={"User-Agent": USER_AGENT})
-            with urllib.request.urlopen(req, timeout=timeout) as r:
-                return json.loads(r.read())
-        except urllib.error.HTTPError as e:
-            last = e
-            if e.code not in (429, 502, 503, 504):
-                raise                      # a real error, not congestion
-        except Exception as e:
-            last = e
+    with _OVERPASS_SLOTS:
+        for url in OVERPASS_MIRRORS:
+            if time.monotonic() - started > deadline_s:
+                break
+            try:
+                req = urllib.request.Request(
+                    url, data=urllib.parse.urlencode({"data": q}).encode(),
+                    headers={"User-Agent": USER_AGENT})
+                with urllib.request.urlopen(req, timeout=timeout) as r:
+                    return json.loads(r.read())
+            except urllib.error.HTTPError as e:
+                last = e
+                if e.code not in (429, 502, 503, 504):
+                    raise                  # a real error, not congestion
+            except Exception as e:
+                last = e
     raise last or RuntimeError("no Overpass mirror answered in time")
 
 
@@ -2733,6 +2742,35 @@ def main():
         + ", ".join(r["id"] for r in chosen[:12])
         + (f" … and {len(chosen) - 12} more" if len(chosen) > 12 else ""))
 
+    # First, before anything can go wrong: the point model's constants.
+    write_model(base, regions)
+
+    # index.json is what the app reads to know which coasts exist, and it
+    # used to be written only after every region had finished. A run that
+    # was killed — a workflow timeout, a cancelled job — therefore threw away
+    # every region it had already computed, however many hours in it was.
+    # With a full cold catalogue taking hours that is not a theoretical
+    # risk, so the catalogue is rewritten each time a region lands. It is a
+    # few tens of kB; writing it 264 times costs nothing next to losing the
+    # lot. Partial output is a perfectly good site — it just has fewer
+    # coasts on it.
+    idx_path = ROOT / "docs" / "data" / "index.json"
+    idx_path.parent.mkdir(parents=True, exist_ok=True)
+    idx_lock = threading.Lock()
+
+    def write_index(entries, failures, done=False):
+        payload = {
+            "schema_version": 18,
+            "generated": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
+            "complete": done,
+            "expected": len(chosen),
+            "regions": entries,
+            "failed": failures,
+        }
+        tmp = idx_path.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(payload, indent=1), encoding="utf-8")
+        tmp.replace(idx_path)          # atomic: never a half-written index
+
     def compute(r):
         """One region, start to finish. Runs on a worker thread."""
         log_tag(f"{r['id']}: ")
@@ -2770,39 +2808,53 @@ def main():
     # close to a linear speed-up here without any of the pickling that
     # processes would need. run() writes only into its own region folder and
     # keeps no global state, which is what makes this safe.
-    index, failed = [], []
     t_start = time.time()
     jobs = max(1, min(int(args.jobs), len(chosen)))
-    if jobs == 1:
-        results = []
-        for r in chosen:
-            try:
-                results.append((r, compute(r), None))
-            except Exception as e:
-                results.append((r, None, e))
-    else:
-        from concurrent.futures import ThreadPoolExecutor
-        with ThreadPoolExecutor(max_workers=jobs) as pool:
-            futures = {pool.submit(compute, r): r for r in chosen}
-            results = []
-            for fut, r in futures.items():
-                try:
-                    results.append((r, fut.result(), None))
-                except Exception as e:
-                    results.append((r, None, e))
-    log_tag("")
-
     # Keep the catalogue in the order regions.json declares them, not the
     # order the threads happened to finish in, so the region picker does not
     # reshuffle itself between runs.
     order = {r["id"]: i for i, r in enumerate(chosen)}
-    for r, entry, err in sorted(results, key=lambda x: order[x[0]["id"]]):
-        if err is not None:
-            # One region failing must not take the others down with it.
-            log(f"{r['id']} FAILED: {err.__class__.__name__}: {err}")
-            failed.append(r["id"])
-        else:
-            index.append(entry)
+    results = []
+
+    def landed(r, entry, err):
+        """A region has finished, one way or the other. Publish immediately."""
+        with idx_lock:
+            results.append((r, entry, err))
+            if err is not None:
+                # One region failing must not take the others down with it.
+                log(f"{r['id']} FAILED: {err.__class__.__name__}: {err}")
+            done = sorted(results, key=lambda t: order[t[0]["id"]])
+            write_index([e for _, e, x in done if x is None],
+                        [rr["id"] for rr, _, x in done if x is not None])
+            n = len(results)
+            if n % 10 == 0 or n == len(chosen):
+                bad = sum(1 for _, _, x in results if x is not None)
+                rate = (time.time() - t_start) / n
+                left = (len(chosen) - n) * rate
+                log(f"progress: {n}/{len(chosen)} regions, {bad} failed, "
+                    f"{rate:.1f} s each, ~{left / 60:.0f} min left")
+
+    if jobs == 1:
+        for r in chosen:
+            try:
+                landed(r, compute(r), None)
+            except Exception as e:
+                landed(r, None, e)
+    else:
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        with ThreadPoolExecutor(max_workers=jobs) as pool:
+            futures = {pool.submit(compute, r): r for r in chosen}
+            for fut in as_completed(futures):
+                r = futures[fut]
+                try:
+                    landed(r, fut.result(), None)
+                except Exception as e:
+                    landed(r, None, e)
+    log_tag("")
+
+    ordered = sorted(results, key=lambda x: order[x[0]["id"]])
+    index = [e for _, e, x in ordered if x is None]
+    failed = [r["id"] for r, _, x in ordered if x is not None]
 
     elapsed = time.time() - t_start
     log(f"computed {len(index)} region(s) in {elapsed:.0f} s "
@@ -2812,6 +2864,20 @@ def main():
     if not index:
         raise SystemExit("every region failed - nothing written")
 
+    write_index(index, failed, done=True)
+    log(f"wrote {idx_path} ({len(index)} region(s)"
+        + (f", {len(failed)} failed" if failed else "") + ")")
+
+
+def write_model(base, regions):
+    """The constants the in-browser point model needs.
+
+    Written BEFORE any region is computed. It depends only on config.json
+    and the species/legal packs, never on a forecast, and the app cannot do
+    anything in point mode without it — so a run that is killed part way
+    through should still leave it in place rather than take the whole
+    anywhere-on-Earth half of the app down with it.
+    """
     # "depth" and "weights" join the model constants: the in-browser point
     # model needs the working depth band and the term weights to report the
     # same footer the region maps do, and reading them from here keeps the
@@ -2854,17 +2920,6 @@ def main():
     mpath.parent.mkdir(parents=True, exist_ok=True)
     mpath.write_text(json.dumps(model, indent=1), encoding="utf-8")
     log(f"wrote {mpath} (constants for the in-browser model)")
-
-    idx_path = ROOT / "docs" / "data" / "index.json"
-    idx_path.parent.mkdir(parents=True, exist_ok=True)
-    idx_path.write_text(json.dumps({
-        "schema_version": 18,
-        "generated": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
-        "regions": index,
-        "failed": failed,
-    }, indent=1), encoding="utf-8")
-    log(f"wrote {idx_path} ({len(index)} region(s)"
-        + (f", {len(failed)} failed" if failed else "") + ")")
 
 
 if __name__ == "__main__":
