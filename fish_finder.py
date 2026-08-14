@@ -1190,7 +1190,23 @@ def visibility_series(h, cfg):
     stir = decay_memory(hs ** 3, c["wave_tau_h"])
     plume = decay_memory(pr, c["rain_tau_h"])
 
-    turbidity = (c["wave_weight"] * norm(stir, 0.0, c["wave_ref_hs"] ** 3)
+    # Baseline turbidity: what the water carries when NOTHING has happened.
+    #
+    # Without this the model starts from perfectly clear water and only ever
+    # subtracts, so a calm dry day scored turbidity 0.003 and visibility
+    # pinned at viz_max_m - the ceiling - every single time. That is why the
+    # number always looked optimistic: it was not a forecast, it was the
+    # maximum, reported whenever there had been no recent swell or rain.
+    #
+    # Real coastal water is never optically clean. There is always plankton,
+    # always some resuspension from tidal and wind-driven currents, always
+    # river and land input, and on a shallow shelf always fine sediment that
+    # never fully settles. baseline is that floor, 0-1, and it is the single
+    # most region-specific number in this file: a turbid northern Adriatic
+    # shelf and a Cycladic drop-off are not the same water. Override it per
+    # region in regions.json.
+    turbidity = (float(c.get("baseline", 0.0))
+                 + c["wave_weight"] * norm(stir, 0.0, c["wave_ref_hs"] ** 3)
                  + c["rain_weight"] * norm(plume, 0.0, c["rain_ref_mm_per_h"]))
     viz = np.clip(1.0 - turbidity, 0.0, 1.0)
     # rough metres, for a number you can actually reason about
@@ -1762,6 +1778,25 @@ def find_spots(score, lats, lons, depth_m, terms, cfg, limit=None):
     sep_cells = max(1, int(cfg["min_spot_separation_m"] / cfg["grid_resolution_m"]))
     size = 2 * sep_cells + 1
     peaks = (score >= maximum_filter(score, size=size)) & (score > cfg["min_spot_score"])
+
+    # Two hard gates that do not depend on the score field being right. A
+    # waypoint on the beach - or in the street behind it - is the most
+    # damaging output this produces, and it stayed reachable whenever the
+    # land mask was wrong: a coarse grid over a sandy shore averages the
+    # first few hundred metres of town to a negative elevation, so those
+    # cells read as water at a good depth and won the local-maximum test.
+    # The overlay was already held back by overlay.land_buffer_m; the spots
+    # were not, so they marched inland on their own.
+    # depth_m is NaN exactly where the land mask is set (see run()), so the
+    # mask is recoverable here without threading another argument through
+    # every call site.
+    wet = np.isfinite(depth_m)
+    buf_m = float((cfg.get("overlay") or {}).get("land_buffer_m", 200.0))
+    if buf_m > 0 and (~wet).any():
+        clear = distance_transform_edt(wet) * cfg["grid_resolution_m"]
+        peaks &= clear >= buf_m
+    peaks &= wet & (np.nan_to_num(depth_m, nan=-1.0) >= cfg["depth"]["min_m"])
+
     ys, xs = np.nonzero(peaks)
     order = np.argsort(-score[ys, xs])
     ys, xs = ys[order], xs[order]

@@ -63,15 +63,18 @@
     "window_hours": 3
   },
   "visibility": {
+    "baseline": 0.35,
     "wave_tau_h": 22.0,
     "rain_tau_h": 40.0,
-    "wave_ref_hs": 1.4,
+    "wave_ref_hs": 1.0,
     "rain_ref_mm_per_h": 1.2,
     "wave_weight": 0.35,
     "rain_weight": 0.65,
     "viz_min_m": 1.0,
     "viz_max_m": 11.0,
-    "_note": "Checked against 6 logged dives Aug 2026: predicted 12-13 m while actual ran 5-10 m, correlation r=+0.07. This model is NOT yet predictive. viz_max lowered and the wave term demoted; the real fix is calibrate.py --fit-viz once ~15 dives are logged."
+    "_note": "Checked against 6 logged dives Aug 2026: predicted 12-13 m while actual ran 5-10 m, correlation r=+0.07. This model is NOT yet predictive.",
+    "_baseline_note": "THE FIX FOR 'VISIBILITY IS ALWAYS OVERESTIMATED'. Turbidity used to start at zero, so with no recent swell or rain the model reported viz_max_m - the ceiling - on every calm dry day. It was not forecasting 11 m, it was reporting the maximum. baseline (0-1) is what the water carries when nothing has happened: plankton, current-driven resuspension, river and land input, fine sediment that never fully settles. At 0.35 a flat calm day now reads about 7.5 m instead of 11, 0.6 m of swell about 6 m, and 1 m of swell about 4 m - which is where the dive log actually sits.",
+    "_tuning_note": "baseline is the most region-specific number in this file. A turbid north Adriatic shelf and a Cycladic drop-off are not the same water, so the clear-water regions override it downward in regions.json. wave_ref_hs was also lowered 1.4 -> 1.0: cubed and normalised against 1.4 m, anything under about 0.8 m of swell barely registered at all, which is wrong on a shallow sandy shelf where even short chop lifts sediment. The real fix for all of this is calibrate.py --fit-viz once ~15 dives are logged; it writes visibility_correction to weights.json and overrides these guesses with a fit."
   },
   "workability": {
     "hs_good_m": 0.25,

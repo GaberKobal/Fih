@@ -105,19 +105,23 @@ Flip `enabled` to add one. Each costs roughly 600 KB of output and 5 seconds
 of compute per day, and the region picker in the app doubles as a "where is
 diveable today" view, sorted best-first within each country.
 
-**Enabling a region is what improves the species list.** Point mode covers
-conditions and structure anywhere on Earth, but the species it names come
-from `regionContaining()` in `docs/index.html`, and that only sees regions
-that actually ran — enabled ones. Outside every enabled region the app falls
-back to the coarse ocean-basin classifier in `BIOME_RULES`, which is a
-reference list for that stretch of ocean rather than a pack tuned to the
-coast, and which deliberately carries no legal sizes or seasons at all. So
-enabling the coast you actually dive is the single change that most improves
-what the app tells you about fish there.
+**Clicking a region in the app does not enable it, and cannot.** The app
+renders precomputed output, so a region that has never run has nothing to
+show and would only say "no forecast yet". `enabled` is read by the daily
+GitHub Actions job, not by the browser.
 
-Enabled now: `novigrad`, `cascais`, `faro-ria-formosa`. Twenty-seven more are
-defined and ready — Portuguese Atlantic, Spanish Mediterranean and Atlantic,
-Italy, Greece, Macaronesia and the worldwide set — each one line away.
+**Every region in `regions.json` is therefore enabled** — all 55. Budget
+roughly 600 KB and a few seconds each, so the artifact is larger and the run
+is longer; `timeout-minutes` in the workflow is 180 to match. The bathymetry
+cache means only the first run after adding a region is slow.
+
+**That is also what improves the species list.** Point mode covers conditions
+and structure anywhere on Earth, but the species it names come from
+`regionContaining()` in `docs/index.html`, and that only sees regions that
+actually ran. Outside every one of them the app falls back to the coarse
+ocean-basin classifier in `BIOME_RULES` — a reference list for that stretch
+of ocean rather than a pack tuned to the coast, carrying no legal sizes or
+seasons at all.
 
 **Coverage is deliberately uneven, and the app says so.** Three things are
 region-specific and do not travel:
@@ -171,9 +175,27 @@ right detector for the tegnùe-style biogenic outcrops that hold fish on an
 otherwise flat north Adriatic shelf.
 
 **Visibility.** The first version had no notion of it, which for this coast is
-like a ski forecast with no snow. Viz is modelled as a decaying memory of wave
-stirring (`Hs³`, ~22 h e-folding time) and of rainfall and river input
-(~40 h). That is the number that decides whether the day is worth the drive.
+like a ski forecast with no snow. Viz is modelled as a **baseline** plus a
+decaying memory of wave stirring (`Hs³`, ~22 h e-folding time) and of rainfall
+and river input (~40 h). That is the number that decides whether the day is
+worth the drive.
+
+The baseline is not decoration. Without it turbidity started at zero, so with
+no recent swell or rain the model reported `viz_max_m` — the ceiling — on
+every calm dry day. It was not forecasting 11 m, it was reporting the maximum,
+which is why the number always looked optimistic. Real coastal water is never
+optically clean: there is always plankton, always current-driven
+resuspension, always land input, and on a shallow shelf always fine sediment
+that never fully settles. At the default 0.35 a flat calm day reads about
+7.5 m instead of 11, a metre of swell about 4.7 m, and a wet day about 1 m —
+which is where the dive log actually sits.
+
+`visibility.baseline` is the most region-specific number in the model, so
+`regions.json` overrides it per coast: 0.08 in the Gulf of Aqaba, 0.12 around
+Malta and Ibiza, 0.35 on the north Adriatic shelf it was tuned on, 0.5 in
+Brittany. `wave_ref_hs` also came down from 1.4 to 1.0 — cubed and normalised
+against 1.4 m, anything under about 0.8 m of swell barely registered, which
+is wrong on a sandy shelf where short chop lifts sediment.
 
 **Shelter.** For each cell the model traces the upwind ray across the land
 mask until it hits shore. Short fetch means flat, workable, often clearer
@@ -348,6 +370,23 @@ to turn a whole region into land.
 and per scan whether the coastline was actually applied, because "the land
 edge is bathymetry only" is something you want to know before trusting a mark
 near the shore.
+
+**The coastline is fetched in the same Overpass request as the wrecks**, and
+that matters as much as the data does. They used to be two POSTs to the same
+public endpoint seconds apart, and Overpass rate-limits per client: the second
+routinely came back 429. The coastline went first and its failure was
+swallowed, so the common outcome was a scan with wrecks but no land mask —
+which is the state in which model spots march up the beach and into the town
+behind it. One request cannot rate-limit itself, and there are three mirrors
+behind it now.
+
+**Spots have their own gates, independent of all of the above.** A waypoint
+on the beach is the most damaging thing this can output, so `findSpots()` on
+both sides refuses any mark within `overlay.land_buffer_m` of land and any
+mark without a real depth at or past `depth.min_m`. The colour wash was
+already held back; the spots were not, so they marched inland on their own
+whenever the land mask was wrong. Now they cannot, even with no coastline at
+all.
 
 ## Wrecks
 
