@@ -59,6 +59,7 @@ import json
 import math
 import os
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -90,6 +91,20 @@ EARTH_R = 6371008.8
 # --------------------------------------------------------------------------
 # small utilities
 # --------------------------------------------------------------------------
+
+# Windows consoles default to cp1252, which cannot encode the region names in
+# regions.json - "Split and Brac channel" is spelled with a c-caron, Kvarner
+# with an em dash. Printing one raised UnicodeEncodeError and killed the run
+# PART WAY THROUGH, after several regions had already written their output,
+# leaving docs/data/ half updated and index.json never written at all. A log
+# line must never be able to do that, so the streams are switched to UTF-8
+# and told to substitute anything they still cannot represent.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass          # not a real stream (piped, captured, very old Python)
+
 
 def log(msg: str) -> None:
     print(f"[{dt.datetime.now(dt.timezone.utc):%H:%M:%S}] {msg}", flush=True)
@@ -128,7 +143,7 @@ def haversine_m(lat1, lon1, lat2, lon2):
 # --------------------------------------------------------------------------
 
 def load_regions(path=None):
-    doc = json.loads((path or (ROOT / "regions.json")).read_text())
+    doc = json.loads((path or (ROOT / "regions.json")).read_text(encoding="utf-8"))
     return doc.get("regions", [])
 
 
@@ -809,7 +824,7 @@ def rasterize_polygons(path_or_gj, lats, lons):
         p = Path(path_or_gj)
         if not p.exists():
             return np.zeros((len(lats), len(lons)), dtype=bool)
-        gj = json.loads(p.read_text())
+        gj = json.loads(p.read_text(encoding="utf-8"))
     else:
         gj = path_or_gj
 
@@ -827,41 +842,126 @@ def rasterize_polygons(path_or_gj, lats, lons):
     return mask
 
 
-OVERPASS_URL = "https://overpass-api.de/api/interpreter"
+# Overpass is a free, shared, volunteer-run service that rate-limits per
+# client. Every region in regions.json is enabled, so a daily run makes one
+# request per region back to back; on a single host most of them come back
+# 429 and the regions silently lose their coastline, their wrecks, or both.
+# These are the public mirrors, all serving the same planet database.
+OVERPASS_MIRRORS = [
+    "https://overpass-api.de/api/interpreter",
+    "https://overpass.kumi.systems/api/interpreter",
+    "https://overpass.private.coffee/api/interpreter",
+]
 
 
-def fetch_coastline(bbox, cfg, region_id):
-    """The real shoreline, from OpenStreetMap's natural=coastline ways.
+def overpass_query(q, attempts=2):
+    """POST one Overpass query, walking the mirrors and backing off.
 
-    Bathymetry cannot answer "is this land". A grid cell reports the average
-    of what is under it, so any strip of land narrower than a cell or two
-    averages to a negative elevation and is scored as good diving water.
-    Barrier islands, spits, breakwaters and reclaimed land all disappear
-    that way, and the colour wash and depth contours get painted across the
-    beach. OSM's coastline is a genuine vector shoreline and is the right
-    authority for this one question. Cached: coastlines do not move.
-
-    Returns a list of polylines, each a list of [lon, lat].
+    Raises only when every mirror has refused on every attempt.
     """
-    cache_file = CACHE / f"coastline_{region_id}.json"
-    if cache_file.exists():
-        return json.loads(cache_file.read_text())
+    last = None
+    for attempt in range(attempts):
+        for url in OVERPASS_MIRRORS:
+            try:
+                req = urllib.request.Request(
+                    url, data=urllib.parse.urlencode({"data": q}).encode(),
+                    headers={"User-Agent": USER_AGENT})
+                with urllib.request.urlopen(req, timeout=180) as r:
+                    return json.loads(r.read())
+            except urllib.error.HTTPError as e:
+                last = e
+                if e.code not in (429, 502, 504):
+                    raise                      # a real error, not congestion
+            except Exception as e:
+                last = e
+        if attempt + 1 < attempts:
+            time.sleep(5 * (attempt + 1))      # let the throttle clear
+    raise last or RuntimeError("no Overpass mirror answered")
 
-    q = (f'[out:json][timeout:120];way["natural"="coastline"]'
-         f'({bbox["lat_min"]},{bbox["lon_min"]},{bbox["lat_max"]},{bbox["lon_max"]});'
-         f'out geom;')
-    req = urllib.request.Request(
-        OVERPASS_URL, data=urllib.parse.urlencode({"data": q}).encode(),
-        headers={"User-Agent": USER_AGENT})
-    with urllib.request.urlopen(req, timeout=180) as r:
-        doc = json.loads(r.read())
 
-    lines = [[[p["lon"], p["lat"]] for p in el["geometry"]]
-             for el in doc.get("elements", [])
-             if len(el.get("geometry") or []) >= 2]
+def fetch_osm_context(bbox, cfg, region_id):
+    """Coastline and wrecks from OpenStreetMap, in ONE request.
+
+    The coastline is here because bathymetry cannot answer "is this land". A
+    grid cell reports the average of what is under it, so any strip of land
+    narrower than a cell or two averages to a negative elevation and is
+    scored as good diving water. Barrier islands, spits, breakwaters and
+    reclaimed land all vanish that way, and the wash, the depth contours and
+    the model spots end up on shore.
+
+    Fetching it together with the wrecks matters as much as the data does.
+    These were two separate POSTs to the same endpoint moments apart, and
+    with 55 regions enabled that is 110 requests per run: the second call
+    routinely came back 429, so a region would get its coastline and lose
+    its wrecks, or the reverse. One request per region cannot rate-limit
+    itself against its own sibling.
+
+    Both halves are cached separately, because they are consumed at
+    different points and neither moves.
+
+    Returns (coastline_lines, wrecks_geojson).
+    """
+    cf = CACHE / f"coastline_{region_id}.json"
+    wf = CACHE / f"wrecks_{region_id}.geojson"
+    if cf.exists() and wf.exists():
+        return (json.loads(cf.read_text(encoding="utf-8")),
+                json.loads(wf.read_text(encoding="utf-8")))
+
+    b = (f'{bbox["lat_min"]},{bbox["lon_min"]},'
+         f'{bbox["lat_max"]},{bbox["lon_max"]}')
+    q = f"""[out:json][timeout:120];
+(
+  way["natural"="coastline"]({b});
+  node["seamark:type"="wreck"]({b});
+  way["seamark:type"="wreck"]({b});
+  node["historic"="wreck"]({b});
+  way["historic"="wreck"]({b});
+  node["seamark:type"="obstruction"]({b});
+);
+out geom tags;"""
+    doc = overpass_query(q)
+
+    lines, feats = [], []
+    for el in doc.get("elements", []):
+        tg = el.get("tags", {}) or {}
+        geom = el.get("geometry") or []
+        if tg.get("natural") == "coastline":
+            if len(geom) >= 2:
+                lines.append([[p["lon"], p["lat"]] for p in geom])
+            continue
+        # `out geom` gives nodes their lat/lon and ways their full geometry,
+        # so a wreck mapped as a way is averaged to a centre here instead of
+        # needing a second `out center` pass. `or` would treat a coordinate
+        # of exactly 0.0 as missing, which drops everything on the Greenwich
+        # meridian and the equator, so test for None.
+        lat, lon = el.get("lat"), el.get("lon")
+        if lat is None and geom:
+            lat = sum(p["lat"] for p in geom) / len(geom)
+            lon = sum(p["lon"] for p in geom) / len(geom)
+        if lat is None or lon is None:
+            continue
+        depth = tg.get("seamark:wreck:depth") or tg.get("depth")
+        try:
+            depth = float(depth) if depth is not None else None
+        except (TypeError, ValueError):
+            depth = None
+        feats.append({
+            "type": "Feature",
+            "geometry": {"type": "Point", "coordinates": [round(lon, 6), round(lat, 6)]},
+            "properties": {
+                "name": tg.get("seamark:name") or tg.get("name") or "wreck",
+                "kind": tg.get("seamark:type") or tg.get("historic") or "wreck",
+                "category": tg.get("seamark:wreck:category"),
+                "depth_m": depth,
+                "osm_id": el.get("id"),
+            },
+        })
+
+    wrecks = {"type": "FeatureCollection", "features": feats}
     CACHE.mkdir(parents=True, exist_ok=True)
-    cache_file.write_text(json.dumps(lines))
-    return lines
+    cf.write_text(json.dumps(lines), encoding="utf-8")
+    wf.write_text(json.dumps(wrecks), encoding="utf-8")
+    return lines, wrecks
 
 
 def coastline_mask(lines, lats, lons):
@@ -896,64 +996,6 @@ def coastline_mask(lines, lats, lons):
     return blocked
 
 
-def fetch_wrecks(bbox, cfg, region_id):
-    """Charted wrecks and artificial reefs from OpenStreetMap via Overpass.
-
-    Worth more than anything else per line of code here: a wreck is the best
-    structure a spearo can be given, it is a point rather than a raster, and
-    it is exactly as useful on a 450 m grid as on a 115 m one. Cached, because
-    wrecks do not move and Overpass is a shared free service.
-    """
-    cache_file = CACHE / f"wrecks_{region_id}.geojson"
-    if cache_file.exists():
-        return json.loads(cache_file.read_text())
-
-    q = f"""[out:json][timeout:90];
-(
-  node["seamark:type"="wreck"]({bbox['lat_min']},{bbox['lon_min']},{bbox['lat_max']},{bbox['lon_max']});
-  way["seamark:type"="wreck"]({bbox['lat_min']},{bbox['lon_min']},{bbox['lat_max']},{bbox['lon_max']});
-  node["historic"="wreck"]({bbox['lat_min']},{bbox['lon_min']},{bbox['lat_max']},{bbox['lon_max']});
-  way["historic"="wreck"]({bbox['lat_min']},{bbox['lon_min']},{bbox['lat_max']},{bbox['lon_max']});
-  node["seamark:type"="obstruction"]({bbox['lat_min']},{bbox['lon_min']},{bbox['lat_max']},{bbox['lon_max']});
-);
-out center tags;"""
-    req = urllib.request.Request(OVERPASS_URL, data=urllib.parse.urlencode({"data": q}).encode(),
-                                 headers={"User-Agent": USER_AGENT})
-    with urllib.request.urlopen(req, timeout=120) as r:
-        doc = json.loads(r.read())
-
-    feats = []
-    for el in doc.get("elements", []):
-        # `or` treats a coordinate of exactly 0.0 as missing, which drops
-        # every wreck on the Greenwich meridian — Brighton, Le Havre, the
-        # whole Gulf of Guinea — and on the equator. Test for None instead.
-        centre = el.get("center") or {}
-        lat = el["lat"] if el.get("lat") is not None else centre.get("lat")
-        lon = el["lon"] if el.get("lon") is not None else centre.get("lon")
-        if lat is None or lon is None:
-            continue
-        tg = el.get("tags", {})
-        depth = tg.get("seamark:wreck:depth") or tg.get("depth")
-        try:
-            depth = float(depth) if depth is not None else None
-        except (TypeError, ValueError):
-            depth = None
-        feats.append({
-            "type": "Feature",
-            "geometry": {"type": "Point", "coordinates": [round(lon, 6), round(lat, 6)]},
-            "properties": {
-                "name": tg.get("seamark:name") or tg.get("name") or "wreck",
-                "kind": tg.get("seamark:type") or tg.get("historic") or "wreck",
-                "category": tg.get("seamark:wreck:category"),
-                "depth_m": depth,
-                "osm_id": el.get("id"),
-            },
-        })
-    gj = {"type": "FeatureCollection", "features": feats}
-    CACHE.mkdir(parents=True, exist_ok=True)
-    cache_file.write_text(json.dumps(gj))
-    return gj
-
 
 def wreck_score(gj, lats, lons, cfg):
     """A soft halo around each charted wreck, tapering over a swimmable radius."""
@@ -979,7 +1021,7 @@ def fetch_seabed_habitat(bbox, cfg):
     """
     cache_file = CACHE / "habitat.geojson"
     if cache_file.exists():
-        return json.loads(cache_file.read_text())
+        return json.loads(cache_file.read_text(encoding="utf-8"))
     params = {
         "service": "WFS",
         "version": "2.0.0",
@@ -994,7 +1036,7 @@ def fetch_seabed_habitat(bbox, cfg):
     url = f"{EMODNET_HABITAT_WFS}?{urllib.parse.urlencode(params)}"
     gj = http_json(url, timeout=180)
     CACHE.mkdir(parents=True, exist_ok=True)
-    cache_file.write_text(json.dumps(gj))
+    cache_file.write_text(json.dumps(gj), encoding="utf-8")
     return gj
 
 
@@ -1492,7 +1534,7 @@ def load_species(cfg):
     if not path.exists():
         log(f"species: {name} not found - running structure only")
         return []
-    doc = json.loads(path.read_text())
+    doc = json.loads(path.read_text(encoding="utf-8"))
     wanted = cfg.get("species_ids")          # null/absent = all of them
     out = [sp for sp in doc.get("species", [])
            if not wanted or sp["id"] in wanted]
@@ -1522,7 +1564,7 @@ def load_legal(cfg):
         log(f"legal: no rules pack for jurisdiction {cc or '(none)'} - "
             "sizes and seasons will not be shown")
         return {}
-    doc = json.loads(path.read_text())
+    doc = json.loads(path.read_text(encoding="utf-8"))
     n = sum(1 for v in doc.get("species", {}).values() if v.get("closed_seasons"))
     log(f"legal: {cc} pack ({doc.get('confidence')}), "
         f"{n} species with a closed season"
@@ -1557,7 +1599,7 @@ def fetch_cmems_profile(lat, lon, cfg):
     cache_file = CACHE / f"cmems_{region}_{dt.date.today().isoformat()}.json"
     if cache_file.exists():
         log("cmems: cache hit for today")
-        return json.loads(cache_file.read_text())
+        return json.loads(cache_file.read_text(encoding="utf-8"))
 
     # The Mediterranean physics product does not cover the Atlantic, Pacific
     # or Indian oceans, so outside its footprint the request came back empty
@@ -1594,7 +1636,7 @@ def fetch_cmems_profile(lat, lon, cfg):
         out = {"depths": [k[0] for k in keep], "temps": [k[1] for k in keep],
                "source": dataset, "fetched": today.isoformat()}
         CACHE.mkdir(parents=True, exist_ok=True)
-        cache_file.write_text(json.dumps(out))
+        cache_file.write_text(json.dumps(out), encoding="utf-8")
         log(f"cmems: profile {out['temps'][0]:.1f} C at "
             f"{out['depths'][0]:.0f} m -> {out['temps'][-1]:.1f} C at "
             f"{out['depths'][-1]:.0f} m")
@@ -1931,7 +1973,7 @@ def write_geojson(spots, path, meta):
             for s in spots
         ],
     }
-    Path(path).write_text(json.dumps(gj, indent=1))
+    Path(path).write_text(json.dumps(gj, indent=1), encoding="utf-8")
     log(f"wrote {path} ({len(spots)} spots)")
 
 
@@ -2047,10 +2089,27 @@ def run(cfg, selftest=False, out_dir=None):
     # Intersect with the real coastline before deciding what is sea. Without
     # it, any land narrower than a cell or two is invisible to the model and
     # gets scored, painted and contoured as open water.
+    #
+    # Coastline AND wrecks come back from one Overpass request here; the
+    # wrecks are held until the scoring section further down. Two requests
+    # per region across 55 regions is 110 in a run, and the second of each
+    # pair was reliably rate-limited.
     coast_used = False
-    if (cfg.get("coastline") or {}).get("enabled", True) and not selftest:
+    osm_wrecks = None
+    if not selftest:
         try:
-            lines = fetch_coastline(bbox, cfg, cfg.get("region_id", "default"))
+            osm_lines, osm_wrecks = fetch_osm_context(
+                bbox, cfg, cfg.get("region_id", "default"))
+        except Exception as e:
+            osm_lines = None
+            log(f"OpenStreetMap: unavailable ({e.__class__.__name__}) - no "
+                "coastline and no wrecks for this region")
+    else:
+        osm_lines = None
+
+    if (cfg.get("coastline") or {}).get("enabled", True) and osm_lines is not None:
+        try:
+            lines = osm_lines
             if lines:
                 blocked = coastline_mask(lines, lats, lons)
                 land_c = open_sea_mask(land | blocked, cfg)
@@ -2069,8 +2128,8 @@ def run(cfg, selftest=False, out_dir=None):
             else:
                 log("coastline: no OSM coastline in this box - all open water?")
         except Exception as e:
-            log(f"coastline: unavailable ({e.__class__.__name__}) - falling back "
-                "to the bathymetric land edge")
+            log(f"coastline: could not be applied ({e.__class__.__name__}) - "
+                "falling back to the bathymetric land edge")
     if not coast_used:
         land = open_sea_mask(land, cfg)
     depth_m = np.where(land, np.nan, -elev_g)
@@ -2147,7 +2206,7 @@ def run(cfg, selftest=False, out_dir=None):
     # one that reaches the log and the app. Correcting the pre-wind-regime
     # value here would just get overwritten by the recompute above and the
     # fit would silently have no effect.
-    vzc = (json.loads((ROOT / "weights.json").read_text()).get("visibility_correction")
+    vzc = (json.loads((ROOT / "weights.json").read_text(encoding="utf-8")).get("visibility_correction")
            if (ROOT / "weights.json").exists() else None)
     if vzc:
         viz_m = np.clip(vzc["scale"] * viz_m + vzc["offset"], 0.3, 40.0)
@@ -2188,7 +2247,7 @@ def run(cfg, selftest=False, out_dir=None):
     weights_cfg = dict(cfg["weights"])
     wpath = ROOT / "weights.json"
     if wpath.exists():
-        fitted = json.loads(wpath.read_text())
+        fitted = json.loads(wpath.read_text(encoding="utf-8"))
         weights_cfg.update(fitted.get("weights", {}))
         log(f"weights: using fitted values from {wpath.name} "
             f"(n={fitted.get('n_dives', '?')}, auc={fitted.get('auc', '?')})")
@@ -2210,19 +2269,20 @@ def run(cfg, selftest=False, out_dir=None):
         log(f"exclusions: {excl.mean():.1%} of the box masked out")
     gates = [afit, cfit, (~excl).astype(float)]
 
+    # Already fetched, in the same Overpass request as the coastline.
     wrecks_gj, wrecks = None, None
-    if (cfg.get("wrecks") or {}).get("enabled", True) and not selftest:
+    if (cfg.get("wrecks") or {}).get("enabled", True) and osm_wrecks is not None:
         try:
-            wrecks_gj = fetch_wrecks(bbox, cfg, cfg.get("region_id", "default"))
+            wrecks_gj = osm_wrecks
             n = len(wrecks_gj["features"])
             if n:
                 wrecks = wreck_score(wrecks_gj, lats, lons, cfg)
                 log(f"wrecks: {n} charted within the box")
             else:
                 log("wrecks: none charted here")
-            (OUT / "wrecks.geojson").write_text(json.dumps(wrecks_gj))
+            (OUT / "wrecks.geojson").write_text(json.dumps(wrecks_gj), encoding="utf-8")
         except Exception as e:
-            log(f"wrecks: unavailable ({e.__class__.__name__}) - continuing without")
+            log(f"wrecks: could not be scored ({e.__class__.__name__}) - continuing without")
 
     habitat = None
     if cfg["habitat"]["enabled"] and not selftest:
@@ -2329,7 +2389,7 @@ def run(cfg, selftest=False, out_dir=None):
     if (cfg.get("contours") or {}).get("enabled", True):
         try:
             gj = depth_contours(depth_m, land, lats, lons, cfg)
-            (OUT / "contours.geojson").write_text(json.dumps(gj))
+            (OUT / "contours.geojson").write_text(json.dumps(gj), encoding="utf-8")
             log(f"wrote {OUT / 'contours.geojson'} "
                 f"({len(gj['features'])} lines at "
                 f"{cfg.get('contours', {}).get('levels_m', [5,10,15,20,30])} m)")
@@ -2406,7 +2466,7 @@ def run(cfg, selftest=False, out_dir=None):
         "spots": spots,
         "species": species_out,
     }
-    (OUT / "latest.json").write_text(json.dumps(payload, indent=1))
+    (OUT / "latest.json").write_text(json.dumps(payload, indent=1), encoding="utf-8")
     log(f"wrote {OUT / 'latest.json'}")
     return payload
 
@@ -2422,7 +2482,7 @@ def main():
                     help="run the whole pipeline on synthetic data, no network")
     args = ap.parse_args()
 
-    base = json.loads(Path(args.config).read_text())
+    base = json.loads(Path(args.config).read_text(encoding="utf-8"))
     regions = load_regions(Path(args.regions))
 
     if args.list:
@@ -2507,7 +2567,7 @@ def main():
     model["species_packs"] = {}
     for name in sorted(species_filenames):
         try:
-            model["species_packs"][name] = json.loads((ROOT / name).read_text())["species"]
+            model["species_packs"][name] = json.loads((ROOT / name).read_text(encoding="utf-8"))["species"]
         except Exception as e:
             log(f"species pack {name} failed to load: {e}")
     model["legal"] = {}
@@ -2519,13 +2579,13 @@ def main():
             legal_files.append(root_pack)
     for f in sorted(legal_files):
         try:
-            model["legal"][f.stem] = json.loads(f.read_text())
+            model["legal"][f.stem] = json.loads(f.read_text(encoding="utf-8"))
         except Exception:
             pass
     model["schema_version"] = 18
     mpath = ROOT / "docs" / "data" / "model.json"
     mpath.parent.mkdir(parents=True, exist_ok=True)
-    mpath.write_text(json.dumps(model, indent=1))
+    mpath.write_text(json.dumps(model, indent=1), encoding="utf-8")
     log(f"wrote {mpath} (constants for the in-browser model)")
 
     idx_path = ROOT / "docs" / "data" / "index.json"
@@ -2535,7 +2595,7 @@ def main():
         "generated": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
         "regions": index,
         "failed": failed,
-    }, indent=1))
+    }, indent=1), encoding="utf-8")
     log(f"wrote {idx_path} ({len(index)} region(s)"
         + (f", {len(failed)} failed" if failed else "") + ")")
 

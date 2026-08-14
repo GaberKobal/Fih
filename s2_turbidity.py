@@ -295,10 +295,10 @@ def main():
         log("no CDSE_CLIENT_ID / CDSE_CLIENT_SECRET in the environment - skipping")
         return
 
-    cfg = json.loads(Path(args.config).read_text())
+    cfg = json.loads(Path(args.config).read_text(encoding="utf-8"))
 
     # Regions each get their own scene and their own output folder.
-    regions = json.loads(Path(args.regions).read_text()).get("regions", [])
+    regions = json.loads(Path(args.regions).read_text(encoding="utf-8")).get("regions", [])
     picked = ([r for r in regions if r["id"] == args.region] if args.region
               else [r for r in regions if r.get("enabled")])
     if not picked:
@@ -362,7 +362,7 @@ def main():
         "fetched": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
     }
     out_dir.mkdir(parents=True, exist_ok=True)
-    (out_dir / "s2_turbidity.json").write_text(json.dumps(out, indent=1))
+    (out_dir / "s2_turbidity.json").write_text(json.dumps(out, indent=1), encoding="utf-8")
     log(f"relative turbidity median {med:.2f}, p90 {p90:.2f}, "
         f"contrast {contrast:.2f} FNU over {n} deep pixels")
     log(f"spread p10 {p10:.2f} to p90 {p90:.2f} - watch this and the median "

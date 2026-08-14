@@ -174,7 +174,7 @@ def main():
         log("no CDSE credentials in the environment - skipping")
         return
 
-    base = json.loads(Path(args.config).read_text())
+    base = json.loads(Path(args.config).read_text(encoding="utf-8"))
     region = next((r for r in ff.load_regions(Path(args.regions))
                    if r["id"] == args.region), None)
     if not region:

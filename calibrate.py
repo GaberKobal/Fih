@@ -135,8 +135,13 @@ def main():
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
 
-    cfg = json.loads(Path(args.config).read_text())
-    rows = list(csv.DictReader(open(args.log)))
+    cfg = json.loads(Path(args.config).read_text(encoding="utf-8"))
+    # Explicit encoding: the dive log carries local species names and note
+    # text, and open() would otherwise decode it with the platform default —
+    # cp1252 on Windows, which cannot read UTF-8 and raises on the first
+    # accented character.
+    with open(args.log, encoding="utf-8") as fh:
+        rows = list(csv.DictReader(fh))
     rows = [r for r in rows if r.get("lat") and r.get("result") not in (None, "")]
     if args.species:
         rows = [r for r in rows if r.get("species", "").strip() == args.species]
@@ -238,7 +243,7 @@ def main():
 
     out["species"] = args.species
     name = f"weights_{args.species}.json" if args.species else "weights.json"
-    (ROOT / name).write_text(json.dumps(out, indent=1))
+    (ROOT / name).write_text(json.dumps(out, indent=1), encoding="utf-8")
     print(f"wrote {ROOT / name}")
 
 
