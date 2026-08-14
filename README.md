@@ -192,9 +192,34 @@ design, and past that the artifact — not the compute — is what stops you.**
 The two changes that lift it are batching the conditions fetch and shipping
 terrain instead of rendered maps; both are in the roadmap below.
 
-Note that only 264 regions' worth of *bathymetry* is cached. Everything else
-is recomputed every run, which is why the warm number is a real 11 minutes
-rather than nothing.
+### What is cached, and why that decides everything
+
+The cold cost is paid **once per region, ever** — but only because three
+things are cached permanently:
+
+| | size per region | refetched |
+| --- | --- | --- |
+| bathymetry grid | ~1,060 KB | never |
+| OSM coastline | ~370 KB | never |
+| charted wrecks | ~1 KB | never |
+| Copernicus temperature profile | small | once a day, if credentials are set |
+| **Open-Meteo conditions** | — | **every run — it is the forecast** |
+
+That is ~1.4 MB a region, so a full 264-region cache is about **386 MB**,
+comfortably inside GitHub's 10 GB per-repository limit.
+
+**The cache key must be unique per run.** `actions/cache` skips its save step
+entirely when the key hits exactly, so keying on `hashFiles('regions.json')`
+had a trap in it: turning a group on through the `FISH_REGIONS` variable
+changes no file, so the key hit exactly, the run downloaded every cold
+bathymetry it needed, threw them away at the end, and did the same thing
+again on the next run — permanently. The key is `github.run_id` now, which
+never hits exactly, so the cache is always written back. `restore-keys:
+bathy-` pulls the most recent previous one.
+
+The "Report output size" step prints the cache contents every run. **If the
+number of cached grids is not growing after you enable a group, the cache is
+not being written and every run is paying full price.**
 
 **Coverage is deliberately uneven, and the app says so.** Three things are
 region-specific and do not travel:
