@@ -221,6 +221,35 @@ The "Report output size" step prints the cache contents every run. **If the
 number of cached grids is not growing after you enable a group, the cache is
 not being written and every run is paying full price.**
 
+`docs/data` is cached alongside it, which is what makes the next section
+possible.
+
+### Editing the page does not recompute the forecast
+
+`docs/data/` is gitignored — it only ever exists as a build artifact — so a
+push had nothing to publish unless the model ran. That meant **a CSS tweak
+recomputed every enabled region**, which is fine at one region and about
+fifteen minutes at 264.
+
+The build now diffs the push. If everything that changed is `docs/index.html`,
+`anywhere.js`, `structure.js`, `sw.js`, `add-region.html`,
+`region-species.json` or `README.md`, it republishes the cached forecast with
+the new page and skips the model entirely — three or four minutes, nearly all
+of it artifact upload and deploy. The log says which forecast it published
+and how old it is, and the next scheduled run refreshes it.
+
+It fails safe in every direction: an unreadable diff, an empty diff, a first
+push on a new branch, or a missing cache all fall through to running the
+model. Anything touching `config.json`, `regions.json`, `species*.json`,
+`exclusions.geojson` or `fish_finder.py` runs it too, because those do change
+the answer.
+
+One thing to know while a long cold run is going: `concurrency` is set to
+`cancel-in-progress`, so pushing during it cancels it. That is no longer
+expensive — `index.json` is written as each region lands, so the regions
+already computed are published and their bathymetry stays cached — but it
+does mean the tail is left for the next run.
+
 **Coverage is deliberately uneven, and the app says so.** Three things are
 region-specific and do not travel:
 
