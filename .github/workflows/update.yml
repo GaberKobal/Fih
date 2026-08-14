@@ -52,12 +52,17 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    # Every region in regions.json is enabled now, and a region that has
-    # never been computed has to download its bathymetry first. That happens
-    # once, then the cache below carries it, but the first run after adding
-    # regions is long and a timeout here loses the WHOLE run: index.json is
-    # written at the end, so a kill leaves the site on yesterday's data.
-    timeout-minutes: 180
+    # A region that has never been computed downloads its bathymetry and
+    # coastline first: ~32 s at 6 workers against ~2.5 s once cached. Turning
+    # on all 264 at once is therefore a 2-3 hour job, and 180 minutes left
+    # only ~17 minutes of headroom at the default worker count.
+    #
+    # A timeout is no longer catastrophic — index.json is rewritten as each
+    # region lands and model.json is written before any of them, so a killed
+    # run leaves a smaller but perfectly good site, and the next run picks up
+    # the cached regions in seconds. Still worth the headroom: the ceiling
+    # for a GitHub-hosted job is 360 minutes.
+    timeout-minutes: 330
     steps:
       - uses: actions/checkout@v4
 
