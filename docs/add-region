@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#071A22">
+<title>Add a region — dive forecast</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" media="print" onload="this.media='all'"
+      href="https://fonts.googleapis.com/css2?family=Nunito+Sans:opsz,wght@6..12,400;6..12,600;6..12,700&display=swap">
+<style>
+  /* Type matches index.html — see the long note there. Monospace survives
+     only in the <pre>, where the JSON block genuinely wants alignment. */
+  :root{
+    --abyss:#071A22; --shelf:#0E2E3A; --shoal:#164657; --line:#1E5163;
+    --chart:#C9DDE3; --sound:#6E93A0; --buoy:#F2B138; --flag:#E4573D; --kelp:#5FBFA0;
+    --sans: "Nunito Sans", ui-rounded, -apple-system, "Segoe UI Variable Text",
+            "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --mono: ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{background:var(--abyss);color:var(--chart);font-family:var(--sans);
+    -webkit-font-smoothing:antialiased;line-height:1.5;
+    display:flex;flex-direction:column}
+  header{padding:12px 16px;border-bottom:1px solid var(--line);background:var(--shelf)}
+  h1{margin:0;font-size:18px;font-weight:700;letter-spacing:-.01em}
+  .eyebrow{font-size:12px;font-weight:700;letter-spacing:.01em;color:var(--sound)}
+  #map{flex:1 1 auto;min-height:44vh}
+  #panel{flex:0 0 auto;max-height:52vh;overflow-y:auto;background:var(--shelf);
+    border-top:1px solid var(--line);padding:12px 16px 20px}
+  .hint{font-size:13px;color:var(--sound);line-height:1.55;margin-bottom:12px}
+  .form{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+  label{display:flex;flex-direction:column;gap:4px;font-size:12.5px;font-weight:600;
+    letter-spacing:.005em;color:var(--sound)}
+  label.wide{grid-column:1/-1}
+  input,select{background:var(--abyss);color:var(--chart);border:1px solid var(--line);
+    border-radius:6px;padding:9px;font:400 15px/1.4 var(--sans);width:100%;
+    font-variant-numeric:tabular-nums lining-nums}
+  pre{grid-column:1/-1;background:var(--abyss);border:1px solid var(--line);
+    border-radius:6px;padding:10px;font:400 11.5px/1.55 var(--mono);color:var(--sound);
+    overflow-x:auto;max-height:190px;margin:0}
+  .btns{grid-column:1/-1;display:flex;gap:8px;flex-wrap:wrap;margin-top:2px}
+  button,a.btn{font:600 13.5px/1 var(--sans);letter-spacing:.005em;
+    color:var(--chart);background:var(--shoal);border:1px solid var(--line);
+    border-radius:6px;padding:11px 14px;cursor:pointer;text-decoration:none}
+  button.primary{border-color:var(--buoy)}
+  #warn{grid-column:1/-1;font-size:11.5px;color:var(--buoy);min-height:16px}
+  @media (min-width:820px){
+    body{flex-direction:row}
+    #side{width:420px;flex:0 0 420px;display:flex;flex-direction:column;height:100%}
+    #panel{max-height:none;flex:1 1 auto;border-top:none}
+    #map{height:100%}
+  }
+</style>
+</head>
+<body>
+<div id="side">
+  <header>
+    <div class="eyebrow">Dive forecast</div>
+    <h1>Add a region</h1>
+  </header>
+  <div id="panel">
+    <div class="hint">
+      Drag a box on the map over the coast you want. Keep it roughly
+      20–50&nbsp;km across — bigger boxes are slower, produce heavier maps and
+      rarely tell you more. Then submit it, and a workflow adds it to
+      <code>regions.json</code>.
+    </div>
+    <div class="form">
+      <label class="wide">Name<input id="f_name" placeholder="Kvarner — Krk and Cres"></label>
+      <label>Id<input id="f_id" placeholder="kvarner"></label>
+      <label>Country<input id="f_country" placeholder="Croatia"></label>
+      <label>Jurisdiction<input id="f_juris" placeholder="HR"></label>
+      <label>Deepest you dive (m)<input id="f_max" inputmode="decimal" value="24"></label>
+      <label>Best from (m)<input id="f_bestlo" inputmode="decimal" value="5"></label>
+      <label>Best to (m)<input id="f_besthi" inputmode="decimal" value="18"></label>
+      <div id="warn"></div>
+      <pre id="out">Drag a box on the map to start.</pre>
+      <div class="btns">
+        <button type="button" class="primary" id="submit">Submit region</button>
+        <button type="button" id="copy">Copy JSON</button>
+        <a class="btn" href="./">Back to the map</a>
+      </div>
+    </div>
+  </div>
+</div>
+<div id="map"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const $ = s => document.querySelector(s);
+const map = L.map("map").setView([30, 0], 2);
+L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+  {maxZoom:18, attribution:"&copy; OpenStreetMap"}).addTo(map);
+
+let box = null, rect = null, ISSUE = null;
+
+// Fetch the region index so ids can be checked for collisions and the
+// submit button knows where to file.
+fetch("data/index.json",{cache:"no-store"}).then(r=>r.ok?r.json():null)
+  .then(d=>{ if(d) window.EXISTING = new Set(d.regions.map(r=>r.id)); })
+  .catch(()=>{});
+fetch("data/index.json").then(r=>r.json())
+  .then(d=>d.regions[0] && fetch(`data/${d.regions[0].id}/latest.json`))
+  .then(r=>r && r.json()).then(d=>{ if(d) ISSUE = d.repo_issue_url; })
+  .catch(()=>{});
+
+// Shift-drag is Leaflet's box-zoom; borrow the same gesture for selection.
+map.on("boxzoomend", e => setBox(e.boxZoomBounds));
+let start = null;
+map.on("mousedown", e => { if(e.originalEvent.shiftKey) return; start = e.latlng; });
+map.on("mouseup", e => {
+  if(!start) return;
+  const b = L.latLngBounds(start, e.latlng);
+  start = null;
+  if (b.getNorth() - b.getSouth() > 0.02) setBox(b);
+});
+
+function setBox(b){
+  box = b;
+  if(rect) map.removeLayer(rect);
+  rect = L.rectangle(b, {color:"#F2B138", weight:2, fillOpacity:.08}).addTo(map);
+  render();
+}
+
+function km(b){
+  const lat0 = (b.getNorth()+b.getSouth())/2 * Math.PI/180;
+  return [ (b.getEast()-b.getWest())*111.32*Math.cos(lat0),
+           (b.getNorth()-b.getSouth())*111.32 ];
+}
+
+function build(){
+  if(!box) return null;
+  const id = ($("#f_id").value || "").trim().toLowerCase().replace(/[^a-z0-9-]/g,"-");
+  return {
+    id: id || "new-region",
+    name: $("#f_name").value.trim() || "Unnamed region",
+    country: $("#f_country").value.trim(),
+    jurisdiction: $("#f_juris").value.trim().toUpperCase(),
+    enabled: true,
+    bbox: {
+      lon_min: +box.getWest().toFixed(4),  lat_min: +box.getSouth().toFixed(4),
+      lon_max: +box.getEast().toFixed(4),  lat_max: +box.getNorth().toFixed(4)
+    },
+    species_file: null,
+    exclusions_file: null,
+    wind_regimes: null,
+    depth: {
+      min_m: 2.0,
+      best_m: [+$("#f_bestlo").value || 5, +$("#f_besthi").value || 18],
+      max_m: +$("#f_max").value || 24
+    },
+    note: "Added from the map. No species pack, no exclusion zones and no "
+        + "closed seasons for this jurisdiction — structure and conditions only "
+        + "until someone builds them."
+  };
+}
+
+function render(){
+  const r = build();
+  if(!r){ return; }
+  const [w,h] = km(box);
+  const warn = [];
+  if(w > 80 || h > 80) warn.push(`Box is ${w.toFixed(0)}×${h.toFixed(0)} km — large. Expect slow builds and heavy maps.`);
+  if(w < 3 || h < 3)   warn.push("Box is tiny; you may get almost no water cells.");
+  if(window.EXISTING && window.EXISTING.has(r.id)) warn.push(`Id "${r.id}" already exists — it will be rejected.`);
+  $("#warn").textContent = warn.join(" ");
+  $("#out").textContent = JSON.stringify(r, null, 2);
+}
+["f_name","f_id","f_country","f_juris","f_max","f_bestlo","f_besthi"]
+  .forEach(i => $("#"+i).addEventListener("input", render));
+
+$("#copy").addEventListener("click", async () => {
+  if(!box) return;
+  try{ await navigator.clipboard.writeText($("#out").textContent);
+       $("#copy").textContent = "Copied"; }
+  catch{ $("#copy").textContent = "Select above"; }
+  setTimeout(()=>{ $("#copy").textContent = "Copy JSON"; }, 1600);
+});
+
+$("#submit").addEventListener("click", () => {
+  const r = build();
+  if(!r){ $("#warn").textContent = "Drag a box on the map first."; return; }
+  if(!$("#f_name").value.trim() || !$("#f_id").value.trim()){
+    $("#warn").textContent = "Needs at least a name and an id."; return; }
+  if(!ISSUE){ $("#warn").textContent = "No repo_issue_url in the data — set it in config.json."; return; }
+  const body = "Added from the map.\n\n```json\n"
+             + JSON.stringify(r, null, 2) + "\n```\n";
+  window.open(ISSUE + "?labels=add-region"
+    + "&title=" + encodeURIComponent(`Region: ${r.name}`)
+    + "&body="  + encodeURIComponent(body), "_blank", "noopener");
+});
+</script>
+</body>
+</html>
