@@ -195,6 +195,11 @@
     background:linear-gradient(90deg,#440154,#3b528b,#21918c,#5ec962,#fde725)}
   #ramplab{display:flex; justify-content:space-between;
     font:400 11px/1 var(--sans); color:var(--sound)}
+  #maptools .key{display:flex; flex-direction:column; gap:5px; margin-top:8px;
+    padding-top:7px; border-top:1px solid var(--line)}
+  #maptools .keyrow{display:flex; align-items:center; gap:7px;
+    font-size:11.5px; color:var(--sound); line-height:1.3}
+  #maptools .keyrow > span:first-child{flex:0 0 auto}
   #maptools label{display:flex; align-items:center; gap:6px; margin-top:8px;
     font-size:12.5px; color:var(--chart); cursor:pointer}
   #maptools input[type=range]{width:100%; accent-color:var(--buoy)}
@@ -425,6 +430,15 @@
     <div class="eyebrow">Score</div>
     <div id="ramp"></div>
     <div id="ramplab"><span>low</span><span>high</span></div>
+    <!-- Key. The wreck symbol was on the map with nothing anywhere saying
+         what it meant, so it read as either a hazard or another model
+         mark. It is neither: it is charted third-party data. -->
+    <div class="key">
+      <span class="keyrow"><span class="mark" style="width:17px;height:17px;font-size:9px">1</span>
+        Model spot, best first</span>
+      <span class="keyrow"><span class="wreckmark" style="width:14px;height:14px"></span>
+        Charted wreck or obstruction (OpenStreetMap)</span>
+    </div>
     <label><input type="checkbox" id="ctoggle" checked> Depth lines</label>
     <label><input type="checkbox" id="wtoggle" checked> Wrecks</label>
     <label style="display:block">Overlay
@@ -434,12 +448,15 @@
       <button type="button" id="scan" style="width:100%;padding:9px;border:1px solid var(--buoy);
         border-radius:6px;background:var(--shoal);color:var(--chart);cursor:pointer;
         font:600 13.5px/1 var(--sans)">Scan structure</button>
-      <label style="margin-top:6px">Radius
+      <!-- These were labelled "Radius", so "50 km" scanned a box 100 km on
+           a side. The number is the width of the scanned square now, which
+           is what the map jumps to when the scan finishes. -->
+      <label style="margin-top:6px">Area scanned
         <select id="radius" style="flex:1;background:var(--abyss);color:var(--chart);
           border:1px solid var(--line);border-radius:6px;padding:5px;font:400 14px var(--sans)">
-          <option value="15">15 km</option>
-          <option value="30" selected>30 km</option>
-          <option value="50">50 km</option>
+          <option value="15">15 km across</option>
+          <option value="30" selected>30 km across</option>
+          <option value="50">50 km across</option>
         </select>
       </label>
       <div id="scanmsg" style="font-size:11.5px;color:var(--sound);margin-top:5px;line-height:1.4"></div>
@@ -569,12 +586,33 @@ function clearSpatial(){
   TERRAIN = scanBox = WRECKS = null;
 }
 
-async function loadPoint(lat, lon){
-  POINT = {lat, lon};
+// Leaflet does NOT wrap longitude as you pan. Drag the map far enough east
+// and getCenter()/latlng.lng keep counting past 180 into a second, third,
+// fourth copy of the world — which is how a tap on the Oregon coast arrived
+// as longitude 235.6897 and Open-Meteo answered "Longitude must be in range
+// of -180 to 180", making the entire US west coast look unsupported. It was
+// never unsupported; the request was malformed. Everything that leaves this
+// page — the forecast call, the GMRT box, the Overpass box, the region and
+// biome lookups, the deep link — has to use the wrapped value.
+//
+// The marker deliberately keeps the RAW longitude: the user is looking at
+// the third copy of the world and the pin belongs where they tapped.
+// The short-circuit is not an optimisation. Running an in-range longitude
+// through the modulo arithmetic returns it changed in the last couple of
+// digits (-9.35 comes back as -9.350000000000023), and that value goes into
+// the deep-link hash and the bathymetry cache key — so an untouched point
+// would miss its own cache and produce a slightly different URL each visit.
+const wrapLon = l =>
+  (l >= -180 && l <= 180) ? l : ((((l + 180) % 360) + 360) % 360) - 180;
+
+async function loadPoint(lat, lonRaw){
+  const lon = wrapLon(lonRaw);
+  lat = Math.max(-89.9, Math.min(89.9, lat));
+  POINT = {lat, lon, lonRaw};
   location.hash = `@${lat.toFixed(4)},${lon.toFixed(4)}`;
   clearSpatial();
   if(ptMarker) map.removeLayer(ptMarker);
-  ptMarker = L.circleMarker([lat, lon], {radius:7, color:"#F2B138", weight:2,
+  ptMarker = L.circleMarker([lat, lonRaw], {radius:7, color:"#F2B138", weight:2,
     fillColor:"#0E2E3A", fillOpacity:.9}).addTo(map);
 
   $("#rgname").textContent = `${lat.toFixed(4)}, ${lon.toFixed(4)}`;
@@ -620,8 +658,13 @@ async function loadPoint(lat, lon){
     renderAll(d, host);
   }catch(e){
     $("#err").style.color = "var(--flag)";
+    // Only blame inland water when that is actually what happened. The
+    // blanket suffix was attached to every failure, so a range error, a
+    // rate limit or an offline phone all read as "you tapped on land".
+    const inland = /inland|marine data/i.test(e.message);
     $("#err").textContent = "Could not get a forecast here: " + e.message
-      + ". Open-Meteo has no marine data for inland points.";
+      + (inland ? " Open-Meteo has no marine data for inland points — tap"
+                + " closer to open water." : "");
   }
 }
 
@@ -631,24 +674,58 @@ map.on("click", e => { if(POINT !== null) loadPoint(e.latlng.lat, e.latlng.lng);
 // Bathymetry is static, so the terrain (relief, slope, depth gate) is built
 // once per box and cached. Shelter is NOT static - it is upwind fetch - so it
 // is recomputed whenever the selected day changes the wind.
+// Which species the scanned map is drawn for. `sel` names the target; this
+// resolves it to the biology needed to score ground for it — the affinities
+// and the depth envelope, which speciesDayFactors() now carries through on
+// the day record precisely so this does not need a second lookup.
+function selectedSpeciesBiology(){
+  if(!sel || !DATA) return null;
+  const list = dayData().species || DATA.species || [];
+  const sp = list.find(x => x.id === sel);
+  if(!sp || !sp.depth_m || sp.relief_affinity == null) return null;
+  return sp;
+}
+
 async function paintStructure(){
   if(!TERRAIN || !STRUCT) return;
   const day = dayData();
   const wind = day.wind_from_deg ?? DATA.now.wind_from_deg ?? 0;
   const swell = day.swell_from_deg ?? null;
-  const {score} = STRUCT.score(TERRAIN, wind, swell, TERRAIN.opts, WRECKS);
+
+  // Shelter and the wreck halo are shared by every target, so they are
+  // computed once here and reused. Switching species then costs one pass
+  // over the grid instead of re-tracing every fetch ray.
+  const {score, shelter, wreck} = STRUCT.score(TERRAIN, wind, swell,
+                                               TERRAIN.opts, WRECKS);
+  const sp = selectedSpeciesBiology();
+  const field = sp ? STRUCT.speciesScore(TERRAIN, sp, shelter, wreck, TERRAIN.opts)
+                   : score;
+
   if(overlay) map.removeLayer(overlay);
   // Pass the options through: toDataURL needs land_buffer_m from them to
   // know how far to hold the wash back from the shoreline.
-  overlay = L.imageOverlay(STRUCT.toDataURL(TERRAIN, score, 0.35, 0.80, TERRAIN.opts),
+  overlay = L.imageOverlay(STRUCT.toDataURL(TERRAIN, field, 0.35, 0.80, TERRAIN.opts),
                            STRUCT.bounds(TERRAIN), {opacity: overlayOpacity}).addTo(map);
-  const spots = STRUCT.findSpots(TERRAIN, score, TERRAIN.opts);
-  DATA.spots = spots;
+  const spots = STRUCT.findSpots(TERRAIN, field, TERRAIN.opts);
+  // findSpots only knows the static terms, so the shelter bar in the spot
+  // list rendered as width:NaN% — an invisible, permanently empty bar.
+  // Each spot carries its grid index, so read the value straight off the
+  // field that was just computed.
+  for(const s of spots) s.shelter = +(shelter[s.i] || 0).toFixed(3);
+  if(sp){ sp.spots = spots; } else { DATA.spots = spots; }
   renderSpots(DATA, spots);
-  $("#scanmsg").innerHTML =
-    `${spots.length} spots · relief and slope cached · shelter recomputed for `
-    + `wind ${Math.round(wind)}°${swell!=null?` and swell ${Math.round(swell)}°`:""}`
-    + `${WRECKS ? ` · ${WRECKS.features.length} charted wreck${WRECKS.features.length===1?"":"s"} boosting nearby score` : ""}.`;
+
+  const target = sp ? `<b>${sp.name_en || sp.common}</b>: ${spots.length} spot`
+                      + `${spots.length===1?"":"s"} in its depth band `
+                      + `(${sp.depth_best_m[0]}–${sp.depth_best_m[1]} m), `
+                      + `relief weighted ${sp.relief_affinity}, slope ${sp.slope_affinity}`
+                    : `${spots.length} spot${spots.length===1?"":"s"} · any target`;
+  $("#scanmsg").innerHTML = target
+    + ` · shelter for wind ${Math.round(wind)}°`
+    + `${swell!=null?` and swell ${Math.round(swell)}°`:""}`
+    + `${WRECKS ? ` · ${WRECKS.features.length} charted wreck${WRECKS.features.length===1?"":"s"} boosting nearby score` : ""}`
+    + `${TERRAIN.coastUsed ? " · coastline from OpenStreetMap"
+                           : " · <span style='color:var(--buoy)'>no OSM coastline — land edge is bathymetry only</span>"}.`;
 }
 
 $("#scan").addEventListener("click", async () => {
@@ -658,16 +735,26 @@ $("#scan").addEventListener("click", async () => {
   $("#scanmsg").textContent = "";
   try{
     if(!STRUCT) STRUCT = await import("./structure.js");
+    // POINT.lon is the wrapped value; POINT.lonRaw is only for the marker.
     const box = STRUCT.boxAround(POINT.lat, POINT.lon, r);
     const same = scanBox && Math.abs(scanBox.lat_min-box.lat_min)<1e-6
                          && Math.abs(scanBox.lon_min-box.lon_min)<1e-6;
     if(!same || !TERRAIN){
-      const grid = await STRUCT.fetchBathymetry(box);
+      // Bathymetry and coastline in parallel — one is a big grid download,
+      // the other an Overpass query, and neither depends on the other.
+      // The coastline is the only thing that can tell a 300 m barrier
+      // island apart from 8 m of open water, so it is worth the wait, but
+      // it must never be able to fail the scan: an Overpass timeout drops
+      // us back to the bathymetric land edge with a note saying so.
+      const [grid, coast] = await Promise.all([
+        STRUCT.fetchBathymetry(box),
+        STRUCT.fetchCoastline(box).catch(() => null),
+      ]);
       btn.textContent = "Building terrain…";
       // Depth band comes from STRUCT.defaults (2 / 4-18 / 25 m), which now
       // matches config.json rather than silently overriding it with 30.
-      const opts = {...STRUCT.defaults, radius_km: r};
-      TERRAIN = STRUCT.buildTerrain(grid, opts);
+      const opts = {...STRUCT.defaults, width_km: r};
+      TERRAIN = STRUCT.buildTerrain(grid, opts, coast);
       TERRAIN.opts = opts;
       scanBox = box;
 
@@ -848,7 +935,24 @@ function selectTarget(id){
     gpx.textContent = sp ? `GPX · ${sp.name_en || sp.common}` : "Download GPX";
   }
 
-  if(d.point){ renderSpots(d, d.spots || []); return; }
+  if(d.point){
+    // Point mode used to stop here, so picking a target changed the notes
+    // and nothing else — the map stayed on the generic structure field and
+    // the spot list stayed generic with it. A dentex and an octopus want
+    // very different ground, which is the entire reason for choosing one.
+    // Repaint for the selected species instead, exactly as a precomputed
+    // region swaps in its per-species PNG.
+    if(TERRAIN && STRUCT){
+      if(sp && $("#f_species").options.length){ $("#f_species").value=sp.id; buildRow(); }
+      paintStructure();
+    }else{
+      renderSpots(d, (sp && sp.spots) || d.spots || []);
+      if(sp) $("#scanmsg").innerHTML =
+        `Press <b>Scan structure</b> to map where ${sp.name_en || sp.common} `
+        + `should be holding around this point.`;
+    }
+    return;
+  }
   const b=L.latLngBounds(d.bounds);
   if(overlay) map.removeLayer(overlay);
   const png = sp ? dataUrl(`score_${sp.id}${suf}.png`) : dataUrl(`score${suf}.png`);
@@ -1360,6 +1464,14 @@ function renderContext(d, meta){
   if(d.macrotidal)
     warn.push(`Tidal range ${d.tide_range_m} m — macrotidal. The 8 km tide model `
             + `behind the timing is not adequate here; use a real tide table.`);
+  // Say when the land edge is only as good as the depth grid. On a coast
+  // with barrier islands or spits that is the difference between a map and
+  // a map with the beach coloured in.
+  if(d.coastline_applied === false)
+    warn.push("The OpenStreetMap coastline could not be fetched for this region, "
+            + "so the land edge comes from the bathymetry alone. Any strip of "
+            + "land narrower than a grid cell — a spit, a breakwater, a barrier "
+            + "island — may be scored and shaded as if it were water.");
   $("#regionwarn").style.display = warn.length ? "block" : "none";
   $("#regionwarn").innerHTML = warn.join("<br>");
 }
