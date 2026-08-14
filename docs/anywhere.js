@@ -215,8 +215,14 @@ export async function forecastPoint(lat, lon, cfg, legalPack){
   const c = cfg.visibility;
   const stir = decayMemory(h.wave_height.map(v => Math.pow(v||0, 3)), c.wave_tau_h);
   const plume = decayMemory(h.precipitation.map(v => v||0), c.rain_tau_h);
-  let viz = stir.map((s,i) => clamp01(1 - (
-      c.wave_weight * norm(s, 0, Math.pow(c.wave_ref_hs,3))
+  // c.baseline is the turbidity the water carries when nothing has happened
+  // — see visibility_series() in fish_finder.py for why it has to exist.
+  // Without it every calm dry day pinned visibility at viz_max_m, which is
+  // why the number always read optimistically: it was the ceiling, not a
+  // forecast.
+  const vBase = c.baseline ?? 0;
+  let viz = stir.map((s,i) => clamp01(1 - (vBase
+    + c.wave_weight * norm(s, 0, Math.pow(c.wave_ref_hs,3))
     + c.rain_weight * norm(plume[i], 0, c.rain_ref_mm_per_h))));
 
   // ---- workability, wind regime, movement, light ----

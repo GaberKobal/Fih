@@ -22,7 +22,7 @@ const GMRT = "https://www.gmrt.org/services/GridServer";
 const BATHY_CACHE = "bathy-v1";
 
 export const defaults = {
-  width_km: 30,           // the scanned box is this many km ACROSS
+  radius_km: 30,          // how far the box reaches out from the tapped point
   cell_m: 200,            // working grid; GMRT resolves ~100 m at best
   // Working depth band, matching depth.min_m / best_m / max_m in config.json.
   // The scan used to top out at 30 m while every region map stopped at 24,
@@ -45,20 +45,16 @@ export const defaults = {
 
 /* ---------------------------------------------------------------- fetching */
 
-/** A square box `widthKm` ACROSS, centred on the point.
+/** A box reaching `radiusKm` out from the point in every direction, so it is
+ *  2 x radiusKm on a side. Radius is how far you would swim, which is the
+ *  quantity a spearo actually thinks in.
  *
- *  This took a radius before, so "50 km" scanned a box 100 km on a side —
- *  four times the area anyone reading the menu expected, and a visibly
- *  enormous jump when the map fitted itself to the result. The caller now
- *  passes the width it means and gets a box that size.
- *
- *  Longitude is clamped rather than wrapped: a box that straddles the
+ *  Longitude is clamped rather than wrapped: a box straddling the
  *  antimeridian would confuse every consumer downstream, and none of the
  *  scan sizes offered can reach it from anywhere you would dive. */
-export function boxAround(lat, lon, widthKm){
-  const half = widthKm / 2;
-  const dLat = half / 111.32;
-  const dLon = half / (111.32 * Math.max(0.05, Math.cos(lat * Math.PI / 180)));
+export function boxAround(lat, lon, radiusKm){
+  const dLat = radiusKm / 111.32;
+  const dLon = radiusKm / (111.32 * Math.max(0.05, Math.cos(lat * Math.PI / 180)));
   return {lat_min: Math.max(-89.9, lat - dLat), lat_max: Math.min(89.9, lat + dLat),
           lon_min: Math.max(-180, lon - dLon), lon_max: Math.min(180, lon + dLon)};
 }
@@ -219,42 +215,68 @@ function openSea(land, nx, ny, depth, blocked){
   return keep;
 }
 
-/** The real coastline, from OpenStreetMap.
+/** Everything this scan needs from OpenStreetMap, in ONE request.
  *
- *  This exists because bathymetry alone cannot answer "is this land". A
- *  global grid cell is 100-450 m across and it reports the AVERAGE of what
- *  is under it, so any strip of land narrower than a cell or two averages
- *  out to a negative elevation and is classified as perfectly good diving
- *  water. The Ria Formosa barrier islands off Faro are 200-600 m wide, and
- *  that is exactly what happened there: the score wash and the depth
- *  contours were painted straight across the beach, the dunes and the
- *  lagoon behind them, because as far as the depth grid was concerned that
- *  was 8 m of open sea.
+ *  The coastline exists because bathymetry alone cannot answer "is this
+ *  land". A global grid cell is 100-450 m across and reports the AVERAGE of
+ *  what is under it, so any strip of land narrower than a cell or two
+ *  averages out to a negative elevation and is classified as perfectly good
+ *  diving water. Barrier islands, spits and sandy beach-backed towns all
+ *  vanish that way, and the score, the wash, the depth lines and the model
+ *  spots all end up on shore.
  *
- *  No amount of buffering the bathymetric mask fixes that — the mask was
- *  not merely a bit small, it was absent. OSM's `natural=coastline` ways are
- *  a genuine vector shoreline at a few metres' accuracy, they are free and
- *  CORS-enabled through the same Overpass endpoint the wreck layer already
- *  uses, and they are the correct authority for this one question.
+ *  It is fetched together with the wrecks, and that matters as much as the
+ *  data does. These used to be two POSTs to the same public Overpass
+ *  endpoint seconds apart, and Overpass rate-limits per client: the second
+ *  call routinely came back 429. The coastline went first and its failure
+ *  was swallowed, so the common outcome was a scan with wrecks but NO land
+ *  mask — which is exactly the state in which model spots march up the
+ *  beach and into the town behind it. One request cannot rate-limit itself.
  *
- *  Returns an array of polylines, each an array of [lon, lat]. */
-export async function fetchCoastline(box){
+ *  Returns {coast, wrecks}. */
+export async function fetchSeabedContext(box){
   const b = `${box.lat_min},${box.lon_min},${box.lat_max},${box.lon_max}`;
-  const q = `[out:json][timeout:60];way["natural"="coastline"](${b});out geom;`;
-  let res;
-  try{
-    res = await fetch(OVERPASS, {method: "POST", body: "data=" + encodeURIComponent(q)});
-  }catch(e){
-    throw new Error("Overpass could not be reached for the coastline");
-  }
-  if(!res.ok) throw new Error(`Overpass returned HTTP ${res.status} for the coastline`);
-  const doc = await res.json();
-  const lines = [];
+  const q = `[out:json][timeout:90];(
+    way["natural"="coastline"](${b});
+    node["seamark:type"="wreck"](${b});
+    way["seamark:type"="wreck"](${b});
+    node["historic"="wreck"](${b});
+    way["historic"="wreck"](${b});
+    node["seamark:type"="obstruction"](${b});
+  );out geom tags;`;
+
+  const doc = await overpass(q);
+  const coast = [], feats = [];
   for(const el of doc.elements || []){
-    if(!el.geometry || el.geometry.length < 2) continue;
-    lines.push(el.geometry.map(p => [p.lon, p.lat]));
+    const tg = el.tags || {};
+    if(tg.natural === "coastline"){
+      if(el.geometry && el.geometry.length >= 2)
+        coast.push(el.geometry.map(p => [p.lon, p.lat]));
+      continue;
+    }
+    // `out geom` gives nodes their lat/lon and ways their full geometry, so
+    // a wreck mapped as a way is averaged to a centre here rather than
+    // needing a second `out center` pass.
+    let lat = el.lat, lon = el.lon;
+    if(lat == null && el.geometry && el.geometry.length){
+      lat = el.geometry.reduce((a, p) => a + p.lat, 0) / el.geometry.length;
+      lon = el.geometry.reduce((a, p) => a + p.lon, 0) / el.geometry.length;
+    }
+    if(lat == null || lon == null) continue;
+    const depthRaw = tg["seamark:wreck:depth"] ?? tg.depth ?? null;
+    const depth = depthRaw != null && isFinite(+depthRaw) ? +depthRaw : null;
+    feats.push({
+      type: "Feature",
+      geometry: {type: "Point", coordinates: [+lon.toFixed(6), +lat.toFixed(6)]},
+      properties: {
+        name: tg["seamark:name"] || tg.name || "wreck",
+        kind: tg["seamark:type"] || tg.historic || "wreck",
+        category: tg["seamark:wreck:category"] || null,
+        depth_m: depth, osm_id: el.id,
+      },
+    });
   }
-  return lines;
+  return {coast, wrecks: {type: "FeatureCollection", features: feats}};
 }
 
 /** Burn the coastline polylines onto the grid as an impassable wall.
@@ -499,10 +521,33 @@ export function score(T, windFrom, swellFrom, o = defaults, wrecks = null){
 export function findSpots(T, s, o = defaults){
   const {nx, ny, cell, lat0, lon0, depth} = T;
   const sep = Math.max(1, Math.round(o.min_separation_m / (cell * 111320)));
+
+  // Two hard gates that do not depend on the score field being right.
+  //
+  // A waypoint that lands on the beach, or in the street behind it, is the
+  // most damaging output this thing can produce, and it was reachable
+  // whenever the land mask was wrong — a coarse depth grid over a sandy
+  // shore averages the first few hundred metres of town to a negative
+  // elevation, so those cells were "water" at a perfectly good depth and
+  // won the local-maximum test. The colour wash was already held back by
+  // land_buffer_m; the spots were not, so they marched inland alone.
+  //
+  // So: no spot within land_buffer_m of anything classified as land, and no
+  // spot without a real depth at or below the shallow limit. These are
+  // cheap, they are independent of the coastline fetch having succeeded,
+  // and a mark that fails either of them is worthless anyway.
+  const bufM = o.land_buffer_m ?? 0;
+  const nearLand = bufM > 0 ? dilateLand(T.land, nx, ny,
+      Math.round(bufM / Math.max(T.dyM || cell * 111320, 1)),
+      Math.round(bufM / Math.max(Math.abs(T.dxM) || cell * 111320, 1))) : T.land;
+  const dMin = o.depth_min_m ?? 0;
+
   const cands = [];
   for(let y = sep; y < ny - sep; y++) for(let x = sep; x < nx - sep; x++){
     const i = y * nx + x;
     if(s[i] < o.min_spot_score) continue;
+    if(nearLand[i]) continue;
+    if(!isFinite(depth[i]) || depth[i] < dMin) continue;
     let peak = true;
     for(let dy = -sep; dy <= sep && peak; dy++)
       for(let dx = -sep; dx <= sep; dx++)
@@ -690,50 +735,35 @@ export function contourLines(T, levels = [5, 10, 15, 20, 30]){
   return {type: "FeatureCollection", features: feats};
 }
 
-const OVERPASS = "https://overpass-api.de/api/interpreter";
+// Overpass is a free, shared, volunteer-run service and it rate-limits per
+// client with a 429. A scan that gets one is a scan with no land mask, so it
+// is worth trying more than one host before giving up: these are the public
+// mirrors, all CORS-enabled, all serving the same planet database.
+const OVERPASS_MIRRORS = [
+  "https://overpass-api.de/api/interpreter",
+  "https://overpass.kumi.systems/api/interpreter",
+  "https://overpass.private.coffee/api/interpreter",
+];
 
-/** Charted wrecks from OpenStreetMap via Overpass — same tags and shape as
- *  fetch_wrecks() server-side, run directly from the browser since Overpass
- *  is CORS-enabled. Nothing is cached: wrecks do not move, but a point scan
- *  has no per-region data folder to keep a copy in. */
-export async function fetchWrecks(box){
-  const b = `${box.lat_min},${box.lon_min},${box.lat_max},${box.lon_max}`;
-  const q = `[out:json][timeout:25];(
-    node["seamark:type"="wreck"](${b});
-    way["seamark:type"="wreck"](${b});
-    node["historic"="wreck"](${b});
-    way["historic"="wreck"](${b});
-    node["seamark:type"="obstruction"](${b});
-  );out center tags;`;
-
-  let res;
-  try{
-    res = await fetch(OVERPASS, {method: "POST", body: "data=" + encodeURIComponent(q)});
-  }catch(e){
-    throw new Error("Overpass could not be reached from the browser");
+/** POST one Overpass query, falling through the mirrors on rate limit,
+ *  gateway timeout or an unreachable host. Throws only when they all fail. */
+async function overpass(query){
+  let last = null;
+  for(const url of OVERPASS_MIRRORS){
+    try{
+      const res = await fetch(url, {method: "POST",
+                                    body: "data=" + encodeURIComponent(query)});
+      if(res.status === 429 || res.status === 504 || res.status === 502){
+        last = new Error(`Overpass ${new URL(url).hostname} returned HTTP ${res.status}`);
+        continue;                       // busy right now — try the next mirror
+      }
+      if(!res.ok) throw new Error(`Overpass returned HTTP ${res.status}`);
+      return await res.json();
+    }catch(e){
+      last = e;                         // unreachable or malformed — next
+    }
   }
-  if(!res.ok) throw new Error(`Overpass returned HTTP ${res.status}`);
-  const doc = await res.json();
-
-  const feats = [];
-  for(const el of doc.elements || []){
-    const lat = el.lat ?? el.center?.lat, lon = el.lon ?? el.center?.lon;
-    if(lat == null || lon == null) continue;
-    const tg = el.tags || {};
-    const depthRaw = tg["seamark:wreck:depth"] ?? tg.depth ?? null;
-    const depth = depthRaw != null && isFinite(+depthRaw) ? +depthRaw : null;
-    feats.push({
-      type: "Feature",
-      geometry: {type: "Point", coordinates: [+lon.toFixed(6), +lat.toFixed(6)]},
-      properties: {
-        name: tg["seamark:name"] || tg.name || "wreck",
-        kind: tg["seamark:type"] || tg.historic || "wreck",
-        category: tg["seamark:wreck:category"] || null,
-        depth_m: depth, osm_id: el.id,
-      },
-    });
-  }
-  return {type: "FeatureCollection", features: feats};
+  throw last || new Error("no Overpass mirror could be reached");
 }
 
 export function bounds(T){
