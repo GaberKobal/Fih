@@ -84,11 +84,28 @@ jobs:
 
       # Bathymetry never changes. Keyed on regions.json so adding a region
       # refetches only what is new.
-      - name: Restore bathymetry cache
+      # Bathymetry, coastlines and wrecks never change, so they are fetched
+      # once per region and reused forever. Getting that right is the whole
+      # difference between a run costing 11 minutes and a run costing hours.
+      #
+      # The key is the RUN ID on purpose, not a hash of regions.json.
+      # actions/cache skips the save step entirely when the key hits exactly,
+      # and the key used to be a hash of regions.json + config.json — so
+      # turning a group on through the FISH_REGIONS variable, which by design
+      # changes no file, produced an exact hit: the run downloaded 38 cold
+      # bathymetries, threw them away at the end, and did it again on the
+      # next run, forever. A unique key never hits exactly, so the cache is
+      # always written back and every region stays cold exactly once.
+      #
+      # restore-keys pulls the most recent previous cache. GitHub evicts
+      # least-recently-used entries past 10 GB a repository; at roughly
+      # 1.4 MB a region a full 264-region cache is about 370 MB, so a couple
+      # of weeks of history fits comfortably.
+      - name: Restore bathymetry, coastline and wreck cache
         uses: actions/cache@v4
         with:
           path: cache
-          key: bathy-${{ hashFiles('regions.json', 'config.json') }}
+          key: bathy-${{ github.run_id }}
           restore-keys: bathy-
 
       # Which regions run, in order of precedence:
@@ -129,6 +146,10 @@ jobs:
           du -sh docs/data
           echo "regions: $(ls -1 docs/data | grep -v '\.json$' | wc -l)"
           echo "files:   $(find docs/data -type f | wc -l)"
+          echo "--- cache (must GROW when new regions run, then stay flat) ---"
+          du -sh cache 2>/dev/null || echo "no cache"
+          echo "bathymetry grids cached: $(ls -1 cache/bathy_* 2>/dev/null | wc -l)"
+          echo "coastlines cached:       $(ls -1 cache/coastline_* 2>/dev/null | wc -l)"
 
       - uses: actions/upload-pages-artifact@v3
         with:
