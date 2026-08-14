@@ -936,7 +936,10 @@ function selectTarget(id){
     gpx.style.opacity = ".5";
   }else{
     gpx.style.opacity = "";
-    gpx.href = sp ? dataUrl(`spots_${sp.id}${suf}.gpx`) : dataUrl(`spots${suf}.gpx`);
+    // Same cap as the rasters — a species GPX only exists for the days its
+    // map does.
+    const gsuf = (sp && selDay >= (d.species_maps_days ?? 99)) ? "_d0" : suf;
+    gpx.href = sp ? dataUrl(`spots_${sp.id}${gsuf}.gpx`) : dataUrl(`spots${suf}.gpx`);
     gpx.textContent = sp ? `GPX · ${sp.name_en || sp.common}` : "Download GPX";
   }
 
@@ -960,9 +963,25 @@ function selectTarget(id){
   }
   const b=L.latLngBounds(d.bounds);
   if(overlay) map.removeLayer(overlay);
-  const png = sp ? dataUrl(`score_${sp.id}${suf}.png`) : dataUrl(`score${suf}.png`);
+
+  // Per-species rasters are the whole output budget of a run — three days
+  // times eight species per region — so config.json can limit how many days
+  // get one (species_maps_days). Scores, spots and legal status are still
+  // per-day; only the picture is capped. Fall back to day 0's map rather
+  // than requesting a file that is not there, and say so, because a map
+  // silently showing the wrong day's shelter would be worse than a note.
+  const spDays = d.species_maps_days ?? 99;
+  const spStale = sp && selDay >= spDays;
+  const spSuf = spStale ? "_d0" : suf;
+  const png = sp ? dataUrl(`score_${sp.id}${spSuf}.png`) : dataUrl(`score${suf}.png`);
   overlay=L.imageOverlay(png+"?v="+encodeURIComponent(d.generated),b,
                          {opacity:overlayOpacity}).addTo(map);
+  if(spStale)
+    $("#spnote").innerHTML +=
+      `<div style="margin-top:6px;font-size:11.5px;color:var(--buoy)">`
+      + `Map shown is today's for this species — per-species maps are only `
+      + `rendered for the first ${spDays} day${spDays===1?"":"s"}. The score, `
+      + `the spots and the season above are still this day's.</div>`;
 
   renderSpots(d, sp ? sp.spots : (day.spots || d.spots || []));
   if(sp && $("#f_species").options.length){ $("#f_species").value=sp.id; buildRow(); }
