@@ -231,6 +231,10 @@
     "use_sdb": false,
     "min_grid_resolution_m": 40.0
   },
+  "coastline": {
+    "_note": "The real shoreline from OpenStreetMap, used to decide what is land. Bathymetry alone reports the average of what is under each cell, so a barrier island or a spit narrower than a cell or two averages out to negative elevation and gets scored as open water - which is how the colour wash and the depth contours ended up painted across the beach at Faro. Cached per region in cache/. Set enabled to false to fall back to the bathymetric land edge alone.",
+    "enabled": true
+  },
   "wrecks": {
     "_note": "Charted wrecks from OpenStreetMap. Point data, so unaffected by bathymetry resolution - the one structure signal that is as good in Bali as in Istria.",
     "enabled": true,

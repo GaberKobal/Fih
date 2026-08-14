@@ -21,7 +21,11 @@
     "",
     "WORLDWIDE: regions outside EMODnet's footprint fall back to NOAA's global SRTM15+ at 15 arc-seconds (~300-450 m). The relief term cannot see a reef at that scale, and the app says so per region rather than pretending.",
     "",
-    "Only novigrad runs now. Point mode in the app covers conditions AND structure anywhere in the world, so a configured region is only worth it where you want the extras it alone provides: exclusion zones, charted wrecks, depth contours, per-species maps, GPX export, Sentinel-2 turbidity and the Copernicus temperature profile. Flip enabled back to true on any region you want those for."
+    "WHY ENABLING A REGION CHANGES THE SPECIES LIST: point mode covers conditions and structure anywhere on Earth, but the species it names come from regionContaining() in docs/index.html, which only sees regions that ACTUALLY RAN - that is, enabled ones. Outside every enabled region the app falls back to the coarse ocean-basin classifier in BIOME_RULES, which is a reference list for that stretch of ocean rather than a pack tuned to the coast, and which deliberately carries no legal sizes or seasons at all. So enabling the region you actually dive is the single thing that most improves what the app tells you about fish there.",
+    "",
+    "Enabling also brings the extras a region alone provides: exclusion zones, charted wrecks, depth contours, precomputed per-species maps, GPX export, Sentinel-2 turbidity and the Copernicus temperature profile. Each costs roughly 600 KB of output and a few seconds of compute per day.",
+    "",
+    "Enabled now: novigrad, cascais, faro-ria-formosa. The rest are defined and ready - flip enabled to true on any of them."
   ],
   "regions": [
     {
@@ -64,6 +68,256 @@
         "reference_depth_m": 20.0
       },
       "note": "The home region. Species pack, closed seasons and exclusion zones all checked here; everything else in this file inherits or omits them."
+    },
+    {
+      "id": "cascais",
+      "name": "Cascais, Estoril and Parede",
+      "country": "Portugal",
+      "jurisdiction": "PT",
+      "enabled": true,
+      "bbox": {
+        "lon_min": -9.52,
+        "lat_min": 38.6,
+        "lon_max": -9.24,
+        "lat_max": 38.73
+      },
+      "species_file": "species.json",
+      "exclusions_file": null,
+      "depth": {
+        "min_m": 2.0,
+        "best_m": [
+          5.0,
+          18.0
+        ],
+        "max_m": 25.0
+      },
+      "wind_regimes": null,
+      "note": "Guincho round Cabo Raso to Oeiras, including the Parede and Sao Pedro reefs. Atlantic, not Mediterranean: real swell, real tides and colder water than the species depth bands were tuned for, so read the temperature fits as indicative. The Atlanto-Mediterranean pack does apply here - sargus, vulgaris, aurata, labrax, dentex, umbra, octopus and sepia all have genuine Atlantic Iberian ranges - and legal/PT.json carries the EU floor sizes for exactly that list. Closed seasons for PT are NOT researched. The Avencas marine protected area sits inside this box and is NOT masked: no exclusions file exists for it. Check it yourself before you get in."
+    },
+    {
+      "id": "faro-ria-formosa",
+      "name": "Faro and the Ria Formosa",
+      "country": "Portugal",
+      "jurisdiction": "PT",
+      "enabled": true,
+      "bbox": {
+        "lon_min": -8.05,
+        "lat_min": 36.93,
+        "lon_max": -7.72,
+        "lat_max": 37.05
+      },
+      "species_file": "species.json",
+      "exclusions_file": null,
+      "depth": {
+        "min_m": 2.0,
+        "best_m": [
+          5.0,
+          18.0
+        ],
+        "max_m": 25.0
+      },
+      "wind_regimes": null,
+      "note": "The barrier islands off Faro and Olhao. This is the region that exposed the land-mask problem: the Ria Formosa spits are 200-600 m wide, narrower than a global bathymetry cell, so the depth grid averaged them out to open water and the score wash and depth lines were drawn straight across the beach and the lagoon. The OSM coastline mask exists because of this coast. Note that the whole lagoon system is a Parque Natural with its own rules, and none of them are encoded here."
+    },
+    {
+      "id": "sagres",
+      "name": "Sagres and Cabo Sao Vicente",
+      "country": "Portugal",
+      "jurisdiction": "PT",
+      "enabled": false,
+      "bbox": {
+        "lon_min": -9.02,
+        "lat_min": 36.97,
+        "lon_max": -8.72,
+        "lat_max": 37.15
+      },
+      "species_file": "species.json",
+      "exclusions_file": null,
+      "depth": {
+        "min_m": 3.0,
+        "best_m": [
+          6.0,
+          20.0
+        ],
+        "max_m": 25.0
+      },
+      "wind_regimes": null,
+      "note": "The south-west corner, where the west and south coasts meet. The shelter term earns its keep here: one side is always in the lee. Inside the Costa Vicentina natural park, which is not masked."
+    },
+    {
+      "id": "peniche",
+      "name": "Peniche and the Berlengas",
+      "country": "Portugal",
+      "jurisdiction": "PT",
+      "enabled": false,
+      "bbox": {
+        "lon_min": -9.55,
+        "lat_min": 39.3,
+        "lon_max": -9.3,
+        "lat_max": 39.45
+      },
+      "species_file": "species.json",
+      "exclusions_file": null,
+      "depth": {
+        "min_m": 3.0,
+        "best_m": [
+          6.0,
+          20.0
+        ],
+        "max_m": 25.0
+      },
+      "wind_regimes": null,
+      "note": "The Berlengas are a nature reserve with a no-take core that is NOT masked here. Exposed Atlantic swell; the workability floor will rule most days out, which is realistic."
+    },
+    {
+      "id": "madeira-south",
+      "name": "Madeira, south coast",
+      "country": "Portugal",
+      "jurisdiction": "PT",
+      "enabled": false,
+      "bbox": {
+        "lon_min": -17.3,
+        "lat_min": 32.6,
+        "lon_max": -16.65,
+        "lat_max": 32.8
+      },
+      "species_file": "species_azores.json",
+      "exclusions_file": null,
+      "depth": {
+        "min_m": 3.0,
+        "best_m": [
+          6.0,
+          20.0
+        ],
+        "max_m": 25.0
+      },
+      "wind_regimes": null,
+      "note": "Macaronesian, so the Azores pack fits far better than the mainland one - amberjack and barracuda country rather than the Diplodus/Sparus mix. Volcanic and very steep: the depth gate does most of the work because the 25 m band is often only a few hundred metres wide."
+    },
+    {
+      "id": "galicia-rias",
+      "name": "Rias Baixas, Galicia",
+      "country": "Spain",
+      "jurisdiction": "ES",
+      "enabled": false,
+      "bbox": {
+        "lon_min": -9.05,
+        "lat_min": 42.15,
+        "lon_max": -8.7,
+        "lat_max": 42.45
+      },
+      "species_file": "species.json",
+      "exclusions_file": null,
+      "depth": {
+        "min_m": 3.0,
+        "best_m": [
+          5.0,
+          18.0
+        ],
+        "max_m": 25.0
+      },
+      "wind_regimes": null,
+      "note": "Cold, green, Atlantic and heavily fished. The rias are drowned river valleys, so the water mask and the coastline mask both matter more here than almost anywhere else. Galicia has its own regional rules that are NOT encoded."
+    },
+    {
+      "id": "costa-blanca",
+      "name": "Costa Blanca and Tabarca",
+      "country": "Spain",
+      "jurisdiction": "ES",
+      "enabled": false,
+      "bbox": {
+        "lon_min": -0.2,
+        "lat_min": 38.05,
+        "lon_max": 0.25,
+        "lat_max": 38.45
+      },
+      "species_file": "species.json",
+      "exclusions_file": null,
+      "depth": {
+        "min_m": 3.0,
+        "best_m": [
+          6.0,
+          20.0
+        ],
+        "max_m": 25.0
+      },
+      "wind_regimes": null,
+      "note": "Tabarca is Spain's oldest marine reserve and spearfishing is banned there outright. It is NOT masked. Warm, clear and much calmer than the Atlantic regions."
+    },
+    {
+      "id": "mallorca-north",
+      "name": "Mallorca, north coast",
+      "country": "Spain",
+      "jurisdiction": "ES",
+      "enabled": false,
+      "bbox": {
+        "lon_min": 2.95,
+        "lat_min": 39.7,
+        "lon_max": 3.3,
+        "lat_max": 39.95
+      },
+      "species_file": "species.json",
+      "exclusions_file": null,
+      "depth": {
+        "min_m": 3.0,
+        "best_m": [
+          6.0,
+          20.0
+        ],
+        "max_m": 25.0
+      },
+      "wind_regimes": null,
+      "note": "The Serra de Tramuntana coast. Steep-to and clear, with several reserves along it that are not masked. The visibility model was tuned on a turbid shelf and will read low here."
+    },
+    {
+      "id": "sicily-west",
+      "name": "Sicily, west and the Egadi",
+      "country": "Italy",
+      "jurisdiction": "IT",
+      "enabled": false,
+      "bbox": {
+        "lon_min": 12.3,
+        "lat_min": 37.75,
+        "lon_max": 12.75,
+        "lat_max": 38.15
+      },
+      "species_file": "species.json",
+      "exclusions_file": null,
+      "depth": {
+        "min_m": 3.0,
+        "best_m": [
+          6.0,
+          20.0
+        ],
+        "max_m": 25.0
+      },
+      "wind_regimes": null,
+      "note": "The Egadi islands are the largest marine protected area in the Mediterranean and are zoned, not uniformly open. None of that zoning is encoded here. Italian rules apply; closed seasons for IT are not researched."
+    },
+    {
+      "id": "crete-north",
+      "name": "Crete, north coast",
+      "country": "Greece",
+      "jurisdiction": "GR",
+      "enabled": false,
+      "bbox": {
+        "lon_min": 24.85,
+        "lat_min": 35.35,
+        "lon_max": 25.25,
+        "lat_max": 35.6
+      },
+      "species_file": "species.json",
+      "exclusions_file": null,
+      "depth": {
+        "min_m": 3.0,
+        "best_m": [
+          6.0,
+          20.0
+        ],
+        "max_m": 25.0
+      },
+      "wind_regimes": null,
+      "note": "Meltemi country like the Cyclades, so shelter dominates. Very clear water; the visibility model understates it badly. Greek closed seasons are not researched."
     },
     {
       "id": "kvarner",

@@ -151,7 +151,7 @@ def region_config(base, region):
     for key in ("depth", "thermocline", "entry_points", "max_swim_km",
                 "weights", "visibility", "overlay", "water", "structure",
                 "bathymetry", "shelter", "movement", "contours", "cmems",
-                "wind_regimes", "grid_resolution_m"):
+                "wind_regimes", "grid_resolution_m", "coastline", "wrecks"):
         if key in region:
             if region[key] is None:
                 cfg[key] = None                    # explicit "not applicable here"
@@ -828,6 +828,72 @@ def rasterize_polygons(path_or_gj, lats, lons):
 
 
 OVERPASS_URL = "https://overpass-api.de/api/interpreter"
+
+
+def fetch_coastline(bbox, cfg, region_id):
+    """The real shoreline, from OpenStreetMap's natural=coastline ways.
+
+    Bathymetry cannot answer "is this land". A grid cell reports the average
+    of what is under it, so any strip of land narrower than a cell or two
+    averages to a negative elevation and is scored as good diving water.
+    Barrier islands, spits, breakwaters and reclaimed land all disappear
+    that way, and the colour wash and depth contours get painted across the
+    beach. OSM's coastline is a genuine vector shoreline and is the right
+    authority for this one question. Cached: coastlines do not move.
+
+    Returns a list of polylines, each a list of [lon, lat].
+    """
+    cache_file = CACHE / f"coastline_{region_id}.json"
+    if cache_file.exists():
+        return json.loads(cache_file.read_text())
+
+    q = (f'[out:json][timeout:120];way["natural"="coastline"]'
+         f'({bbox["lat_min"]},{bbox["lon_min"]},{bbox["lat_max"]},{bbox["lon_max"]});'
+         f'out geom;')
+    req = urllib.request.Request(
+        OVERPASS_URL, data=urllib.parse.urlencode({"data": q}).encode(),
+        headers={"User-Agent": USER_AGENT})
+    with urllib.request.urlopen(req, timeout=180) as r:
+        doc = json.loads(r.read())
+
+    lines = [[[p["lon"], p["lat"]] for p in el["geometry"]]
+             for el in doc.get("elements", [])
+             if len(el.get("geometry") or []) >= 2]
+    CACHE.mkdir(parents=True, exist_ok=True)
+    cache_file.write_text(json.dumps(lines))
+    return lines
+
+
+def coastline_mask(lines, lats, lons):
+    """Burn the coastline polylines onto the grid as an impassable wall.
+
+    Sampled at half-cell steps so a segment running diagonally cannot slip
+    between two cells. One gap is all it takes for the flood fill in
+    open_sea_mask() to escape inland, which would make the mask worse than
+    having none.
+    """
+    ny, nx = len(lats), len(lons)
+    blocked = np.zeros((ny, nx), dtype=bool)
+    if not lines or nx < 2 or ny < 2:
+        return blocked
+    lat0, lon0 = float(lats[0]), float(lons[0])
+    dlat, dlon = float(lats[1] - lats[0]), float(lons[1] - lons[0])
+
+    for line in lines:
+        arr = np.asarray(line, dtype=float)
+        if arr.ndim != 2 or arr.shape[0] < 2:
+            continue
+        xs = (arr[:, 0] - lon0) / dlon
+        ys = (arr[:, 1] - lat0) / dlat
+        for k in range(1, len(arr)):
+            x0, y0, x1, y1 = xs[k - 1], ys[k - 1], xs[k], ys[k]
+            n = int(2 * max(abs(x1 - x0), abs(y1 - y0))) + 1
+            t = np.linspace(0.0, 1.0, n + 1)
+            xi = np.rint(x0 + (x1 - x0) * t).astype(int)
+            yi = np.rint(y0 + (y1 - y0) * t).astype(int)
+            ok = (xi >= 0) & (xi < nx) & (yi >= 0) & (yi < ny)
+            blocked[yi[ok], xi[ok]] = True
+    return blocked
 
 
 def fetch_wrecks(bbox, cfg, region_id):
@@ -1942,7 +2008,36 @@ def run(cfg, selftest=False, out_dir=None):
     if nodata.any():
         log(f"bathymetry: {nodata.mean():.0%} of the box has no EMODnet data "
             "(raster does not reach the bbox) - treated as unusable, not as land")
-    land = open_sea_mask(land, cfg)
+
+    # Intersect with the real coastline before deciding what is sea. Without
+    # it, any land narrower than a cell or two is invisible to the model and
+    # gets scored, painted and contoured as open water.
+    coast_used = False
+    if (cfg.get("coastline") or {}).get("enabled", True) and not selftest:
+        try:
+            lines = fetch_coastline(bbox, cfg, cfg.get("region_id", "default"))
+            if lines:
+                blocked = coastline_mask(lines, lats, lons)
+                land_c = open_sea_mask(land | blocked, cfg)
+                # Overpass clips ways at the bbox, so a coastline can arrive
+                # with an open end. A hole lets the fill leak and we are no
+                # worse off than before; but on a mostly-enclosed box the
+                # fill can instead be strangled to a puddle. Refuse the mask
+                # rather than turn the whole region to land.
+                if (~land_c).mean() > 0.2 * (~land).mean():
+                    land, coast_used = land_c, True
+                    log(f"coastline: {len(lines)} OSM way(s) applied; "
+                        f"water now {(~land).mean():.0%} of the box")
+                else:
+                    log("coastline: applying it would remove most of the water "
+                        "(clipped or incomplete ways) - ignoring it")
+            else:
+                log("coastline: no OSM coastline in this box - all open water?")
+        except Exception as e:
+            log(f"coastline: unavailable ({e.__class__.__name__}) - falling back "
+                "to the bathymetric land edge")
+    if not coast_used:
+        land = open_sea_mask(land, cfg)
     depth_m = np.where(land, np.nan, -elev_g)
     image_bounds = raster_bounds(lats, lons)
 
@@ -2218,6 +2313,7 @@ def run(cfg, selftest=False, out_dir=None):
         "bathymetry_provider": provider,
         "bathymetry_native_m": round(native),
         "relief_meaningful": bool(relief_ok),
+        "coastline_applied": bool(coast_used),
         "grid_resolution_m": cfg["grid_resolution_m"],
         "has_wrecks": bool(wrecks_gj and wrecks_gj["features"]),
         "has_species": bool(cfg.get("species_file")),

@@ -105,6 +105,20 @@ Flip `enabled` to add one. Each costs roughly 600 KB of output and 5 seconds
 of compute per day, and the region picker in the app doubles as a "where is
 diveable today" view, sorted best-first within each country.
 
+**Enabling a region is what improves the species list.** Point mode covers
+conditions and structure anywhere on Earth, but the species it names come
+from `regionContaining()` in `docs/index.html`, and that only sees regions
+that actually ran — enabled ones. Outside every enabled region the app falls
+back to the coarse ocean-basin classifier in `BIOME_RULES`, which is a
+reference list for that stretch of ocean rather than a pack tuned to the
+coast, and which deliberately carries no legal sizes or seasons at all. So
+enabling the coast you actually dive is the single change that most improves
+what the app tells you about fish there.
+
+Enabled now: `novigrad`, `cascais`, `faro-ria-formosa`. Twenty-seven more are
+defined and ready — Portuguese Atlantic, Spanish Mediterranean and Atlantic,
+Italy, Greece, Macaronesia and the worldwide set — each one line away.
+
 **Coverage is deliberately uneven, and the app says so.** Three things are
 region-specific and do not travel:
 
@@ -223,6 +237,22 @@ python fish_finder.py              # the real thing
   `exclusions.geojson` before you trust a mark near a protected area.
 - Never dive alone, whatever the map says.
 
+## Picking a target
+
+Choosing a species does not just filter a list — it redraws the map. The
+structure map asks "where is there reachable relief and shelter"; a species
+map asks "where should *this animal* be", by reweighting relief and slope
+with its affinities and gating on its own depth envelope intersected with
+your working band. A gilthead that lives in 1–12 m and a dentex that wants
+the 20 m edge get genuinely different maps and genuinely different spots.
+
+Precomputed regions ship one PNG and one GPX per species per day. A scanned
+point now does the same thing live in the browser: shelter and the wreck halo
+are computed once and reused, so switching target costs one pass over the
+grid and no extra network calls at all. `speciesScore()` in
+`docs/structure.js` mirrors `species_spatial_score()` in `fish_finder.py`, so
+both halves answer the question the same way.
+
 ## Species and rules
 
 `species.json` holds **biology** — where each animal lives, what temperature it
@@ -287,6 +317,37 @@ only. An Indo-Pacific or Caribbean pack is real research, not a config edit.
 **Marine reserves.** None of the worldwide regions have exclusion polygons.
 The Poor Knights is a no-take reserve; large parts of the Florida Keys are
 closed to spearfishing. The app warns, but it does not know.
+
+## The coastline is not the bathymetry
+
+Bathymetry cannot answer "is this land". A grid cell reports the **average**
+of what is under it, so any strip of land narrower than a cell or two
+averages out to a negative elevation and is scored as perfectly good diving
+water. The Ria Formosa barrier islands off Faro are 200–600 m wide, and on a
+global grid that is exactly what happened: the score wash and the depth
+contours were drawn straight across the beach, the dunes and the lagoon.
+
+No amount of buffering the bathymetric mask fixes that. The mask was not a
+bit too small — it was absent. So the real shoreline is fetched separately,
+as OpenStreetMap `natural=coastline` ways, through the same Overpass endpoint
+the wreck layer already uses:
+
+1. the coastline is burned onto the grid as an impassable wall,
+2. the sea is flood-filled inward from the deepest cell,
+3. anything the sea cannot reach — spits, barrier islands, lagoons, harbour
+   basins — becomes land however deep the depth grid claims it is.
+
+Overpass clips ways at the bbox, so a coastline can arrive with an open end.
+If the wall has a hole the fill leaks and you are no worse off than before;
+but on a mostly-enclosed box the fill can instead be strangled down to a
+puddle. Both sides therefore **refuse** the mask when applying it would
+delete more than 80% of the water, and say so — a bad fetch must not be able
+to turn a whole region into land.
+
+`coastline.enabled` in `config.json` turns it off. The app states per region
+and per scan whether the coastline was actually applied, because "the land
+edge is bathymetry only" is something you want to know before trusting a mark
+near the shore.
 
 ## Wrecks
 
