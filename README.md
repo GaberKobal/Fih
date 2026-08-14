@@ -18,6 +18,30 @@ docs/data/  score.png · spots.geojson · spots.gpx · latest.json
 GitHub Pages  →  the map on your phone
 ```
 
+## Where the files have to live
+
+Paths are load-bearing here, and uploading through the GitHub web UI has a
+habit of flattening them. Nothing warns you: the site just quietly loses a
+feature. The layout the code expects:
+
+```
+.gitignore                      not "gitignore"
+.github/workflows/update.yml    the daily forecast
+.github/workflows/add-region.yml    } these two only run as workflows
+.github/workflows/dive-log.yml      } if they are in .github/workflows/
+legal/HR.json, ES.json, …       one per jurisdiction (see the gap noted below)
+docs/.nojekyll                  not "nojekyll", and it belongs under docs/
+docs/index.html
+docs/add-region.html            index.html links to it by this exact name
+docs/anywhere.js  docs/structure.js  docs/sw.js
+```
+
+A YAML file outside `.github/workflows/` is an inert text file. A
+`add-region.html` sitting at the repository root is a 404 from the link in
+the app *and* a precache miss in `sw.js`. `nojekyll` without its leading dot
+lets GitHub Pages run Jekyll over `docs/`, which strips directories whose
+names begin with an underscore.
+
 ## Setting it up, from a phone if you like
 
 1. Create a new repository and upload these files (the GitHub web UI and the
@@ -111,7 +135,8 @@ triggers a rebuild automatically.
 | Field | What to change it for |
 | --- | --- |
 | `bbox` | The area covered. Keep it small — a 15 km box is plenty. |
-| `depth.min_m` / `max_m` | Your working depth band. |
+| `depth.min_m` / `max_m` | Your working depth band. Currently 2–25 m. This is the ceiling of the *scored* band, not a cliff: `depth_fit()` tapers from `best_m[1]` down to zero at `max_m + soft_edge_m`, so a 25 m ledge still scores, just low. |
+| `overlay.land_buffer_m` | How far the colour wash is held back from the coastline, in metres. Purely cosmetic — it never changes a score or moves a spot. Raise it if the wash still touches the beach, lower it if it is hiding water you want to see. |
 | `entry_points` | **Edit these.** Only one placeholder is filled in. Add every place you actually get in the water. |
 | `max_swim_km` | How far out you will swim from an entry point. |
 | `weights` | The relative pull of relief, slope, shelter, habitat. |
@@ -207,6 +232,18 @@ Mediterranean, so every Mediterranean region shares it.
 `legal/<CC>.json` holds **law**, one file per jurisdiction, merged in at run
 time by the region's `jurisdiction` field. A closed season in Croatia means
 nothing in Slovenia, so these are kept strictly apart.
+
+> **`legal/HR.json` is missing from this repository.** ES, FR, GR, IT and PT
+> are present; HR is not. Novigrad is the only enabled region and its
+> `jurisdiction` is `HR`, so right now the one region that actually runs has
+> **no minimum sizes and no closed seasons applied at all** — `load_legal()`
+> logs `no rules pack for jurisdiction HR` and returns an empty pack, and
+> every species shows as open because nothing says otherwise. This is the
+> single most consequential gap in the repo and it cannot be filled by
+> guessing: the closed seasons and sizes have to be read off the current
+> *Pravilnik o zaštiti riba i drugih morskih organizama* at ribarstvo.mps.hr
+> and written into `legal/HR.json` by hand. Until then, treat every species
+> panel for Novigrad as "unknown", not "legal".
 
 `docs/region-species.json` is a separate, display-only guide for every
 configured coast. It makes an unfamiliar region less opaque without turning a

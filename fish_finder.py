@@ -695,12 +695,23 @@ def depth_contours(depth_m, land, lats, lons, cfg):
     every = max(1, int(c.get("decimate", 3)))
     min_pts = int(c.get("min_points", 8))
 
-    field = gaussian_filter(np.nan_to_num(depth_m, nan=-5.0), sigma=1.5)
-    field[land] = -5.0
+    # Fill land with the mean water depth BEFORE smoothing, then mask it out
+    # afterwards — the same technique buildTerrain()/contourLines() use in
+    # docs/structure.js. Smoothing a -5 m sentinel into the coast built a
+    # false wall there, and every shallow level picked up a spurious ring
+    # running along the shoreline; masking alone would not have helped,
+    # because the damage was already baked into the blurred field. Masked
+    # cells are then genuinely skipped by contour(), so no line is ever drawn
+    # across dry land.
+    water = ~land
+    mean_d = float(np.nanmean(depth_m[water])) if water.any() else 0.0
+    filled = np.where(water, np.nan_to_num(depth_m, nan=mean_d), mean_d)
+    field = np.ma.masked_array(gaussian_filter(filled, sigma=1.5), mask=land)
+
+    feats = []
     fig = plt.figure()
     try:
         cs = plt.contour(lons, lats, field, levels=levels)
-        feats = []
         for lvl, segs in zip(cs.levels, cs.allsegs):
             for seg in segs:
                 if len(seg) < min_pts:
@@ -847,8 +858,12 @@ out center tags;"""
 
     feats = []
     for el in doc.get("elements", []):
-        lat = el.get("lat") or (el.get("center") or {}).get("lat")
-        lon = el.get("lon") or (el.get("center") or {}).get("lon")
+        # `or` treats a coordinate of exactly 0.0 as missing, which drops
+        # every wreck on the Greenwich meridian — Brighton, Le Havre, the
+        # whole Gulf of Guinea — and on the equator. Test for None instead.
+        centre = el.get("center") or {}
+        lat = el["lat"] if el.get("lat") is not None else centre.get("lat")
+        lon = el["lon"] if el.get("lon") is not None else centre.get("lon")
         if lat is None or lon is None:
             continue
         tg = el.get("tags", {})
@@ -1274,12 +1289,18 @@ def daily_breakdown(h, daily, viz, viz_m, work, move, cfg, now_iso,
     days = []
     for date, idx in sorted(by_date.items()):
         hours = []
-        for i in idx:
+        for k, i in enumerate(idx):
+            # Is the sun coming back up again later in THIS day? Passing a
+            # flat True here labelled 22:00 "waiting for first light", which
+            # is only true at 04:00. The frontend re-anchors "now" onto one
+            # of these hour records (see reanchorNow() in docs/index.html),
+            # so a wrong answer here becomes the wrong headline all evening.
+            more_light = any(float(light[j]) > 0 for j in idx[k + 1:])
             vw, lim, _ = verdict(
                 float(viz[i]), float(viz_m[i]), float(work[i]),
                 float(sea_ok[i]) if sea_ok is not None else 1.0,
                 float(air_ok[i]) if air_ok is not None else 1.0,
-                cfg, float(light[i]), True)
+                cfg, float(light[i]), more_light)
             wd = float(wind_dir[i]) if wind_dir is not None else float("nan")
             cur = float(current[i]) if current is not None else float("nan")
             hours.append({
@@ -1333,15 +1354,24 @@ def daily_breakdown(h, daily, viz, viz_m, work, move, cfg, now_iso,
 
 def verdict(viz_now, viz_m_now, work_now, sea_now, air_now, cfg,
             light_now=1.0, daylight_left=True):
-    """A single word plus the reason, because that is the actual decision."""
+    """A single word plus the reason, because that is the actual decision.
+
+    daylight_left is an ASTRONOMICAL fact — is the sun going to be up again
+    before midnight local — and nothing else. It used to be computed as
+    "light AND workable", which meant a blown-out but brilliantly sunny
+    midday was reported as "no diveable light left today": a statement about
+    the sun, made because of the wind, on a day the user could see was only
+    half over. Whether the sea is diveable is the separate branch below, and
+    "nothing diveable today" is already stated per-day in the hour strip.
+    """
     day = min(viz_now, work_now)
 
     # Conditions alone are not a verdict. "Go" at 22:00 is wrong however flat
     # the sea is, and it contradicted the panel below saying the day was over.
     if light_now <= 0:
-        return ("not now", "dark — no daylight", day)
-    if not daylight_left:
-        return ("not now", "no diveable light left today", day)
+        return ("not now",
+                "dark — waiting for first light" if daylight_left
+                else "dark — no daylight left today", day)
 
     if work_now < cfg["workability"]["hard_floor"]:
         limit = "sea state" if sea_now <= air_now else "wind"
@@ -1436,17 +1466,34 @@ def fetch_cmems_profile(lat, lon, cfg):
             "- falling back to the thermocline estimate")
         return None
 
-    cache_file = CACHE / f"cmems_{dt.date.today().isoformat()}.json"
+    # Keyed by region as well as by date. It was keyed by date alone, so with
+    # more than one region enabled the SECOND region loaded the FIRST one's
+    # profile from cache — the Adriatic thermocline silently applied to the
+    # Azores, and every region after the first got a temperature at depth
+    # from somewhere else entirely.
+    region = cfg.get("region_id", "default")
+    cache_file = CACHE / f"cmems_{region}_{dt.date.today().isoformat()}.json"
     if cache_file.exists():
         log("cmems: cache hit for today")
         return json.loads(cache_file.read_text())
+
+    # The Mediterranean physics product does not cover the Atlantic, Pacific
+    # or Indian oceans, so outside its footprint the request came back empty
+    # and every non-Med region fell back to the Adriatic thermocline guess.
+    # config.json has carried dataset_id_global all along without anything
+    # ever reading it.
+    med = (-6.0 <= lon <= 36.5) and (30.0 <= lat <= 46.0)
+    dataset = c["dataset_id"] if med else (c.get("dataset_id_global")
+                                           or c["dataset_id"])
+    if not med and dataset != c["dataset_id"]:
+        log(f"cmems: outside the Mediterranean product, using {dataset}")
 
     try:
         import copernicusmarine
         pad = c.get("pad_deg", 0.1)
         today = dt.date.today()
         ds = copernicusmarine.open_dataset(
-            dataset_id=c["dataset_id"],
+            dataset_id=dataset,
             variables=[c.get("variable", "thetao")],
             minimum_longitude=lon - pad, maximum_longitude=lon + pad,
             minimum_latitude=lat - pad, maximum_latitude=lat + pad,
@@ -1463,7 +1510,7 @@ def fetch_cmems_profile(lat, lon, cfg):
             log("cmems: profile came back empty - using the estimate")
             return None
         out = {"depths": [k[0] for k in keep], "temps": [k[1] for k in keep],
-               "source": c["dataset_id"], "fetched": today.isoformat()}
+               "source": dataset, "fetched": today.isoformat()}
         CACHE.mkdir(parents=True, exist_ok=True)
         cache_file.write_text(json.dumps(out))
         log(f"cmems: profile {out['temps'][0]:.1f} C at "
@@ -1683,13 +1730,15 @@ def mercator_y(lat_deg):
 
 
 def write_overlay_png(score, lats, lons, path, land=None, cfg_overlay=None):
-    cfg_overlay = cfg_overlay or {}
     """Transparent PNG, rows resampled to equal Web Mercator spacing.
 
     Leaflet stretches an ImageOverlay linearly in Mercator y. A plate-carree
     PNG dropped straight in is therefore shifted north-south by tens of
     metres at 45 N — enough to matter when you are looking for a 40 m reef.
     """
+    # Was placed above the string literal, which demoted the docstring to a
+    # discarded expression and left this function undocumented to help().
+    cfg_overlay = cfg_overlay or {}
     import matplotlib
     matplotlib.use("Agg")
 
@@ -1715,15 +1764,29 @@ def write_overlay_png(score, lats, lons, path, land=None, cfg_overlay=None):
     # onto the shore. At 100 m cells that is a visible smear of colour on land.
     # Carry the land mask through with NEAREST sampling and force it clear.
     if land is not None:
-        # Pull the visible wash back one native cell from any detected
-        # shoreline. Global bathymetry occasionally disagrees with the
-        # vector coastline right at the coast — river mouths, breakwaters,
-        # reclaimed land — by a cell or two, which can otherwise show a
-        # colour wash sitting visibly on dry land. This is a cosmetic
-        # margin on what gets painted only; it does not touch the land mask
-        # used for scoring or spot-finding, so real nearshore spots are
-        # unaffected.
-        land_buffered = binary_dilation(land) if land.any() else land
+        # Pull the visible wash back from any detected shoreline. Chart
+        # bathymetry disagrees with the vector coastline right at the coast
+        # — river mouths, breakwaters, marinas, reclaimed land — and the
+        # disagreement is a DISTANCE, not a cell count, so a fixed one-cell
+        # dilation was ~100 m at Novigrad's 100 m grid and only ~40 m
+        # wherever the grid came out finer. Express the margin in metres and
+        # convert to cells for the grid in hand, so the pull-back is the
+        # same on the ground in every region.
+        #
+        # Cosmetic only: it does not touch the land mask used for scoring or
+        # spot-finding, so real nearshore spots are unaffected.
+        buf_m = float(cfg_overlay.get("land_buffer_m", 200.0))
+        cell_m = (abs(float(np.gradient(lats).mean())) * 111320.0
+                  if np.size(lats) > 1 else 100.0)
+        cells = max(1, int(round(buf_m / max(cell_m, 1e-6))))
+        # A disk, not binary_dilation's default cross. Iterating the cross
+        # grows a diamond, which reaches the full radius along the axes but
+        # only 1/sqrt(2) of it diagonally — so a coast running NE-SW, which
+        # most of this one does, got the smallest margin of all.
+        yy, xx = np.ogrid[-cells:cells + 1, -cells:cells + 1]
+        disk = (yy ** 2 + xx ** 2) <= cells * cells
+        land_buffered = (binary_dilation(land, structure=disk)
+                         if land.any() else land)
         lm = RegularGridInterpolator((lats, lons), land_buffered.astype(float),
                                      method="nearest",
                                      bounds_error=False, fill_value=1.0)
@@ -1966,7 +2029,9 @@ def run(cfg, selftest=False, out_dir=None):
     light = light_quality(elev, cfg, h.get("cloud_cover"))
 
     today_str = now_iso[:10]
-    light_left = any(light[i] > 0 and work[i] > cfg["workability"]["hard_floor"]
+    # Sun only — see verdict(). Whether any of that light is workable is a
+    # different question and gets its own answer.
+    light_left = any(light[i] > 0
                      and h["time"][i] >= now_iso and h["time"][i][:10] == today_str
                      for i in range(len(h["time"])))
     word, limiter, day_score = verdict(
@@ -2289,17 +2354,25 @@ def main():
     if not index:
         raise SystemExit("every region failed - nothing written")
 
+    # "depth" and "weights" join the model constants: the in-browser point
+    # model needs the working depth band and the term weights to report the
+    # same footer the region maps do, and reading them from here keeps the
+    # two halves from drifting the way duplicated numbers always do.
     model_keys = ("visibility", "workability", "movement", "light",
                   "wind_regimes", "gust", "day_weights", "verdict",
-                  "conditions", "thermocline", "shelter", "pressure")
+                  "conditions", "thermocline", "shelter", "pressure",
+                  "depth", "weights")
     model = {k: base.get(k) for k in model_keys}
 
-    # Every species file any region declares, plus the ocean-basin fallback
-    # packs used for points outside every defined region (see
-    # biomeSpeciesFile() in docs/index.html) - bundled once here so tapping
-    # an arbitrary point anywhere on Earth costs zero extra fetches.
-    species_filenames = {r.get("species_file") for r in regions if r.get("species_file")}
-    species_filenames |= {"species_nwatlantic.json", "species_indian_tropical.json"}
+    # Every species pack in the repository, not just the ones a region
+    # happens to declare. The ocean-basin fallback in biomeSpeciesFile()
+    # (docs/index.html) can name a pack no enabled region uses, and a pack
+    # that is named but not bundled fails silently as "no species data for
+    # this point" — which is indistinguishable, from the map, from genuinely
+    # having no match. Globbing means adding a biome rule is a one-file edit.
+    species_filenames = {p.name for p in ROOT.glob("species*.json")}
+    species_filenames |= {r.get("species_file") for r in regions
+                          if r.get("species_file")}
     model["species_packs"] = {}
     for name in sorted(species_filenames):
         try:

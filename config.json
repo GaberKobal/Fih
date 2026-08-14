@@ -9,13 +9,13 @@
   "grid_resolution_m": 100,
   "depth": {
     "min_m": 2.0,
-    "max_m": 24.0,
+    "max_m": 25.0,
     "soft_edge_m": 3.0,
     "best_m": [
       4.0,
       10.0
     ],
-    "_note": "best_m set from 6 logged dives at 4-10 m - that is where you actually hunt, not the 8-18 m I guessed."
+    "_note": "best_m set from 6 logged dives at 4-10 m - that is where you actually hunt, not the 8-18 m I guessed. max_m raised 24 -> 25 m; note this is the ceiling of the SCORED band, not a plateau - depth_fit() tapers from best_m[1] down to zero at max_m + soft_edge_m, so ground at 25 m still scores, just low."
   },
   "entry_points": [],
   "max_swim_km": 2.0,
@@ -198,8 +198,9 @@
   },
   "repo_issue_url": "https://github.com/GaberKobal/Fih/issues/new",
   "overlay": {
-    "_note": "Defaults reproduce the original appearance. Knobs if you want to change it: supersample 2 halves the block size at 4x the file size; raising alpha_floor_score hides low-scoring water so only candidate spots are painted.",
+    "_note": "Defaults reproduce the original appearance. Knobs if you want to change it: supersample 2 halves the block size at 4x the file size; raising alpha_floor_score hides low-scoring water so only candidate spots are painted; land_buffer_m is how far the colour wash is held back from the coastline, in metres, and is cosmetic only - it never changes a score or moves a spot. Raise it if the wash still touches the beach, lower it if it is hiding water you want to see.",
     "supersample": 1,
+    "land_buffer_m": 200,
     "alpha_floor_score": 0.02,
     "alpha_full_score": 0.55,
     "alpha_max": 0.88,
