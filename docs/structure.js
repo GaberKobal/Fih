@@ -27,7 +27,8 @@ export const defaults = {
   depth_min_m: 2, depth_best: [4, 18], depth_max_m: 30,
   relief_scale_m: 3.0, slope_scale: 0.04, background_m: 600,
   fetch_max_km: 20, fetch_step_m: 250, swell_weight: 0.5,
-  w_relief: 0.35, w_slope: 0.20, w_shelter: 0.45,
+  w_relief: 0.35, w_slope: 0.20, w_shelter: 0.45, w_wreck: 0.3,
+  wreck_radius_m: 250,
   top_spots: 15, min_spot_score: 0.35, min_separation_m: 500,
 };
 
@@ -271,7 +272,40 @@ export function shelterFrom(T, fromDeg, o = defaults){
   return out;
 }
 
-export function score(T, windFrom, swellFrom, o = defaults){
+/** A soft halo around each charted wreck, tapering linearly to 0 at
+ *  radiusM — the same shape as wreck_score() in fish_finder.py, just
+ *  computed in true metres via T.dyM/T.dxM instead of over a Mercator
+ *  raster. Point data, so it needs none of the raster's corrections. */
+export function wreckScore(T, wrecks, radiusM = 250){
+  const {nx, ny, lat0, lon0, cell, dyM, dxM} = T;
+  const cellLon = T.cellLon ?? cell;
+  const field = new Float32Array(nx * ny);
+  const pts = (wrecks && wrecks.features) || [];
+  if(!pts.length) return field;
+
+  for(const f of pts){
+    const [lon, lat] = f.geometry.coordinates;
+    const fy = (lat - lat0) / cell, fx = (lon - lon0) / cellLon;
+    for(let y = 0; y < ny; y++){
+      const dy = (y - fy) * dyM;
+      if(Math.abs(dy) >= radiusM) continue;         // quick reject by row
+      const rowBudget = Math.sqrt(radiusM*radiusM - dy*dy) / Math.abs(dxM || 1);
+      const xLo = Math.max(0, Math.floor(fx - rowBudget));
+      const xHi = Math.min(nx - 1, Math.ceil(fx + rowBudget));
+      for(let x = xLo; x <= xHi; x++){
+        const dx = (x - fx) * dxM;
+        const d = Math.hypot(dy, dx);
+        if(d >= radiusM) continue;
+        const v = 1 - d / radiusM;
+        const i = y * nx + x;
+        if(v > field[i]) field[i] = v;
+      }
+    }
+  }
+  return field;
+}
+
+export function score(T, windFrom, swellFrom, o = defaults, wrecks = null){
   const n = T.nx * T.ny;
   const wS = shelterFrom(T, windFrom, o);
   const sS = (swellFrom == null) ? null : shelterFrom(T, swellFrom, o);
@@ -279,14 +313,17 @@ export function score(T, windFrom, swellFrom, o = defaults){
   for(let i = 0; i < n; i++)
     shelter[i] = sS ? (1 - o.swell_weight) * wS[i] + o.swell_weight * sS[i] : wS[i];
 
-  const wsum = o.w_relief + o.w_slope + o.w_shelter;
+  const wreck = (wrecks && wrecks.features && wrecks.features.length)
+    ? wreckScore(T, wrecks, o.wreck_radius_m ?? 250) : null;
+  const wsum = o.w_relief + o.w_slope + o.w_shelter + (wreck ? o.w_wreck : 0);
   const out = new Float32Array(n);
   for(let i = 0; i < n; i++){
     if(T.land[i]){ out[i] = 0; continue; }
-    out[i] = ((o.w_relief*T.relief[i] + o.w_slope*T.slope[i] + o.w_shelter*shelter[i])
-              / wsum) * T.dfit[i];
+    let v = o.w_relief*T.relief[i] + o.w_slope*T.slope[i] + o.w_shelter*shelter[i];
+    if(wreck) v += o.w_wreck * wreck[i];
+    out[i] = (v / wsum) * T.dfit[i];
   }
-  return {score: out, shelter};
+  return {score: out, shelter, wreck};
 }
 
 export function findSpots(T, s, o = defaults){

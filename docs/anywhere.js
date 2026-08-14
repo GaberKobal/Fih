@@ -45,13 +45,36 @@ function solarElevation(times, lat, lon, tzOffsetSec){
   });
 }
 
-function lightQuality(elev, cfg){
+function lightQuality(elev, cfg, cloudPct){
   const c = cfg.light || {};
   const golden = c.golden_max_deg ?? 12, high = c.high_sun_deg ?? 45,
-        floor = c.high_sun_factor ?? 0.6;
-  return elev.map(e => e > 0
-    ? 1 - (1 - floor) * clamp01((e - golden) / Math.max(high - golden, 1e-6))
-    : 0);
+        floor = c.high_sun_factor ?? 0.6, soften = c.cloud_softening ?? 0.5;
+  return elev.map((e, i) => {
+    if(e <= 0) return 0;
+    let floorEff = floor;
+    if(cloudPct){
+      const frac = clamp01((isFinite(cloudPct[i]) ? cloudPct[i] : 0) / 100);
+      floorEff = floor + (1 - floor) * soften * frac;
+    }
+    return 1 - (1 - floorEff) * clamp01((e - golden) / Math.max(high - golden, 1e-6));
+  });
+}
+
+/** Falling-barometer-before-a-front nudge — same bounded, non-gating shape
+ *  as pressure_factor_series() in fish_finder.py. Returns null (no-op) if
+ *  the field is missing. */
+function pressureFactor(h, cfg){
+  const c = cfg.pressure || {};
+  const p = h.pressure_msl;
+  if(!p || !p.some(isFinite)) return null;
+  const win = Math.max(1, c.trend_window_h ?? 3);
+  const sens = c.sensitivity ?? 0.02;
+  const cap = c.max_swing ?? 0.08;
+  return p.map((v, i) => {
+    if(i < win || !isFinite(v) || !isFinite(p[i-win])) return 1.0;
+    const trend = (v - p[i-win]) / win;      // hPa/h, negative = falling
+    return 1 + Math.max(-cap, Math.min(cap, -trend * sens));
+  });
 }
 
 function classifyWind(dirDeg, speed, gust, cfg){
@@ -129,7 +152,7 @@ export async function forecastPoint(lat, lon, cfg, legalPack){
   const mVars = ["wave_height","wave_period","wave_direction","sea_surface_temperature",
                  "sea_level_height_msl","ocean_current_velocity"];
   const wVars = ["precipitation","wind_speed_10m","wind_direction_10m",
-                 "wind_gusts_10m","cloud_cover"];
+                 "wind_gusts_10m","cloud_cover","pressure_msl"];
   const q = `latitude=${lat.toFixed(4)}&longitude=${lon.toFixed(4)}`
           + `&past_days=${past}&forecast_days=${fwd}&timezone=auto`;
 
@@ -162,7 +185,16 @@ export async function forecastPoint(lat, lon, cfg, legalPack){
   viz = viz.map((v,i) => clamp01(v * regimes[i].viz));
   const vizM = viz.map(v => c.viz_min_m + v * (c.viz_max_m - c.viz_min_m));
 
-  const seaOk = h.wave_height.map(v => 1 - norm(isFinite(v)?v:1, wc.hs_good_m, wc.hs_bad_m));
+  // A given significant height feels very different depending on period:
+  // short-period wind chop is steep, long-period ground swell of the same
+  // height is smooth. Mirrors workability_series() in fish_finder.py.
+  const periodRef = wc.period_ref_s ?? 8.0;
+  const hsEff = h.wave_height.map((v,i) => {
+    const hv = isFinite(v) ? v : 1;
+    const pv = Math.min(20, Math.max(2, isFinite(h.wave_period[i]) ? h.wave_period[i] : periodRef));
+    return hv * Math.min(1.6, Math.max(0.6, periodRef / pv));
+  });
+  const seaOk = hsEff.map(v => 1 - norm(v, wc.hs_good_m, wc.hs_bad_m));
   const airOk = h.wind_speed_10m.map(v => 1 - norm(isFinite(v)?v:30, wc.wind_good_kmh, wc.wind_bad_kmh));
   const work = seaOk.map((s,i) => clamp01(Math.min(s, airOk[i]) * regimes[i].work));
 
@@ -175,12 +207,14 @@ export async function forecastPoint(lat, lon, cfg, legalPack){
                  0, mc.current_ref_ms ?? 0.3)));
   const tideRange = Math.max(...lvl) - Math.min(...lvl);
 
-  const light = lightQuality(solarElevation(times, lat, lon, tz), cfg);
+  const light = lightQuality(solarElevation(times, lat, lon, tz), cfg, h.cloud_cover);
+  const pf = pressureFactor(h, cfg);
 
   // ---- hourly score, days, best window ----
   const dw = cfg.day_weights;
   const hourly = times.map((_,i) =>
     (dw.visibility*viz[i] + dw.workability*work[i] + dw.movement*move[i])
+    * (pf ? pf[i] : 1)
     * (work[i] > wc.hard_floor ? 1 : 0) * light[i]);
 
   const nowLocal = new Date(Date.now() + tz*1000);
