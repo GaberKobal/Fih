@@ -65,6 +65,10 @@ jobs:
     timeout-minutes: 330
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Needed to diff against github.event.before and tell a
+          # frontend-only push from one that changes the model.
+          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:
@@ -87,8 +91,6 @@ jobs:
             echo "no CMEMS credentials - skipping (model will use the estimate)"
           fi
 
-      # Bathymetry never changes. Keyed on regions.json so adding a region
-      # refetches only what is new.
       # Bathymetry, coastlines and wrecks never change, so they are fetched
       # once per region and reused forever. Getting that right is the whole
       # difference between a run costing 11 minutes and a run costing hours.
@@ -109,9 +111,53 @@ jobs:
       - name: Restore bathymetry, coastline and wreck cache
         uses: actions/cache@v4
         with:
-          path: cache
+          # docs/data rides along on purpose. It is gitignored — it only ever
+          # exists as a build artifact — so without a copy of the last run's
+          # output there is nothing to publish, and every change to the page
+          # had to recompute every enabled region from scratch just to have
+          # a site to deploy. Carrying it here is what lets a frontend-only
+          # push skip the model entirely (see below).
+          path: |
+            cache
+            docs/data
           key: bathy-${{ github.run_id }}
           restore-keys: bathy-
+
+      # A change to index.html does not change the forecast. Work out whether
+      # anything that actually feeds the model moved; if not, publish the
+      # restored output with the new page and skip the run.
+      #
+      # Fails safe in every direction: an unreadable diff, an empty diff, a
+      # first push on a new branch, a missing cache — all fall through to
+      # running the model.
+      - name: Decide whether the model needs to run
+        id: plan
+        run: |
+          set -u
+          RUN=true
+          if [ "${{ github.event_name }}" = "push" ]; then
+            BEFORE="${{ github.event.before }}"
+            if [ -n "$BEFORE" ] \
+               && [ "$BEFORE" != "0000000000000000000000000000000000000000" ] \
+               && git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+              CHANGED=$(git diff --name-only "$BEFORE" "${{ github.sha }}" || true)
+            else
+              CHANGED=$(git show --name-only --pretty=format: "${{ github.sha }}" || true)
+            fi
+            CHANGED=$(echo "$CHANGED" | sed '/^$/d')
+            echo "changed files:"; echo "$CHANGED" | sed 's/^/  /'
+            FRONTEND='^docs/(index\.html|anywhere\.js|structure\.js|sw\.js|add-region\.html|region-species\.json)$|^README\.md$'
+            if [ -n "$CHANGED" ] && ! echo "$CHANGED" | grep -qvE "$FRONTEND"; then
+              if [ -f docs/data/index.json ]; then
+                RUN=false
+                echo "→ frontend-only change and a cached forecast exists: skipping the model"
+              else
+                echo "→ frontend-only change but no cached forecast: running the model anyway"
+              fi
+            fi
+          fi
+          echo "run_model=$RUN" >> "$GITHUB_OUTPUT"
+          echo "→ run_model=$RUN"
 
       # Which regions run, in order of precedence:
       #   1. the `regions` input, when the workflow is started by hand
@@ -120,6 +166,7 @@ jobs:
       #      a commit — set it to e.g. "med-west,adriatic" or "all"
       #   3. otherwise, whatever has "enabled": true in regions.json
       - name: Run model
+        if: steps.plan.outputs.run_model == 'true'
         env:
           COPERNICUSMARINE_SERVICE_USERNAME: ${{ secrets.COPERNICUSMARINE_SERVICE_USERNAME }}
           COPERNICUSMARINE_SERVICE_PASSWORD: ${{ secrets.COPERNICUSMARINE_SERVICE_PASSWORD }}
@@ -127,7 +174,22 @@ jobs:
           FISH_JOBS: ${{ github.event.inputs.jobs || vars.FISH_JOBS || '4' }}
         run: python fish_finder.py
 
+      - name: Reusing the cached forecast
+        if: steps.plan.outputs.run_model == 'false'
+        run: |
+          echo "Frontend-only change — the model did not run."
+          python - <<'PY'
+          import json, datetime as dt
+          d = json.load(open("docs/data/index.json", encoding="utf-8"))
+          age = (dt.datetime.now(dt.timezone.utc)
+                 - dt.datetime.fromisoformat(d["generated"])).total_seconds() / 3600
+          print(f"  publishing {len(d['regions'])} region(s) from a forecast "
+                f"{age:.1f} h old")
+          print( "  the next scheduled run refreshes it (every 8 h)")
+          PY
+
       - name: Sentinel-2 turbidity check (weekly, optional)
+        if: steps.plan.outputs.run_model == 'true'
         continue-on-error: true
         env:
           CDSE_CLIENT_ID: ${{ secrets.CDSE_CLIENT_ID }}
