@@ -100,7 +100,36 @@
        what hid viz/swell/wind on the desktop layout. */
     flex:0 0 auto;
   }
-  #vgrad{position:absolute; inset:0; opacity:.30}
+  /* The 72-hour outlook, as a wash behind the verdict.
+     ------------------------------------------------------------------
+     This was a <canvas> sized in JS from clientWidth/clientHeight at draw
+     time. Explicit pixel dimensions beat `inset:0`, so the moment anything
+     reflowed afterwards — the webfont swapping in, the vitals wrapping to a
+     second row, a longer "limited by" line — the canvas stayed at its old
+     size and became a hard-edged coloured rectangle sitting in the middle
+     of the panel. A CSS gradient cannot go stale: it is painted by the
+     layout engine at whatever size the element currently is.
+     Opacity is down from .30 too. The full red-amber-green ramp at 30% over
+     the panel colour came out an opaque olive that read as a block rather
+     than a tint. */
+  #vgrad{
+    position:absolute; inset:0; pointer-events:none; opacity:.17;
+    background-image:linear-gradient(90deg,var(--shelf),var(--shelf));
+  }
+  /* Darkened downward so the text always sits on the same ground no matter
+     what the outlook underneath is doing. */
+  #verdict::after{
+    content:""; position:absolute; inset:0; pointer-events:none;
+    background:linear-gradient(180deg,rgba(7,26,34,.10),rgba(7,26,34,.62));
+  }
+  /* One consistent cue for the verdict, in the same colour as the word, so
+     the band reads as deliberate rather than as whatever the gradient
+     happened to land on. */
+  #verdict{border-left:3px solid var(--line)}
+  #verdict[data-v="go"]{border-left-color:var(--kelp)}
+  #verdict[data-v="marginal"]{border-left-color:var(--buoy)}
+  #verdict[data-v="poor"],#verdict[data-v="stay home"]{border-left-color:var(--flag)}
+  #verdict[data-v="not now"]{border-left-color:var(--sound)}
   #verdict > .row{position:relative}
   .row{display:flex; align-items:baseline; justify-content:space-between; gap:12px}
   #word{
@@ -362,7 +391,7 @@
   <div id="regionwarn"></div>
 
   <header id="verdict">
-    <canvas id="vgrad" aria-hidden="true"></canvas>
+    <div id="vgrad" aria-hidden="true"></div>
     <div class="row">
       <div>
         <div class="eyebrow" id="region">loading</div>
@@ -807,21 +836,22 @@ function ramp(q){
   return stops[2][1];
 }
 
-function drawVerdictGradient(series, nowIdx){
-  const c=$("#vgrad"), host=$("#verdict");
-  const w=host.clientWidth, h=host.clientHeight;
-  c.width=w*devicePixelRatio; c.height=h*devicePixelRatio;
-  c.style.width=w+"px"; c.style.height=h+"px";
-  const ctx=c.getContext("2d"); ctx.scale(devicePixelRatio,devicePixelRatio);
-
-  const viz=series.visibility_m, work=series.workability, n=viz.length;
-  const g=ctx.createLinearGradient(0,0,w,0);
-  for(let i=0;i<n;i++){
-    const q=0.6*Math.min(1,viz[i]/12)+0.4*work[i];
-    const [r,gg,b]=ramp(q);
-    g.addColorStop(i/(n-1), `rgb(${r},${gg},${b})`);
+// No canvas, no measuring, nothing to keep in sync — the browser repaints
+// this at whatever size the panel currently is, forever.
+function drawVerdictGradient(series){
+  const el=$("#vgrad");
+  const viz=series && series.visibility_m, work=series && series.workability;
+  if(!viz || !work || viz.length < 2){
+    el.style.backgroundImage="none";
+    return;
   }
-  ctx.fillStyle=g; ctx.fillRect(0,0,w,h);
+  const n=viz.length, stops=[];
+  for(let i=0;i<n;i++){
+    const q=0.6*Math.min(1,viz[i]/12)+0.4*(work[i]||0);
+    const [r,g,b]=ramp(q);
+    stops.push(`rgb(${r},${g},${b}) ${(i/(n-1)*100).toFixed(2)}%`);
+  }
+  el.style.backgroundImage=`linear-gradient(90deg,${stops.join(",")})`;
 }
 
 function drawSpark(series, nowIdx){
@@ -1510,6 +1540,8 @@ function renderAll(d, meta){
   const vw = isDark ? "not now" : (d.now.verdict || "");
   $("#word").textContent = vw.charAt(0).toUpperCase() + vw.slice(1);
   $("#word").dataset.v = vw;
+  // Same value on the band, so its accent edge matches the word.
+  $("#verdict").dataset.v = vw;
   if(vw === "not now"){
     // Only supply a reason if the payload did not already give a specific
     // one. The model now distinguishes "waiting for first light" from "no
@@ -1579,7 +1611,7 @@ function renderAll(d, meta){
   renderDays(d);
   renderHours(d);
 
-  drawVerdictGradient(d.series, d.now_index);
+  drawVerdictGradient(d.series);
   drawSpark(d.series, d.now_index);
 
   DATA=d;
@@ -1725,14 +1757,9 @@ $("#refresh").addEventListener("click",()=>{
   if(POINT) loadPoint(POINT.lat, POINT.lon); else load();
 });
 
-// Redrawing the gradient needs the series that is already in memory. Going
-// back to the network for it re-fetched a region file that does not exist in
-// point mode and, in region mode, could repaint from a cached older payload
-// than the one on screen. DATA is the payload being displayed.
-addEventListener("resize",()=>{
-  if(!DATA || !DATA.series || !$("#vgrad").width) return;
-  drawVerdictGradient(DATA.series, DATA.now_index);
-});
+// No resize handler for the verdict wash any more. It is a CSS gradient on
+// an inset:0 element, so the layout engine resizes it — which is the whole
+// reason the stale-rectangle bug cannot come back.
 load();
 </script>
 </body>
