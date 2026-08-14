@@ -2,8 +2,24 @@ name: Update dive forecast
 
 on:
   schedule:
-    - cron: "40 3 * * *"
+    # Every 8 hours. The forecast itself only moves hourly, but three runs a
+    # day means the map is never more than a third of a day behind whichever
+    # coast you open it on — which matters once the regions span every
+    # timezone rather than one.
+    - cron: "40 3,11,19 * * *"
   workflow_dispatch:
+    inputs:
+      regions:
+        description: >-
+          Which regions to compute: comma-separated ids and/or group names
+          (see `python fish_finder.py --groups`), or "all", or "enabled" to
+          use the flags in regions.json. Leave blank for "enabled".
+        required: false
+        default: ""
+      jobs:
+        description: "Regions to compute at once (4 is a good default)"
+        required: false
+        default: "4"
   push:
     paths:
       - "fish_finder.py"
@@ -75,10 +91,18 @@ jobs:
           key: bathy-${{ hashFiles('regions.json', 'config.json') }}
           restore-keys: bathy-
 
-      - name: Run model for every enabled region
+      # Which regions run, in order of precedence:
+      #   1. the `regions` input, when the workflow is started by hand
+      #   2. the FISH_REGIONS repository variable (Settings -> Variables),
+      #      which is how the SCHEDULED run gets repointed at a group without
+      #      a commit — set it to e.g. "med-west,adriatic" or "all"
+      #   3. otherwise, whatever has "enabled": true in regions.json
+      - name: Run model
         env:
           COPERNICUSMARINE_SERVICE_USERNAME: ${{ secrets.COPERNICUSMARINE_SERVICE_USERNAME }}
           COPERNICUSMARINE_SERVICE_PASSWORD: ${{ secrets.COPERNICUSMARINE_SERVICE_PASSWORD }}
+          FISH_REGIONS: ${{ github.event.inputs.regions || vars.FISH_REGIONS || '' }}
+          FISH_JOBS: ${{ github.event.inputs.jobs || vars.FISH_JOBS || '4' }}
         run: python fish_finder.py
 
       - name: Sentinel-2 turbidity check (weekly, optional)
@@ -95,8 +119,16 @@ jobs:
             echo "not Monday - skipping (runs weekly, or on a manual run)"
           fi
 
+      # GitHub Pages will not publish a site over 1 GB, and the artifact
+      # upload slows down badly well before that. At roughly 400 KB per
+      # region that is a hard ceiling near 2500 regions and an uncomfortable
+      # one near 1000 — worth seeing in the log while the catalogue grows,
+      # rather than discovering it on the day a deploy starts failing.
       - name: Report output size
-        run: du -sh docs/data && ls docs/data
+        run: |
+          du -sh docs/data
+          echo "regions: $(ls -1 docs/data | grep -v '\.json$' | wc -l)"
+          echo "files:   $(find docs/data -type f | wc -l)"
 
       - uses: actions/upload-pages-artifact@v3
         with:
