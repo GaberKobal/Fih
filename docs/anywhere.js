@@ -110,8 +110,13 @@ function legalStatus(sp, date, legalPack){
   const L = (legalPack && legalPack.species && legalPack.species[sp.id]) || {};
   if(!legalPack || !legalPack.closed_seasons_researched)
     return {open:true, reason:"", unknown:true, legal:L};
-  const md = String(date.getMonth()+1).padStart(2,"0") + "-"
-           + String(date.getDate()).padStart(2,"0");
+  // `date` was built by parsing a LOCAL wall-clock string as if it were UTC,
+  // so only the getUTC* accessors read back the hour that was put in. The
+  // local getters shift it by the browser's own offset, which rolled a
+  // 00:00 local hour back into the previous day for anyone west of UTC and
+  // moved every closed-season boundary by a day for them.
+  const md = String(date.getUTCMonth()+1).padStart(2,"0") + "-"
+           + String(date.getUTCDate()).padStart(2,"0");
   for(const w of (L.closed_seasons || [])){
     const closed = w.from <= w.to ? (md >= w.from && md <= w.to)
                                   : (md >= w.from || md <= w.to);
@@ -122,7 +127,7 @@ function legalStatus(sp, date, legalPack){
 }
 
 function speciesDayFactors(sp, sst, vizScore, date, cfg, legalPack){
-  const month = date.getMonth() + 1;
+  const month = date.getUTCMonth() + 1;      // see the note in legalStatus()
   const dMid = (sp.depth_best_m[0] + sp.depth_best_m[1]) / 2;
   const tAt = tempAtDepth(sst, dMid, month, cfg);
   const tempFit = trapezoid(tAt, sp.temp_c[0], sp.temp_best_c[0],
@@ -167,8 +172,37 @@ export async function forecastPoint(lat, lon, cfg, legalPack){
   const times = m.hourly.time;
   const h = {time: times};
   mVars.forEach(k => h[k] = (m.hourly[k] || []).map(v => v == null ? NaN : v));
-  wVars.forEach(k => h[k] = (w.hourly[k] || []).map(v => v == null ? NaN : v));
-  const tz = w.utc_offset_seconds || 0;
+
+  // The two endpoints are queried with timezone=auto INDEPENDENTLY, and they
+  // do not always resolve the same zone for a coastal point — the marine grid
+  // can sit in the neighbouring maritime zone. Merging the arrays by position
+  // then silently pairs 14:00 waves with 13:00 wind. fetch_conditions() in
+  // fish_finder.py refuses outright when the axes differ; here, where there is
+  // a user waiting, realign the weather series onto the marine time axis by
+  // timestamp instead, and only give up if they genuinely do not overlap.
+  const wTimes = (w.hourly && w.hourly.time) || [];
+  let wAt = i => i;
+  if(wTimes.length !== times.length || wTimes[0] !== times[0]){
+    const pos = new Map(wTimes.map((t, i) => [t, i]));
+    const hits = times.filter(t => pos.has(t)).length;
+    if(hits < times.length * 0.5)
+      throw new Error("marine and weather forecasts cover different hours here");
+    wAt = i => (pos.has(times[i]) ? pos.get(times[i]) : -1);
+  }
+  wVars.forEach(k => {
+    const src = w.hourly[k] || [];
+    h[k] = times.map((_, i) => {
+      const j = wAt(i);
+      const v = j < 0 ? null : src[j];
+      return v == null ? NaN : v;
+    });
+  });
+
+  // Both endpoints report their own offset; the weather one is authoritative
+  // because sunrise/sunset and the wall-clock hours the user reads come from
+  // it. Fall back to the marine one rather than to UTC, which would shift the
+  // whole day for anyone the weather endpoint did not answer for.
+  const tz = (w.utc_offset_seconds ?? m.utc_offset_seconds ?? 0) | 0;
 
   // ---- visibility: decaying memory of stirring and runoff ----
   const c = cfg.visibility;
@@ -253,23 +287,48 @@ export async function forecastPoint(lat, lon, cfg, legalPack){
     }
     const future = hours.filter(x => !x.past);
     const peak = future.length ? future.reduce((a,b)=>b.score>a.score?b:a) : null;
+
+    // The hour this day should be judged on: when you would actually be in
+    // the water, not whatever hour happens to sort first. Mirrors
+    // representative_hour() in fish_finder.py. Reading idx[0] meant every
+    // day was described by its 00:00 wind — a direction that has usually
+    // turned right round by the time the sun is up, which is what made the
+    // day tabs and the shelter map disagree with each other.
+    const repT = bw ? bw.start : (peak && peak.score > 0 ? peak.t : `${date}T12:00`);
+    let rep = idx[0];
+    for(const i of idx) if(times[i].slice(0,13) === repT.slice(0,13)){ rep = i; break; }
+
     return {date, is_today: date === today, best: bw, hours,
             peak_hour: peak && peak.score > 0 ? peak.t : null,
             peak_score: peak ? peak.score : 0,
-            wind_from_deg: Math.round(h.wind_direction_10m[idx[0]] || 0),
-            swell_from_deg: isFinite(h.wave_direction[idx[0]])
-                            ? Math.round(h.wave_direction[idx[0]]) : null,
-            viz_m: +vizM[idx[0]].toFixed(1), species: []};
+            at: times[rep], _rep: rep,
+            wind_from_deg: Math.round(h.wind_direction_10m[rep] || 0),
+            swell_from_deg: isFinite(h.wave_direction[rep])
+                            ? Math.round(h.wave_direction[rep]) : null,
+            sea_temp_c: +(h.sea_surface_temperature[rep] || 0).toFixed(1),
+            viz_m: +vizM[rep].toFixed(1), species: []};
   });
 
   // ---- headline verdict ----
+  //
+  // Daylight and conditions are two separate questions and must not be
+  // collapsed. The previous test required light > 0 AND workable > floor for
+  // every remaining hour before it would agree the day had light left in it,
+  // so a blown-out but perfectly sunny midday reported "no diveable light
+  // left today" — an astronomical claim about the sun, made because of the
+  // wind. Ask only about the sun here; the sea gets its own branch below,
+  // and "nothing diveable today" is already said properly per-day in the
+  // hour strip.
   const vc = cfg.verdict;
   const dayScore = Math.min(viz[nowI], work[nowI]);
-  const lightLeft = times.some((t,i) => light[i] > 0 && work[i] > wc.hard_floor
-                                      && t >= nowIso && t.slice(0,10) === today);
+  const lightLeft = times.some((t,i) => i >= nowI && light[i] > 0
+                                      && t.slice(0,10) === today);
   let word, limit;
-  if(light[nowI] <= 0)            { word = "not now"; limit = "dark — no daylight"; }
-  else if(!lightLeft)             { word = "not now"; limit = "no diveable light left today"; }
+  if(light[nowI] <= 0){
+    word = "not now";
+    limit = lightLeft ? "dark — waiting for first light"
+                      : "dark — no daylight left today";
+  }
   else if(work[nowI] < wc.hard_floor)
     { word = "stay home"; limit = seaOk[nowI] <= airOk[nowI] ? "sea state" : "wind"; }
   else if(dayScore >= vc.go)      { word = "go"; limit = "nothing limiting"; }
@@ -280,16 +339,39 @@ export async function forecastPoint(lat, lon, cfg, legalPack){
   }
 
   // ---- species, only where a validated pack applies ----
-  const date = new Date(times[nowI] + "Z");
-  const species = (cfg.species || []).map(sp =>
-      speciesDayFactors(sp, h.sea_surface_temperature[nowI] || 20,
-                        viz[nowI], date, cfg, legalPack))
-    .sort((a,b) => b.today - a.today);
-  days.forEach(d => d.species = species);
+  //
+  // Scored per day, at that day's representative hour. Previously one
+  // "today" result was computed and then assigned to every day by
+  // reference, so tomorrow's tab showed today's temperature fit, today's
+  // clarity fit and today's closed-season answer — and selecting a species
+  // on one day mutated the shared object for all of them. A closure that
+  // opens tomorrow is exactly the case a spearo checks the app for.
+  const speciesOn = (i, dateStr) => {
+    const date = new Date(dateStr + "T12:00Z");
+    return (cfg.species || []).map(sp =>
+        speciesDayFactors(sp, isFinite(h.sea_surface_temperature[i])
+                              ? h.sea_surface_temperature[i] : 20,
+                          viz[i], date, cfg, legalPack))
+      .sort((a,b) => b.today - a.today);
+  };
+  days.forEach(d => { d.species = speciesOn(d._rep, d.date); delete d._rep; });
+  const species = days.length ? days[0].species
+                             : speciesOn(nowI, times[nowI].slice(0,10));
 
   const keep = (a) => a.slice(Math.max(0, nowI-24), Math.min(a.length, nowI+60));
+
+  // renderAll() reads depth_range_m and weights unconditionally for the
+  // footer. They were never present on a point payload, so the very last
+  // statement of renderAll threw and the point path — the default mode —
+  // finished every load by replacing the panel with "Could not get a
+  // forecast here: Cannot read properties of undefined". Everything above
+  // it had already drawn, which is why it looked like a cosmetic glitch.
+  const depthCfg = cfg.depth || {};
   return {
-    schema_version: 16, point: true,
+    schema_version: 18, point: true,
+    depth_range_m: [depthCfg.min_m ?? 2, depthCfg.max_m ?? 25],
+    weights: cfg.weights || {},
+    temp_source: "Open-Meteo sea surface temperature (no depth profile for a point)",
     region: `${lat.toFixed(3)}, ${lon.toFixed(3)}`,
     generated: new Date().toISOString(),
     bounds: [[lat-0.001, lon-0.001],[lat+0.001, lon+0.001]],

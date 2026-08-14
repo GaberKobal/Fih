@@ -24,12 +24,19 @@ const BATHY_CACHE = "bathy-v1";
 export const defaults = {
   radius_km: 30,          // half-width of the box around the tapped point
   cell_m: 200,            // working grid; GMRT resolves ~100 m at best
-  depth_min_m: 2, depth_best: [4, 18], depth_max_m: 30,
+  // Working depth band, matching depth.min_m / best_m / max_m in config.json.
+  // The scan used to top out at 30 m while every region map stopped at 24,
+  // so the same piece of seabed scored differently depending on which mode
+  // you were in. Both are 25 m now.
+  depth_min_m: 2, depth_best: [4, 18], depth_max_m: 25,
   relief_scale_m: 3.0, slope_scale: 0.04, background_m: 600,
   fetch_max_km: 20, fetch_step_m: 250, swell_weight: 0.5,
   w_relief: 0.35, w_slope: 0.20, w_shelter: 0.45, w_wreck: 0.3,
   wreck_radius_m: 250,
   top_spots: 15, min_spot_score: 0.35, min_separation_m: 500,
+  // Cosmetic only: how far the colour wash is held back from any detected
+  // shoreline, in metres. See dilateLand()/toDataURL().
+  land_buffer_m: 220,
 };
 
 /* ---------------------------------------------------------------- fetching */
@@ -354,25 +361,32 @@ export function findSpots(T, s, o = defaults){
   return out;
 }
 
-/** One-cell dilation of the land mask, for painting only. Global bathymetry
- *  occasionally disagrees with the vector coastline right at the coast —
- *  river mouths, breakwaters, reclaimed land, park lagoons — by a cell or
- *  two, which can otherwise show the colour wash sitting visibly on dry
- *  land. This pulls the paint back from any detected shoreline as a
- *  cosmetic margin; it does not touch T.land itself, so findSpots() can
- *  still place a real spot right up to the true coastline. */
-function dilateLand(land, nx, ny){
-  const out = new Uint8Array(land.length);
+/** Dilation of the land mask by a distance in METRES, for painting only.
+ *  Global bathymetry disagrees with the vector coastline right at the coast
+ *  — river mouths, breakwaters, marinas, reclaimed land — and GMRT's own
+ *  cell can be 100-200 m across, so the wash could sit a couple of hundred
+ *  metres up the beach. This was one cell, which is a different physical
+ *  distance at every zoom and every latitude and was simply too small at
+ *  200 m cells. Expressing the margin in metres and deriving the cell radius
+ *  from it makes the pull-back the same on the ground everywhere.
+ *
+ *  Cosmetic only: it does not touch T.land, so findSpots() still places real
+ *  marks right up to the true coastline and the score field is unchanged. */
+function dilateLand(land, nx, ny, ry, rx){
+  ry = Math.max(1, ry | 0); rx = Math.max(1, rx | 0);
+  // Separable: dilate along x, then along y. O(n·r) instead of O(n·r²).
+  const tmp = new Uint8Array(land.length), out = new Uint8Array(land.length);
   for(let y = 0; y < ny; y++) for(let x = 0; x < nx; x++){
-    const i = y * nx + x;
-    if(land[i]){ out[i] = 1; continue; }
-    let hit = false;
-    for(let dy = -1; dy <= 1 && !hit; dy++) for(let dx = -1; dx <= 1; dx++){
-      const yy = y + dy, xx = x + dx;
-      if(yy < 0 || yy >= ny || xx < 0 || xx >= nx) continue;
-      if(land[yy * nx + xx]){ hit = true; break; }
-    }
-    out[i] = hit ? 1 : 0;
+    let hit = 0;
+    const lo = Math.max(0, x - rx), hi = Math.min(nx - 1, x + rx);
+    for(let k = lo; k <= hi && !hit; k++) hit = land[y * nx + k];
+    tmp[y * nx + x] = hit;
+  }
+  for(let y = 0; y < ny; y++) for(let x = 0; x < nx; x++){
+    let hit = 0;
+    const lo = Math.max(0, y - ry), hi = Math.min(ny - 1, y + ry);
+    for(let k = lo; k <= hi && !hit; k++) hit = tmp[k * nx + x];
+    out[y * nx + x] = hit;
   }
   return out;
 }
@@ -386,7 +400,7 @@ function invMercatorY(y){
 }
 
 /** Paint the score field to a data URL for a Leaflet ImageOverlay. */
-export function toDataURL(T, s, alphaFloor = 0.35, alphaFull = 0.80){
+export function toDataURL(T, s, alphaFloor = 0.35, alphaFull = 0.80, o = defaults){
   const {nx, ny, lat0, cell, land} = T;
   const cv = document.createElement("canvas");
   cv.width = nx; cv.height = ny;
@@ -394,36 +408,50 @@ export function toDataURL(T, s, alphaFloor = 0.35, alphaFull = 0.80){
   const img = ctx.createImageData(nx, ny);
   // viridis, sampled
   const ramp = [[68,1,84],[59,82,139],[33,145,140],[94,201,98],[253,231,37]];
-  const landEdge = land && dilateLand(land, nx, ny);
+  const bufM = (o && o.land_buffer_m) ?? defaults.land_buffer_m;
+  const landEdge = land && dilateLand(land, nx, ny,
+    Math.round(bufM / Math.max(T.dyM || cell * 111320, 1)),
+    Math.round(bufM / Math.max(Math.abs(T.dxM) || cell * 111320, 1)));
 
-  // Leaflet stretches this canvas linearly in Mercator y across the plain
-  // lat/lon corners bounds() gives it, but the source grid s[]/land[] is
-  // evenly spaced in plain latitude. The two only line up at the very top
-  // and bottom row; every row in between lands tens of metres — over a
+  // Leaflet stretches this canvas linearly in Mercator y across the corners
+  // bounds() gives it, but the source grid s[]/land[] is evenly spaced in
+  // plain latitude, so every row in between lands tens of metres — over a
   // hundred at the 50 km radius option — north or south of where it should
   // be. Resample each output row from its true Mercator-y position instead,
-  // the same correction write_overlay_png makes on the Python side, and
-  // pick the land mask with NEAREST rather than blending it, so this fix
-  // does not reintroduce its own smear across the coastline.
-  const latTop = lat0 + (ny - 1) * cell, latBot = lat0;
+  // the same correction write_overlay_png makes on the Python side.
+  //
+  // The span has to be the one bounds() actually hands Leaflet, which is the
+  // OUTER EDGES of the first and last cells, not their centres. Resampling
+  // across the centres while Leaflet stretched the result across the edges
+  // left the whole overlay scaled slightly too large and shifted by half a
+  // cell — around 100 m at the 200 m working grid, all of it landing on the
+  // shore side, which is precisely where it is most visible.
+  const half = cell / 2;
+  const latTop = lat0 + (ny - 1) * cell + half, latBot = lat0 - half;
   const yTop = mercatorY(latTop), yBot = mercatorY(latBot);
   for(let y = 0; y < ny; y++){
-    const yMerc = yTop - (y / Math.max(ny - 1, 1)) * (yTop - yBot);
+    // Sample at the CENTRE of each output row, not its top edge.
+    const yMerc = yTop - ((y + 0.5) / ny) * (yTop - yBot);
     let rf = (invMercatorY(yMerc) - lat0) / cell;      // fractional source row, 0 = south
     rf = Math.min(ny - 1, Math.max(0, rf));
     const r0 = Math.floor(rf), r1 = Math.min(ny - 1, r0 + 1), f = rf - r0;
-    const rNear = f < 0.5 ? r0 : r1;
     for(let x = 0; x < nx; x++){
-      const o = (y * nx + x) * 4;
-      if(landEdge && landEdge[rNear * nx + x]){ img.data[o+3] = 0; continue; }
+      const o2 = (y * nx + x) * 4;
+      // Both rows the value is blended from must be clear of land, otherwise
+      // the blend carries a water score onto a shoreline cell — the same
+      // smear the NEAREST land pick was meant to prevent, just reintroduced
+      // through the other input.
+      if(landEdge && (landEdge[r0 * nx + x] || landEdge[r1 * nx + x])){
+        img.data[o2+3] = 0; continue;
+      }
       const v = (1 - f) * s[r0 * nx + x] + f * s[r1 * nx + x];
-      if(v <= alphaFloor){ img.data[o+3] = 0; continue; }
+      if(v <= alphaFloor){ img.data[o2+3] = 0; continue; }
       const t = Math.min(1, (v - alphaFloor) / Math.max(alphaFull - alphaFloor, 1e-6));
       const p = t * (ramp.length - 1), k = Math.min(ramp.length - 2, p | 0), fr = p - k;
-      img.data[o]   = ramp[k][0] + (ramp[k+1][0] - ramp[k][0]) * fr;
-      img.data[o+1] = ramp[k][1] + (ramp[k+1][1] - ramp[k][1]) * fr;
-      img.data[o+2] = ramp[k][2] + (ramp[k+1][2] - ramp[k][2]) * fr;
-      img.data[o+3] = 217 * t;
+      img.data[o2]   = ramp[k][0] + (ramp[k+1][0] - ramp[k][0]) * fr;
+      img.data[o2+1] = ramp[k][1] + (ramp[k+1][1] - ramp[k][1]) * fr;
+      img.data[o2+2] = ramp[k][2] + (ramp[k+1][2] - ramp[k][2]) * fr;
+      img.data[o2+3] = 217 * t;
     }
   }
   ctx.putImageData(img, 0, 0);

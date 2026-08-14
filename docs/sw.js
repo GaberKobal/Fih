@@ -8,10 +8,11 @@
 //   tiles   cache-first with a cap - map tiles never change and are the
 //           slowest thing on a bad connection
 
-const VERSION = "v16";
+const VERSION = "v19";
 const SHELL = `shell-${VERSION}`;
 const DATA = `data-${VERSION}`;
 const TILES = "tiles";
+const FONTS = "fonts";          // versionless: font files are immutable
 const TILE_CAP = 900;
 
 const SHELL_URLS = [
@@ -39,7 +40,7 @@ self.addEventListener("activate", e => {
   e.waitUntil(
     caches.keys()
       .then(keys => Promise.all(keys
-        .filter(k => k !== SHELL && k !== DATA && k !== TILES)
+        .filter(k => k !== SHELL && k !== DATA && k !== TILES && k !== FONTS)
         .map(k => caches.delete(k))))
       .then(() => self.clients.claim())
   );
@@ -58,6 +59,31 @@ self.addEventListener("fetch", e => {
   const req = e.request;
   if (req.method !== "GET") return;
   const url = new URL(req.url);
+
+  // --- webfont: cache-first, and kept across app updates ---
+  // The page loads Nunito Sans non-blocking with font-display:swap, so the
+  // first visit paints in the system fallback and never waits on the
+  // network. After that this serves it from cache, which is what keeps the
+  // car-park-with-one-bar case honest. Not in SHELL_URLS because the CSS
+  // response varies by user agent and the font file URL inside it is not
+  // knowable ahead of time; caching whatever the browser actually asks for
+  // is both simpler and correct.
+  if (/fonts\.googleapis\.com|fonts\.gstatic\.com/.test(url.hostname)) {
+    e.respondWith((async () => {
+      const c = await caches.open(FONTS);
+      const hit = await c.match(req);
+      if (hit) return hit;
+      try {
+        const res = await fetch(req);
+        if (res.ok) c.put(req, res.clone());
+        return res;
+      } catch (err) {
+        // No font, no problem: the page falls back to the system stack.
+        return hit || Response.error();
+      }
+    })());
+    return;
+  }
 
   // --- map tiles: cache-first, they are immutable ---
   if (/tile\.openstreetmap\.org|tiles\.openseamap\.org/.test(url.hostname)) {
