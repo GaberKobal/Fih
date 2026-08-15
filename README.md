@@ -396,6 +396,53 @@ Everything reads UTF-8 explicitly and the log is UTF-8 with replacement, so
 region names with a `č` or an em dash no longer break the run on a Windows
 console — which they did, fatally and half way through, until v3.
 
+## Before this goes public
+
+Four things had to change once other people would be using it, and they are
+done. What is left is listed after them, honestly.
+
+**Protected areas are masked.** Every region but Novigrad shipped with no
+exclusion mask at all, on a catalogue that includes coasts where
+spearfishing is banned outright. OSM protected areas are now fetched per
+region and IUCN categories 1a, 1b, 2 and 3 are masked out of the score;
+categories 4 to 6 routinely permit fishing, so those are named in the app
+rather than blanked. On top of that, a curated flag in `regions.json` marks
+**6 regions as banned and 33 as restricted** — a banned region publishes
+**no waypoints at all**, because a warning above a list of thirty numbered
+coordinates is not a deterrent.
+
+OSM is not the WDPA and its marine coverage is incomplete. Bonaire proves
+it: OSM has the individual reserves but not the island-wide marine park that
+actually bans spearfishing, which is exactly why the curated flag exists.
+The app says in as many words that no mask is not evidence of no reserve.
+
+**A safety notice on first open.** Not a footnote. It says the model has
+never been fitted against real dives, that legal data exists for 5 of 134
+jurisdictions, that protected-area coverage is incomplete, and that
+breath-hold diving kills experienced people through shallow water blackout.
+Acknowledged once, remembered, and reachable again from Sources.
+
+**Attribution and licences.** A Sources section credits OpenStreetMap (ODbL,
+for the derived coastline, wrecks and reserves, not just the tiles),
+OpenSeaMap, EMODnet, GMRT, NOAA, Open-Meteo and Copernicus.
+
+**Third-party services are used within their policies.** The base map moved
+off `tile.openstreetmap.org`, whose usage policy excludes third-party apps,
+to Carto's free basemaps. Overpass responses are now cached in the browser
+and rate-limited to one request per three seconds per tab, because
+client-side scanning was the one place this app could genuinely have abused
+a volunteer-funded service.
+
+### Still true, and stated in the app
+
+- The weights are **guesses**. Nothing has been fitted. This is the biggest
+  remaining problem and only dive logs fix it.
+- **129 of 134 jurisdictions have no legal pack**, including HR. No sizes,
+  no seasons, anywhere but ES, FR, GR, IT and PT.
+- **413 of 468 regions are auto-generated**: plausible bboxes and baselines,
+  not surveyed ones.
+- `max_swim_km` still gates nothing, because `entry_points` is empty.
+
 ## Where this should go next
 
 Ordered by how much they would improve the thing, not by how hard they are.

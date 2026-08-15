@@ -1,109 +1,130 @@
-# v9
+# v10 — public readiness
 
 ```
-v9/
+v10/
+├── fish_finder.py
+├── config.json
 ├── regions.json
-└── README.md
+├── README.md
+└── docs/
+    ├── index.html
+    ├── structure.js
+    └── sw.js
 ```
 
-Two files. `fish_finder.py`, `config.json` and everything under `docs/` are
-current as of **v8**; `.github/workflows/update.yml` as of v7; `calibrate.py`,
-`sdb.py`, `s2_turbidity.py` as of v3.
+`docs/anywhere.js` and `docs/add-region.html` are current as of **v8**;
+`.github/workflows/update.yml` as of v7; `calibrate.py`, `sdb.py`,
+`s2_turbidity.py` as of v3.
 
 ---
 
-## 264 to 468 regions
+## 1. Protected areas
 
-204 added, all disabled, `novigrad` still the only one on. 22 groups now,
-**104 countries**, 134 jurisdictions.
+467 of 468 regions had **no exclusion mask at all**, on a catalogue that
+includes coasts where spearfishing is banned outright. Two layers now:
 
-| group | was | now | | group | was | now |
-| --- | --- | --- | --- | --- | --- | --- |
-| med-west | 38 | **60** | | atlantic-sw | 9 | **16** |
-| coral-triangle | 17 | **37** | | australia-temperate | 8 | **15** |
-| caribbean | 21 | **35** | | atlantic-nw | 8 | **14** |
-| med-east | 19 | **33** | | med-south | 7 | **13** |
-| indian-west | 17 | **29** | | pacific-nw | 7 | **13** |
-| nw-europe | 12 | **28** | | africa-west | 6 | **12** |
-| pacific-islands | 15 | **27** | | africa-south | 6 | **11** |
-| iberia-atlantic | 18 | **26** | | nz | 6 | **11** |
-| adriatic | 15 | **23** | | red-sea | 7 | **11** |
-| pacific-ne | 11 | **19** | | australia-tropical | 4 | **9** |
-| macaronesia | 13 | **18** | | **pacific-se** | — | **8** (new) |
+**Automatic.** OSM protected areas are fetched per region (cached forever)
+and rasterised into the existing exclusion gate. IUCN management categories
+**1a, 1b, 2 and 3 are masked**; **4, 5 and 6 are named but not masked**,
+because they routinely permit fishing — the Great Barrier Reef Marine Park is
+a category 6, and blanking it would delete most of the usable water in
+Queensland for no reason. Multipolygon relations are assembled properly:
+Overpass returns the outer boundary as unordered way fragments, so they are
+chained end to end and only closed rings are used.
 
-New ground worth calling out: **Iceland and the Faroes**, the **Humboldt
-current** (Chile and Peru, a group that did not exist), **Bermuda**,
-**Lord Howe and Norfolk**, the **Tuamotus**, **Alaska and Haida Gwaii**,
-**Socotra-adjacent Oman**, the **Bijagos**, **Guadeloupe, Martinique and the
-Grenadines**, and a lot more of Indonesia, the Philippines, Greece, Italy,
-Spain and Croatia.
+**Curated.** OSM alone is not enough, and Bonaire proves it. OSM has the
+individual reserves — King Willem-Alexander, Klein Bonaire, Lac Baai — but
+**not the island-wide marine park that actually bans spearfishing**. Masking
+gave 8.2% of the box when the true answer is "all of it". So `regions.json`
+carries a hand-checked flag: **6 regions banned, 33 restricted.**
 
-### The Humboldt group is honest about being an analogue
+**A banned region publishes no waypoints at all.** Not a warning above a
+list of thirty numbered coordinates — the coordinates are what gets used.
+Conditions and the structure map still run, because knowing what the sea is
+doing is not itself a problem.
 
-Chile and Peru have no species pack in this repository, and the Benguela one
-is used because both are cold eastern-boundary upwelling systems. That is a
-genuine ecological analogy, not a tuned pack, and every region in the group
-says so in its note. It is the weakest species assignment in the file and it
-is labelled as such rather than quietly presented as equivalent to the rest.
+```
+bonaire            status=banned      general spots=0   species spots=0
+galapagos          status=banned      general spots=0   species spots=0
+poor-knights       status=banned      general spots=0   species spots=0
+fernando-noronha   status=banned      general spots=0   species spots=0
+novigrad           status=None        general spots=30  species spots=96
+```
 
-## Capacity: this is close to the ceiling
+The app shows a red stop banner for banned, amber for restricted, and states
+plainly that OSM marine coverage is incomplete: **no mask is not evidence of
+no reserve.**
 
-Measured on the full 468, not estimated:
+## 2. A safety notice on first open
 
-| | per region | 468 regions |
-| --- | --- | --- |
-| first ever run, 6 workers | ~32 s | **~4.2 h** |
-| every run after that, 6 workers | ~2.5 s | **~20 min** |
-| pure compute (`--selftest`, 6 workers) | 2.2 s | 17 min |
-| output | 466 KB, 24 files | **213 MB, 11,248 files** |
-| Open-Meteo calls | 2 | 936 per run, 2,808 a day |
+Shown before anything else, acknowledged once, remembered in localStorage,
+reachable again from Sources. It says four things a first-time user cannot
+infer from a colour ramp:
 
-The tightest constraint is no longer compute, it is the **artifact**. 213 MB
-and 11,248 files is fine, but Pages caps a site at 1 GB and the upload
-degrades well before that, so **about 900 regions is the practical ceiling on
-the current design** — not the ~1,600 that the Open-Meteo quota would allow.
+- the model has **never been fitted against real dives** and can be
+  confidently wrong
+- legal data exists for **5 of 134 jurisdictions**; everywhere else means
+  unknown, not permitted
+- protected-area coverage is incomplete and a spot inside a reserve is
+  possible
+- **breath-hold diving kills experienced people** — shallow water blackout
+  gives no warning; never dive alone
 
-The two changes that lift it are both in the roadmap: batching the conditions
-fetch, and shipping terrain rasters instead of rendered per-species maps.
+Verified to fit a 375 px phone (653 px card in an 812 px viewport) and to
+scroll if it does not.
 
-**A full cold run of all 468 is now ~4.2 hours at six workers against a
-330-minute timeout.** It fits, but with little to spare, and only at
-`FISH_JOBS=6` — at the default 4 it would not. Enable a group at a time
-instead; each finished group is permanently cheap afterwards, and since v6 a
-timeout costs only the unfinished tail rather than the whole run.
+## 3. Attribution
 
-## Validation
+A Sources section credits OpenStreetMap under ODbL **for the derived
+coastline, wrecks and protected areas, not just the tiles**, plus OpenSeaMap,
+EMODnet, GMRT, NOAA, Open-Meteo (CC BY 4.0) and Copernicus. The map's own
+attribution line was extended to match.
 
-- **All 468 through `--selftest`, 6 workers: exit 0, no failures**, 1,012 s.
+## 4. Third-party services, used within their policies
+
+**The base map moved off `tile.openstreetmap.org`.** The OSMF tile usage
+policy is explicit that those servers are not for third-party applications;
+"my app got popular" is not a defence, and it is a donation-funded resource
+for something else. Now Carto's free basemaps, with attribution. The URL and
+credit are in one `TILES` object at the top of the map setup — that is the
+only thing to change if you later take a provider account.
+
+**Overpass responses are cached in the browser and rate-limited.** This was
+the one place the app could genuinely have abused volunteer infrastructure:
+every press of *Scan structure* issued a fresh query, including re-scanning
+the same coast. Now cached forever in the Cache API keyed by box, and capped
+at one request per three seconds per tab. Server-side was already fine —
+468 regions, once each, cached on disk.
+
+## 5. Payload
+
+`index.json` carried a `note` for every region that the app never renders.
+Removed: **542 KB → 427 KB raw, 32 KB gzipped**, on a file every visitor
+downloads before anything can happen. The note still travels in each
+region's own `latest.json`, fetched only when that coast is opened.
+
+## Verification
+
+- **All 468 through `--selftest`, 6 workers: exit 0, no failures**, 1,086 s.
 - 14 assertions over generated output: all pass.
-- **22 of the new regions run against live network** across every new area:
-  Sibenik, Palermo, Santorini, Alexandria, Ericeira, Tenerife north, Iceland
-  Reykjanes, Essaouira, Algoa Bay, Jeddah, Muscat, Alor, Amami, Marovo,
-  Santa Barbara, Valparaiso, Bermuda, Negril, Salvador, Coffs, Marlborough,
-  Mancora. All 22 completed with water coverage between 11% and 89% and
-  sensible depth ranges.
-- Structural checks on the whole file: no duplicate ids, no malformed bbox,
-  no box over 130 km or under 2 km on a side, no missing species pack, every
-  depth band ordered, every region grouped.
+- Live runs on Bonaire and Novigrad confirming the mask, the curated flag and
+  the waypoint suppression.
+- `index.html` parses; the gate, banner, Sources section and "show again"
+  button all present and correct; both JS modules parse.
+- Artifact 212 MB, unchanged.
 
-Four boxes came out spanning two separate island groups and were tightened
-to a single locality: Shetland (was reaching Orkney), Addu (was reaching
-Laamu), Rangiroa (was reaching Fakarava) and Kangaroo Island.
+## What is still true, and now said in the app rather than the README
 
-## The same caveat as before, and it now applies to 413 regions
+- **The weights are guesses.** Nothing has been fitted. This is the largest
+  remaining problem and only dive logs fix it — `calibrate.py` wants about
+  30, blanks included.
+- **129 of 134 jurisdictions have no legal pack**, including HR, which
+  covers Novigrad, Zadar and Dubrovnik.
+- **413 of 468 regions are auto-generated** — plausible bboxes and
+  baselines, not surveyed ones.
+- `max_swim_km` still gates nothing, because `entry_points` is empty. You
+  parked that deliberately.
 
-These are **auto-generated from a table**. The bboxes, depth bands and
-visibility baselines are reasonable starting values, not surveyed ones, and
-every note says so. A box you intend to dive deserves a look at the map
-first. A bad one fails loudly and alone: `run()` raises when under 5% of a
-box is water, that region is logged and skipped, and the rest still publish.
-
-134 jurisdictions now appear and only five have a legal pack (ES, FR, GR, IT,
-PT), so the overwhelming majority show no sizes and no seasons at all. That
-is a gap, never permission.
-
-## Also in this version
-
-The README header no longer says "European dive forecast", the cron line no
-longer says 03:40 UTC, and the `--list` example is not four Croatian regions
-any more. All three had quietly stopped being true.
+If you want one more thing before launch, make it the Croatian legal pack:
+it is the only jurisdiction you personally dive, and it is the one gap where
+the missing data is both small and entirely knowable.

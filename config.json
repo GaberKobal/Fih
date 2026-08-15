@@ -258,6 +258,11 @@
     "_cost_note": "Fetched once per region, in the SAME Overpass request as the wrecks, then cached forever. Some coasts are enormous - Lofoten is 2965 ways - and Overpass can take a couple of minutes over one. That cost is bounded (see overpass_query) and paid once; if it is exceeded the region falls back to the bathymetric land edge, says so, and the spot gates in find_spots still keep marks off the shore.",
     "enabled": true
   },
+  "protected": {
+    "_note": "Protected areas from OpenStreetMap, masked into the exclusion gate. Every region but novigrad shipped with no mask at all, and the catalogue includes coasts where spearfishing is banned outright - Bonaire, the Galapagos, the Poor Knights, the Calanques and Kornati cores. IUCN management categories 1a, 1b, 2 and 3 are treated as no-take and MASKED; 4, 5 and 6 routinely permit fishing (the Great Barrier Reef Marine Park is a 6) so they are reported by name instead of blanked. Cached per region.",
+    "_limits": "OSM is NOT the authoritative source. That is the World Database on Protected Areas, which needs an API token. OSM marine coverage is incomplete and protect_class is often missing, in which case nothing is masked. Absence of a mask is not evidence that there is no reserve, and the app says so.",
+    "enabled": true
+  },
   "wrecks": {
     "_note": "Charted wrecks from OpenStreetMap. Point data, so unaffected by bathymetry resolution - the one structure signal that is as good in Bali as in Istria.",
     "enabled": true,

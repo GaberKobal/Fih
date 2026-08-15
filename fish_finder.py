@@ -299,6 +299,10 @@ def region_config(base, region):
     cfg["country"] = region.get("country", "")
     cfg["jurisdiction"] = region.get("jurisdiction", "")
     cfg["region_note"] = region.get("note", "")
+    # Curated warning flag: "banned", "restricted", or absent meaning
+    # UNKNOWN. Not legal advice and not exhaustive - see regions.json.
+    cfg["spearfishing"] = region.get("spearfishing")
+    cfg["spearfishing_note"] = region.get("spearfishing_note")
     cfg["bbox"] = region["bbox"]
     cfg["species_file"] = region.get("species_file")
     cfg["exclusions_file"] = region.get("exclusions_file")
@@ -1143,6 +1147,120 @@ out geom tags;"""
     cf.write_text(json.dumps(lines), encoding="utf-8")
     wf.write_text(json.dumps(wrecks), encoding="utf-8")
     return lines, wrecks
+
+
+def _stitch_rings(segments, tol=1e-7):
+    """Join way fragments into closed rings.
+
+    An OSM multipolygon relation gives its outer boundary as a pile of
+    unordered way fragments; only once they are chained end to end is there
+    a polygon to test a point against. Fragments that never close are
+    dropped rather than guessed at.
+    """
+    def near(a, b):
+        return abs(a[0] - b[0]) < tol and abs(a[1] - b[1]) < tol
+
+    pool = [list(s) for s in segments if len(s) >= 2]
+    rings = []
+    while pool:
+        cur = pool.pop(0)
+        joined = True
+        while joined and not near(cur[0], cur[-1]):
+            joined = False
+            for i, s in enumerate(pool):
+                if near(cur[-1], s[0]):
+                    cur += s[1:]
+                elif near(cur[-1], s[-1]):
+                    cur += s[-2::-1]
+                elif near(cur[0], s[-1]):
+                    cur = s[:-1] + cur
+                elif near(cur[0], s[0]):
+                    cur = s[:0:-1] + cur
+                else:
+                    continue
+                pool.pop(i)
+                joined = True
+                break
+        if len(cur) >= 4 and near(cur[0], cur[-1]):
+            rings.append(cur)
+    return rings
+
+
+# IUCN management categories that mean "do not take anything here".
+#   1a strict nature reserve, 1b wilderness, 2 national park,
+#   3 natural monument
+# Categories 4, 5 and 6 routinely permit fishing - the Great Barrier Reef
+# Marine Park is a 6 - so masking those would delete most of the usable
+# water on some coasts for no good reason. They are reported by name
+# instead, which is the honest split: mask what is certainly closed, name
+# what might be.
+PROTECT_STRICT = {"1a", "1b", "2", "3"}
+
+
+def fetch_protected_areas(bbox, cfg, region_id):
+    """Protected areas from OpenStreetMap, as polygons.
+
+    Every region but Novigrad ships with no exclusion mask at all, and the
+    catalogue now includes coasts where spearfishing is banned outright -
+    Bonaire, the Galapagos, the Poor Knights, the Calanques and Kornati
+    cores. Putting a numbered waypoint inside one of those is the single
+    most damaging thing this can do to somebody who did not build it.
+
+    OSM is not the authoritative source - that is the WDPA, which needs an
+    API token - and its marine coverage is incomplete. It is keyless,
+    already reachable, and vastly better than the nothing that was here
+    before. The app says plainly that absence of a mask is not evidence of
+    absence of a reserve.
+
+    Cached per region; protected areas do not move.
+    """
+    cache_file = CACHE / f"protected_{region_id}.geojson"
+    if cache_file.exists():
+        return json.loads(cache_file.read_text(encoding="utf-8"))
+
+    b = (f'{bbox["lat_min"]},{bbox["lon_min"]},'
+         f'{bbox["lat_max"]},{bbox["lon_max"]}')
+    q = (f'[out:json][timeout:90];('
+         f'nwr["boundary"="protected_area"]({b});'
+         f'nwr["leisure"="nature_reserve"]({b});'
+         f'nwr["boundary"="national_park"]({b});'
+         f');out geom tags;')
+    doc = overpass_query(q, timeout=90, deadline_s=240)
+
+    feats = []
+    for el in doc.get("elements", []):
+        tg = el.get("tags", {}) or {}
+        segs = []
+        if el["type"] == "way":
+            g = el.get("geometry") or []
+            if len(g) >= 4:
+                segs = [[[p["lon"], p["lat"]] for p in g]]
+        elif el["type"] == "relation":
+            segs = [[[p["lon"], p["lat"]] for p in (m.get("geometry") or [])]
+                    for m in (el.get("members") or [])
+                    if m.get("type") == "way" and m.get("role") in ("outer", "", None)
+                    and len(m.get("geometry") or []) >= 2]
+        rings = _stitch_rings(segs)
+        if not rings:
+            continue
+        cls = str(tg.get("protect_class") or "").strip().lower()
+        feats.append({
+            "type": "Feature",
+            "geometry": {"type": "MultiPolygon", "coordinates": [[r] for r in rings]},
+            "properties": {
+                "name": tg.get("name") or tg.get("protection_title") or "protected area",
+                "protect_class": cls or None,
+                "title": tg.get("protection_title"),
+                "kind": tg.get("boundary") or tg.get("leisure"),
+                "strict": cls in PROTECT_STRICT,
+                "osm_id": el.get("id"), "osm_type": el["type"],
+            },
+        })
+
+    gj = {"type": "FeatureCollection", "features": feats}
+    CACHE.mkdir(parents=True, exist_ok=True)
+    cache_file.write_text(json.dumps(gj), encoding="utf-8")
+    return gj
 
 
 def coastline_mask(lines, lats, lons):
@@ -2737,11 +2855,50 @@ def run(cfg, selftest=False, out_dir=None):
     excl_name = cfg.get("exclusions_file")
     excl = (rasterize_polygons(ROOT / excl_name, lats, lons) if excl_name
             else np.zeros((len(lats), len(lons)), dtype=bool))
-    if not excl_name:
-        log("exclusions: none defined for this region - "
+
+    # Protected areas from OpenStreetMap, on top of any hand-drawn file.
+    # Strictly protected categories are MASKED; the rest are named so you
+    # can check them yourself, because 4, 5 and 6 routinely permit fishing
+    # and blanking them would delete most of the usable water on some
+    # coasts for no reason.
+    protected_named, protected_masked = [], []
+    if (cfg.get("protected") or {}).get("enabled", True) and not selftest:
+        try:
+            pgj = fetch_protected_areas(bbox, cfg, cfg.get("region_id", "default"))
+            strict = {"type": "FeatureCollection", "features": []}
+            for f in pgj.get("features", []):
+                p = f["properties"]
+                entry = {"name": p.get("name"), "class": p.get("protect_class"),
+                         "title": p.get("title")}
+                if p.get("strict"):
+                    strict["features"].append(f)
+                    protected_masked.append(entry)
+                else:
+                    protected_named.append(entry)
+            if strict["features"]:
+                pm = rasterize_polygons(strict, lats, lons)
+                before = float((~excl).mean())
+                excl = excl | pm
+                log(f"protected: {len(strict['features'])} strictly protected "
+                    f"area(s) masked, now {excl.mean():.1%} of the box "
+                    f"(was {1 - before:.1%})")
+                for e in protected_masked[:6]:
+                    log(f"  masked: {e['name']} (IUCN {e['class']})")
+            if protected_named:
+                log(f"protected: {len(protected_named)} further protected "
+                    "area(s) present but NOT masked - categories 4/5/6 and "
+                    "untagged ones often permit fishing; check them yourself")
+                for e in protected_named[:6]:
+                    log(f"  named only: {e['name']} (IUCN {e['class'] or '?'})")
+        except Exception as e:
+            log(f"protected: unavailable ({e.__class__.__name__}) - NO "
+                "protected-area mask for this region")
+
+    if not excl_name and not protected_masked:
+        log("exclusions: nothing masked for this region - "
             "check protected areas yourself")
     if excl.any():
-        log(f"exclusions: {excl.mean():.1%} of the box masked out")
+        log(f"exclusions: {excl.mean():.1%} of the box masked out in total")
     gates = [afit, cfit, (~excl).astype(float)]
 
     # Already fetched, in the same Overpass request as the coastline.
@@ -2813,7 +2970,14 @@ def run(cfg, selftest=False, out_dir=None):
 
         score_d = combine_score(terms_d, w_d, gates)
         score_d[land] = 0.0
-        spots_d = find_spots(score_d, lats, lons, depth_m, terms_d, cfg)
+        # A region flagged as banned publishes NO waypoints. Handing someone
+        # thirty numbered coordinates on a coast where spearfishing is
+        # prohibited is the most damaging thing this can do, and a warning
+        # banner above a list of marks is not a deterrent - the marks are
+        # what gets used. The conditions and the structure map still run,
+        # because knowing what the sea is doing is not itself a problem.
+        spots_d = ([] if cfg.get("spearfishing") == "banned"
+                   else find_spots(score_d, lats, lons, depth_m, terms_d, cfg))
         write_overlay_png(score_d, lats, lons, OUT / f"score_d{di}.png", land,
                           cfg.get("overlay"))
         write_gpx(spots_d, OUT / f"spots_d{di}.gpx",
@@ -2841,7 +3005,8 @@ def run(cfg, selftest=False, out_dir=None):
                                       cfg, profile, date_d)
             smap = species_spatial_score(sp, terms_d, depth_m, land, gates, cfg)
             smap[land] = 0.0
-            ss = find_spots(smap, lats, lons, depth_m, terms_d, cfg, limit=sp_cap)
+            ss = ([] if cfg.get("spearfishing") == "banned"
+                  else find_spots(smap, lats, lons, depth_m, terms_d, cfg, limit=sp_cap))
             if write_species_maps:
                 write_overlay_png(smap, lats, lons,
                                   OUT / f"score_{sp['id']}_d{di}.png", land,
@@ -2918,7 +3083,15 @@ def run(cfg, selftest=False, out_dir=None):
         "has_wrecks": bool(wrecks_gj and wrecks_gj["features"]),
         "has_species": bool(cfg.get("species_file")),
         "legal_pack": load_legal(cfg),
-        "has_exclusions": bool(cfg.get("exclusions_file")),
+        "has_exclusions": bool(cfg.get("exclusions_file")) or bool(protected_masked),
+        # Protected areas, split into what was masked and what was only
+        # found. Absence of a mask is NOT evidence there is no reserve:
+        # OSM's marine coverage is incomplete and the authoritative source
+        # (WDPA) needs an API token.
+        "spearfishing": cfg.get("spearfishing"),
+        "spearfishing_note": cfg.get("spearfishing_note"),
+        "protected_masked": protected_masked,
+        "protected_named": protected_named,
         "bounds": image_bounds,
         "now": {
             "time": now_iso,
@@ -3111,10 +3284,17 @@ def main():
             "id": r["id"], "name": r["name"], "country": r.get("country", ""),
             "jurisdiction": r.get("jurisdiction", ""),
             "group": r.get("group", ""),
-            "note": r.get("note", ""),
+            # The region note is deliberately NOT in the index. It is long
+            # prose, the app never renders it from here, and index.json is
+            # downloaded by every visitor before anything else can happen —
+            # at 468 regions the notes alone were 37% of a 540 KB file, on a
+            # page whose whole point is opening on one bar of signal. The
+            # note still travels in each region's own latest.json, which is
+            # fetched only when that coast is actually opened.
             "has_species": bool(r.get("species_file")),
             "species_file": r.get("species_file"),
             "has_exclusions": bool(r.get("exclusions_file")),
+            "spearfishing": r.get("spearfishing"),
             "bathymetry_provider": payload.get("bathymetry_provider"),
             "bathymetry_native_m": payload.get("bathymetry_native_m"),
             "relief_meaningful": payload.get("relief_meaningful"),

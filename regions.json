@@ -175,7 +175,9 @@
       },
       "wind_regimes": null,
       "note": "The Berlengas are a nature reserve with a no-take core that is NOT masked here. Exposed Atlantic swell; the workability floor will rule most days out, which is realistic.",
-      "group": "iberia-atlantic"
+      "group": "iberia-atlantic",
+      "spearfishing": "restricted",
+      "spearfishing_note": "Berlengas nature reserve has a no-take core"
     },
     {
       "id": "madeira-south",
@@ -253,7 +255,9 @@
       },
       "wind_regimes": null,
       "note": "Tabarca is Spain's oldest marine reserve and spearfishing is banned there outright. It is NOT masked. Warm, clear and much calmer than the Atlantic regions.",
-      "group": "med-west"
+      "group": "med-west",
+      "spearfishing": "restricted",
+      "spearfishing_note": "Tabarca marine reserve is no-take and sits inside this box"
     },
     {
       "id": "mallorca-north",
@@ -490,7 +494,9 @@
         "max_m": 40.0
       },
       "note": "Different species assemblage and Spanish regional rules. Mediterranean species pack applies; sizes are the EU floor and closed seasons for this country are NOT researched.",
-      "group": "med-west"
+      "group": "med-west",
+      "spearfishing": "restricted",
+      "spearfishing_note": "Medes Islands reserve is no-take"
     },
     {
       "id": "sardinia-nw",
@@ -720,7 +726,9 @@
       "species_file": "species_florida_keys.json",
       "exclusions_file": null,
       "wind_regimes": null,
-      "group": "caribbean"
+      "group": "caribbean",
+      "spearfishing": "restricted",
+      "spearfishing_note": "Florida Keys National Marine Sanctuary; large no-take zones"
     },
     {
       "id": "capetown",
@@ -772,7 +780,9 @@
       "species_file": "species_rottnest.json",
       "exclusions_file": null,
       "wind_regimes": null,
-      "group": "australia-temperate"
+      "group": "australia-temperate",
+      "spearfishing": "restricted",
+      "spearfishing_note": "Rottnest sanctuary zones are no-take"
     },
     {
       "id": "poor-knights",
@@ -798,7 +808,9 @@
       "species_file": "species_poorknights.json",
       "exclusions_file": null,
       "wind_regimes": null,
-      "group": "nz"
+      "group": "nz",
+      "spearfishing": "banned",
+      "spearfishing_note": "Poor Knights Islands are a no-take marine reserve"
     },
     {
       "id": "bali-north",
@@ -1024,7 +1036,9 @@
       },
       "wind_regimes": null,
       "note": "The Plemmirio is a marine protected area where spearfishing is banned in the reserve zones. It is NOT masked and it sits in the middle of this box. Check the zoning before you get in.",
-      "group": "med-west"
+      "group": "med-west",
+      "spearfishing": "restricted",
+      "spearfishing_note": "Plemmirio marine protected area, banned in the reserve zones"
     },
     {
       "id": "sardinia-se",
@@ -1053,7 +1067,9 @@
       },
       "wind_regimes": null,
       "note": "Granite, sand and posidonia, exceptionally clear. Capo Carbonara is a protected area with a no-take core; not masked.",
-      "group": "med-west"
+      "group": "med-west",
+      "spearfishing": "restricted",
+      "spearfishing_note": "Capo Carbonara MPA has a no-take core"
     },
     {
       "id": "malta",
@@ -1111,7 +1127,9 @@
       },
       "wind_regimes": null,
       "note": "The Calanques national park has a no-take heart and spearfishing restrictions across much of the rest. NOT masked. Mistral dominates the shelter term.",
-      "group": "med-west"
+      "group": "med-west",
+      "spearfishing": "restricted",
+      "spearfishing_note": "Calanques national park has a no-take core"
     },
     {
       "id": "gibraltar-strait",
@@ -1169,7 +1187,9 @@
       },
       "wind_regimes": null,
       "note": "Posidonia meadows and very clear water. Ses Salines is a natural park covering much of the channel between the islands; not masked.",
-      "group": "med-west"
+      "group": "med-west",
+      "spearfishing": "restricted",
+      "spearfishing_note": "Ses Salines natural park covers much of the channel"
     },
     {
       "id": "menorca",
@@ -1285,7 +1305,9 @@
       },
       "wind_regimes": null,
       "note": "Croatian rules apply, so the closed seasons in legal/HR.json hold here - once that file exists. The Kornati national park bans spearfishing outright and is NOT masked; it covers a large part of this box.",
-      "group": "adriatic"
+      "group": "adriatic",
+      "spearfishing": "restricted",
+      "spearfishing_note": "Kornati national park bans spearfishing and covers much of this box"
     },
     {
       "id": "dubrovnik",
@@ -1430,7 +1452,9 @@
       },
       "wind_regimes": null,
       "note": "Warm and very clear, with a thin fauna by Mediterranean standards and a lot of Lessepsian arrivals the pack does not know about. No legal pack for CY.",
-      "group": "med-east"
+      "group": "med-east",
+      "spearfishing": "restricted",
+      "spearfishing_note": "Cape Greco is a Natura 2000 marine site"
     },
     {
       "id": "dahab",
@@ -1477,7 +1501,9 @@
         ],
         "reference_depth_m": 25.0,
         "_note": "Red Sea / Gulf of Aqaba: warm and near-uniform to well below diving depth. Set explicitly because the latitude rule in region_config() would otherwise treat 28 N as temperate-ish."
-      }
+      },
+      "spearfishing": "restricted",
+      "spearfishing_note": "spearfishing is banned across much of the Egyptian Red Sea"
     },
     {
       "id": "baja-cortez",
@@ -2057,7 +2083,9 @@
         "baseline": 0.15
       },
       "wind_regimes": null,
-      "note": "Auto-generated entry. bbox, depth band and visibility baseline are reasonable starting values, NOT surveyed ones - open the region, look at the map and tune them before you trust a mark. The species pack is the closest available match for this stretch of ocean and may be approximate. No exclusion zones are defined: protected areas, no-take reserves and port limits are NOT masked anywhere in this file, and several of these coasts sit inside one. Legal sizes and seasons only appear where legal/<CC>.json exists."
+      "note": "Auto-generated entry. bbox, depth band and visibility baseline are reasonable starting values, NOT surveyed ones - open the region, look at the map and tune them before you trust a mark. The species pack is the closest available match for this stretch of ocean and may be approximate. No exclusion zones are defined: protected areas, no-take reserves and port limits are NOT masked anywhere in this file, and several of these coasts sit inside one. Legal sizes and seasons only appear where legal/<CC>.json exists.",
+      "spearfishing": "restricted",
+      "spearfishing_note": "Egadi MPA, the largest in the Mediterranean, is zoned"
     },
     {
       "id": "pantelleria",
@@ -4279,7 +4307,9 @@
         ],
         "reference_depth_m": 25.0,
         "_note": "Red Sea / Gulf of Aqaba: warm and near-uniform to well below diving depth. Set explicitly because the latitude rule in region_config() would otherwise treat 28 N as temperate-ish."
-      }
+      },
+      "spearfishing": "restricted",
+      "spearfishing_note": "Red Sea protected areas; spearfishing banned in much of this coast"
     },
     {
       "id": "marsa-alam",
@@ -4326,7 +4356,9 @@
         ],
         "reference_depth_m": 25.0,
         "_note": "Red Sea / Gulf of Aqaba: warm and near-uniform to well below diving depth. Set explicitly because the latitude rule in region_config() would otherwise treat 28 N as temperate-ish."
-      }
+      },
+      "spearfishing": "restricted",
+      "spearfishing_note": "Wadi el Gemal national park zones"
     },
     {
       "id": "sharm",
@@ -4373,7 +4405,9 @@
         ],
         "reference_depth_m": 25.0,
         "_note": "Red Sea / Gulf of Aqaba: warm and near-uniform to well below diving depth. Set explicitly because the latitude rule in region_config() would otherwise treat 28 N as temperate-ish."
-      }
+      },
+      "spearfishing": "restricted",
+      "spearfishing_note": "Ras Mohammed national park; spearfishing prohibited in the park"
     },
     {
       "id": "aqaba",
@@ -4420,7 +4454,9 @@
         ],
         "reference_depth_m": 25.0,
         "_note": "Red Sea / Gulf of Aqaba: warm and near-uniform to well below diving depth. Set explicitly because the latitude rule in region_config() would otherwise treat 28 N as temperate-ish."
-      }
+      },
+      "spearfishing": "restricted",
+      "spearfishing_note": "Aqaba Marine Park"
     },
     {
       "id": "yanbu",
@@ -5761,7 +5797,9 @@
         "baseline": 0.1
       },
       "wind_regimes": null,
-      "note": "Auto-generated entry. bbox, depth band and visibility baseline are reasonable starting values, NOT surveyed ones - open the region, look at the map and tune them before you trust a mark. The species pack is the closest available match for this stretch of ocean and may be approximate. No exclusion zones are defined: protected areas, no-take reserves and port limits are NOT masked anywhere in this file, and several of these coasts sit inside one. Legal sizes and seasons only appear where legal/<CC>.json exists."
+      "note": "Auto-generated entry. bbox, depth band and visibility baseline are reasonable starting values, NOT surveyed ones - open the region, look at the map and tune them before you trust a mark. The species pack is the closest available match for this stretch of ocean and may be approximate. No exclusion zones are defined: protected areas, no-take reserves and port limits are NOT masked anywhere in this file, and several of these coasts sit inside one. Legal sizes and seasons only appear where legal/<CC>.json exists.",
+      "spearfishing": "restricted",
+      "spearfishing_note": "Palau National Marine Sanctuary covers most of the EEZ"
     },
     {
       "id": "chuuk",
@@ -6022,7 +6060,9 @@
         "baseline": 0.2
       },
       "wind_regimes": null,
-      "note": "Auto-generated entry. bbox, depth band and visibility baseline are reasonable starting values, NOT surveyed ones - open the region, look at the map and tune them before you trust a mark. The species pack is the closest available match for this stretch of ocean and may be approximate. No exclusion zones are defined: protected areas, no-take reserves and port limits are NOT masked anywhere in this file, and several of these coasts sit inside one. Legal sizes and seasons only appear where legal/<CC>.json exists."
+      "note": "Auto-generated entry. bbox, depth band and visibility baseline are reasonable starting values, NOT surveyed ones - open the region, look at the map and tune them before you trust a mark. The species pack is the closest available match for this stretch of ocean and may be approximate. No exclusion zones are defined: protected areas, no-take reserves and port limits are NOT masked anywhere in this file, and several of these coasts sit inside one. Legal sizes and seasons only appear where legal/<CC>.json exists.",
+      "spearfishing": "banned",
+      "spearfishing_note": "Galapagos Marine Reserve / national park; spearfishing prohibited"
     },
     {
       "id": "channel-islands",
@@ -6254,7 +6294,9 @@
         "baseline": 0.15
       },
       "wind_regimes": null,
-      "note": "Auto-generated entry. bbox, depth band and visibility baseline are reasonable starting values, NOT surveyed ones - open the region, look at the map and tune them before you trust a mark. The species pack is the closest available match for this stretch of ocean and may be approximate. No exclusion zones are defined: protected areas, no-take reserves and port limits are NOT masked anywhere in this file, and several of these coasts sit inside one. Legal sizes and seasons only appear where legal/<CC>.json exists."
+      "note": "Auto-generated entry. bbox, depth band and visibility baseline are reasonable starting values, NOT surveyed ones - open the region, look at the map and tune them before you trust a mark. The species pack is the closest available match for this stretch of ocean and may be approximate. No exclusion zones are defined: protected areas, no-take reserves and port limits are NOT masked anywhere in this file, and several of these coasts sit inside one. Legal sizes and seasons only appear where legal/<CC>.json exists.",
+      "spearfishing": "banned",
+      "spearfishing_note": "Cabo Pulmo national park is no-take and sits inside this box"
     },
     {
       "id": "revillagigedo",
@@ -6283,7 +6325,9 @@
         "baseline": 0.1
       },
       "wind_regimes": null,
-      "note": "Auto-generated entry. bbox, depth band and visibility baseline are reasonable starting values, NOT surveyed ones - open the region, look at the map and tune them before you trust a mark. The species pack is the closest available match for this stretch of ocean and may be approximate. No exclusion zones are defined: protected areas, no-take reserves and port limits are NOT masked anywhere in this file, and several of these coasts sit inside one. Legal sizes and seasons only appear where legal/<CC>.json exists."
+      "note": "Auto-generated entry. bbox, depth band and visibility baseline are reasonable starting values, NOT surveyed ones - open the region, look at the map and tune them before you trust a mark. The species pack is the closest available match for this stretch of ocean and may be approximate. No exclusion zones are defined: protected areas, no-take reserves and port limits are NOT masked anywhere in this file, and several of these coasts sit inside one. Legal sizes and seasons only appear where legal/<CC>.json exists.",
+      "spearfishing": "banned",
+      "spearfishing_note": "Revillagigedo national park and biosphere reserve; fishing prohibited"
     },
     {
       "id": "cape-cod",
@@ -6747,7 +6791,9 @@
         "baseline": 0.15
       },
       "wind_regimes": null,
-      "note": "Auto-generated entry. bbox, depth band and visibility baseline are reasonable starting values, NOT surveyed ones - open the region, look at the map and tune them before you trust a mark. The species pack is the closest available match for this stretch of ocean and may be approximate. No exclusion zones are defined: protected areas, no-take reserves and port limits are NOT masked anywhere in this file, and several of these coasts sit inside one. Legal sizes and seasons only appear where legal/<CC>.json exists."
+      "note": "Auto-generated entry. bbox, depth band and visibility baseline are reasonable starting values, NOT surveyed ones - open the region, look at the map and tune them before you trust a mark. The species pack is the closest available match for this stretch of ocean and may be approximate. No exclusion zones are defined: protected areas, no-take reserves and port limits are NOT masked anywhere in this file, and several of these coasts sit inside one. Legal sizes and seasons only appear where legal/<CC>.json exists.",
+      "spearfishing": "restricted",
+      "spearfishing_note": "Guna Yala waters are community-controlled; permission required"
     },
     {
       "id": "bonaire",
@@ -6776,7 +6822,9 @@
         "baseline": 0.08
       },
       "wind_regimes": null,
-      "note": "Auto-generated entry. bbox, depth band and visibility baseline are reasonable starting values, NOT surveyed ones - open the region, look at the map and tune them before you trust a mark. The species pack is the closest available match for this stretch of ocean and may be approximate. No exclusion zones are defined: protected areas, no-take reserves and port limits are NOT masked anywhere in this file, and several of these coasts sit inside one. Legal sizes and seasons only appear where legal/<CC>.json exists."
+      "note": "Auto-generated entry. bbox, depth band and visibility baseline are reasonable starting values, NOT surveyed ones - open the region, look at the map and tune them before you trust a mark. The species pack is the closest available match for this stretch of ocean and may be approximate. No exclusion zones are defined: protected areas, no-take reserves and port limits are NOT masked anywhere in this file, and several of these coasts sit inside one. Legal sizes and seasons only appear where legal/<CC>.json exists.",
+      "spearfishing": "banned",
+      "spearfishing_note": "Bonaire National Marine Park covers the whole island; spearfishing is prohibited"
     },
     {
       "id": "curacao",
@@ -6979,7 +7027,9 @@
         "baseline": 0.1
       },
       "wind_regimes": null,
-      "note": "Auto-generated entry. bbox, depth band and visibility baseline are reasonable starting values, NOT surveyed ones - open the region, look at the map and tune them before you trust a mark. The species pack is the closest available match for this stretch of ocean and may be approximate. No exclusion zones are defined: protected areas, no-take reserves and port limits are NOT masked anywhere in this file, and several of these coasts sit inside one. Legal sizes and seasons only appear where legal/<CC>.json exists."
+      "note": "Auto-generated entry. bbox, depth band and visibility baseline are reasonable starting values, NOT surveyed ones - open the region, look at the map and tune them before you trust a mark. The species pack is the closest available match for this stretch of ocean and may be approximate. No exclusion zones are defined: protected areas, no-take reserves and port limits are NOT masked anywhere in this file, and several of these coasts sit inside one. Legal sizes and seasons only appear where legal/<CC>.json exists.",
+      "spearfishing": "restricted",
+      "spearfishing_note": "Virgin Islands national park waters are closed to spearfishing"
     },
     {
       "id": "cayman",
@@ -7008,7 +7058,9 @@
         "baseline": 0.08
       },
       "wind_regimes": null,
-      "note": "Auto-generated entry. bbox, depth band and visibility baseline are reasonable starting values, NOT surveyed ones - open the region, look at the map and tune them before you trust a mark. The species pack is the closest available match for this stretch of ocean and may be approximate. No exclusion zones are defined: protected areas, no-take reserves and port limits are NOT masked anywhere in this file, and several of these coasts sit inside one. Legal sizes and seasons only appear where legal/<CC>.json exists."
+      "note": "Auto-generated entry. bbox, depth band and visibility baseline are reasonable starting values, NOT surveyed ones - open the region, look at the map and tune them before you trust a mark. The species pack is the closest available match for this stretch of ocean and may be approximate. No exclusion zones are defined: protected areas, no-take reserves and port limits are NOT masked anywhere in this file, and several of these coasts sit inside one. Legal sizes and seasons only appear where legal/<CC>.json exists.",
+      "spearfishing": "restricted",
+      "spearfishing_note": "licence required and much of the coast is closed"
     },
     {
       "id": "panhandle",
@@ -7124,7 +7176,9 @@
         "baseline": 0.1
       },
       "wind_regimes": null,
-      "note": "Auto-generated entry. bbox, depth band and visibility baseline are reasonable starting values, NOT surveyed ones - open the region, look at the map and tune them before you trust a mark. The species pack is the closest available match for this stretch of ocean and may be approximate. No exclusion zones are defined: protected areas, no-take reserves and port limits are NOT masked anywhere in this file, and several of these coasts sit inside one. Legal sizes and seasons only appear where legal/<CC>.json exists."
+      "note": "Auto-generated entry. bbox, depth band and visibility baseline are reasonable starting values, NOT surveyed ones - open the region, look at the map and tune them before you trust a mark. The species pack is the closest available match for this stretch of ocean and may be approximate. No exclusion zones are defined: protected areas, no-take reserves and port limits are NOT masked anywhere in this file, and several of these coasts sit inside one. Legal sizes and seasons only appear where legal/<CC>.json exists.",
+      "spearfishing": "banned",
+      "spearfishing_note": "Fernando de Noronha marine national park; spearfishing prohibited"
     },
     {
       "id": "abrolhos",
@@ -7530,7 +7584,9 @@
         "baseline": 0.12
       },
       "wind_regimes": null,
-      "note": "Auto-generated entry. bbox, depth band and visibility baseline are reasonable starting values, NOT surveyed ones - open the region, look at the map and tune them before you trust a mark. The species pack is the closest available match for this stretch of ocean and may be approximate. No exclusion zones are defined: protected areas, no-take reserves and port limits are NOT masked anywhere in this file, and several of these coasts sit inside one. Legal sizes and seasons only appear where legal/<CC>.json exists."
+      "note": "Auto-generated entry. bbox, depth band and visibility baseline are reasonable starting values, NOT surveyed ones - open the region, look at the map and tune them before you trust a mark. The species pack is the closest available match for this stretch of ocean and may be approximate. No exclusion zones are defined: protected areas, no-take reserves and port limits are NOT masked anywhere in this file, and several of these coasts sit inside one. Legal sizes and seasons only appear where legal/<CC>.json exists.",
+      "spearfishing": "restricted",
+      "spearfishing_note": "Ningaloo Marine Park is zoned with sanctuary areas"
     },
     {
       "id": "great-barrier-north",
@@ -7559,7 +7615,9 @@
         "baseline": 0.12
       },
       "wind_regimes": null,
-      "note": "Auto-generated entry. bbox, depth band and visibility baseline are reasonable starting values, NOT surveyed ones - open the region, look at the map and tune them before you trust a mark. The species pack is the closest available match for this stretch of ocean and may be approximate. No exclusion zones are defined: protected areas, no-take reserves and port limits are NOT masked anywhere in this file, and several of these coasts sit inside one. Legal sizes and seasons only appear where legal/<CC>.json exists."
+      "note": "Auto-generated entry. bbox, depth band and visibility baseline are reasonable starting values, NOT surveyed ones - open the region, look at the map and tune them before you trust a mark. The species pack is the closest available match for this stretch of ocean and may be approximate. No exclusion zones are defined: protected areas, no-take reserves and port limits are NOT masked anywhere in this file, and several of these coasts sit inside one. Legal sizes and seasons only appear where legal/<CC>.json exists.",
+      "spearfishing": "restricted",
+      "spearfishing_note": "Great Barrier Reef Marine Park is zoned; green zones are no-take"
     },
     {
       "id": "whitsundays",
@@ -7588,7 +7646,9 @@
         "baseline": 0.15
       },
       "wind_regimes": null,
-      "note": "Auto-generated entry. bbox, depth band and visibility baseline are reasonable starting values, NOT surveyed ones - open the region, look at the map and tune them before you trust a mark. The species pack is the closest available match for this stretch of ocean and may be approximate. No exclusion zones are defined: protected areas, no-take reserves and port limits are NOT masked anywhere in this file, and several of these coasts sit inside one. Legal sizes and seasons only appear where legal/<CC>.json exists."
+      "note": "Auto-generated entry. bbox, depth band and visibility baseline are reasonable starting values, NOT surveyed ones - open the region, look at the map and tune them before you trust a mark. The species pack is the closest available match for this stretch of ocean and may be approximate. No exclusion zones are defined: protected areas, no-take reserves and port limits are NOT masked anywhere in this file, and several of these coasts sit inside one. Legal sizes and seasons only appear where legal/<CC>.json exists.",
+      "spearfishing": "restricted",
+      "spearfishing_note": "Great Barrier Reef Marine Park zoning applies"
     },
     {
       "id": "darwin",
@@ -10401,7 +10461,9 @@
         "baseline": 0.09
       },
       "wind_regimes": null,
-      "note": "Auto-generated entry. bbox, depth band and visibility baseline are reasonable starting values, NOT surveyed ones: open the region, look at the map and tune them before you trust a mark. The species pack is the closest available match for this stretch of ocean and may be approximate. No exclusion zones are defined: protected areas, no-take reserves and port limits are NOT masked anywhere in this file, and several of these coasts sit inside one. Legal sizes and seasons only appear where legal/<CC>.json exists."
+      "note": "Auto-generated entry. bbox, depth band and visibility baseline are reasonable starting values, NOT surveyed ones: open the region, look at the map and tune them before you trust a mark. The species pack is the closest available match for this stretch of ocean and may be approximate. No exclusion zones are defined: protected areas, no-take reserves and port limits are NOT masked anywhere in this file, and several of these coasts sit inside one. Legal sizes and seasons only appear where legal/<CC>.json exists.",
+      "spearfishing": "restricted",
+      "spearfishing_note": "Red Sea protected areas"
     },
     {
       "id": "el-quseir",
@@ -10430,7 +10492,9 @@
         "baseline": 0.08
       },
       "wind_regimes": null,
-      "note": "Auto-generated entry. bbox, depth band and visibility baseline are reasonable starting values, NOT surveyed ones: open the region, look at the map and tune them before you trust a mark. The species pack is the closest available match for this stretch of ocean and may be approximate. No exclusion zones are defined: protected areas, no-take reserves and port limits are NOT masked anywhere in this file, and several of these coasts sit inside one. Legal sizes and seasons only appear where legal/<CC>.json exists."
+      "note": "Auto-generated entry. bbox, depth band and visibility baseline are reasonable starting values, NOT surveyed ones: open the region, look at the map and tune them before you trust a mark. The species pack is the closest available match for this stretch of ocean and may be approximate. No exclusion zones are defined: protected areas, no-take reserves and port limits are NOT masked anywhere in this file, and several of these coasts sit inside one. Legal sizes and seasons only appear where legal/<CC>.json exists.",
+      "spearfishing": "restricted",
+      "spearfishing_note": "Red Sea protected areas"
     },
     {
       "id": "jeddah",
@@ -10488,7 +10552,9 @@
         "baseline": 0.09
       },
       "wind_regimes": null,
-      "note": "Auto-generated entry. bbox, depth band and visibility baseline are reasonable starting values, NOT surveyed ones: open the region, look at the map and tune them before you trust a mark. The species pack is the closest available match for this stretch of ocean and may be approximate. No exclusion zones are defined: protected areas, no-take reserves and port limits are NOT masked anywhere in this file, and several of these coasts sit inside one. Legal sizes and seasons only appear where legal/<CC>.json exists."
+      "note": "Auto-generated entry. bbox, depth band and visibility baseline are reasonable starting values, NOT surveyed ones: open the region, look at the map and tune them before you trust a mark. The species pack is the closest available match for this stretch of ocean and may be approximate. No exclusion zones are defined: protected areas, no-take reserves and port limits are NOT masked anywhere in this file, and several of these coasts sit inside one. Legal sizes and seasons only appear where legal/<CC>.json exists.",
+      "spearfishing": "restricted",
+      "spearfishing_note": "Eilat Coral Beach nature reserve"
     },
     {
       "id": "muscat",
@@ -11851,7 +11917,9 @@
         "baseline": 0.1
       },
       "wind_regimes": null,
-      "note": "Auto-generated entry. bbox, depth band and visibility baseline are reasonable starting values, NOT surveyed ones: open the region, look at the map and tune them before you trust a mark. The species pack is the closest available match for this stretch of ocean and may be approximate. No exclusion zones are defined: protected areas, no-take reserves and port limits are NOT masked anywhere in this file, and several of these coasts sit inside one. Legal sizes and seasons only appear where legal/<CC>.json exists."
+      "note": "Auto-generated entry. bbox, depth band and visibility baseline are reasonable starting values, NOT surveyed ones: open the region, look at the map and tune them before you trust a mark. The species pack is the closest available match for this stretch of ocean and may be approximate. No exclusion zones are defined: protected areas, no-take reserves and port limits are NOT masked anywhere in this file, and several of these coasts sit inside one. Legal sizes and seasons only appear where legal/<CC>.json exists.",
+      "spearfishing": "restricted",
+      "spearfishing_note": "Lord Howe Island Marine Park is zoned"
     },
     {
       "id": "norfolk",
@@ -12547,7 +12615,9 @@
         "baseline": 0.1
       },
       "wind_regimes": null,
-      "note": "Auto-generated entry. bbox, depth band and visibility baseline are reasonable starting values, NOT surveyed ones: open the region, look at the map and tune them before you trust a mark. The species pack is the closest available match for this stretch of ocean and may be approximate. No exclusion zones are defined: protected areas, no-take reserves and port limits are NOT masked anywhere in this file, and several of these coasts sit inside one. Legal sizes and seasons only appear where legal/<CC>.json exists."
+      "note": "Auto-generated entry. bbox, depth band and visibility baseline are reasonable starting values, NOT surveyed ones: open the region, look at the map and tune them before you trust a mark. The species pack is the closest available match for this stretch of ocean and may be approximate. No exclusion zones are defined: protected areas, no-take reserves and port limits are NOT masked anywhere in this file, and several of these coasts sit inside one. Legal sizes and seasons only appear where legal/<CC>.json exists.",
+      "spearfishing": "restricted",
+      "spearfishing_note": "licence required and spearfishing is banned within one mile of shore"
     },
     {
       "id": "bay-of-fundy",
@@ -12779,7 +12849,9 @@
         "baseline": 0.1
       },
       "wind_regimes": null,
-      "note": "Auto-generated entry. bbox, depth band and visibility baseline are reasonable starting values, NOT surveyed ones: open the region, look at the map and tune them before you trust a mark. The species pack is the closest available match for this stretch of ocean and may be approximate. No exclusion zones are defined: protected areas, no-take reserves and port limits are NOT masked anywhere in this file, and several of these coasts sit inside one. Legal sizes and seasons only appear where legal/<CC>.json exists."
+      "note": "Auto-generated entry. bbox, depth band and visibility baseline are reasonable starting values, NOT surveyed ones: open the region, look at the map and tune them before you trust a mark. The species pack is the closest available match for this stretch of ocean and may be approximate. No exclusion zones are defined: protected areas, no-take reserves and port limits are NOT masked anywhere in this file, and several of these coasts sit inside one. Legal sizes and seasons only appear where legal/<CC>.json exists.",
+      "spearfishing": "restricted",
+      "spearfishing_note": "Tobago Cays Marine Park, zoned with no-take areas"
     },
     {
       "id": "tobago",
@@ -12982,7 +13054,9 @@
         "baseline": 0.1
       },
       "wind_regimes": null,
-      "note": "Auto-generated entry. bbox, depth band and visibility baseline are reasonable starting values, NOT surveyed ones: open the region, look at the map and tune them before you trust a mark. The species pack is the closest available match for this stretch of ocean and may be approximate. No exclusion zones are defined: protected areas, no-take reserves and port limits are NOT masked anywhere in this file, and several of these coasts sit inside one. Legal sizes and seasons only appear where legal/<CC>.json exists."
+      "note": "Auto-generated entry. bbox, depth band and visibility baseline are reasonable starting values, NOT surveyed ones: open the region, look at the map and tune them before you trust a mark. The species pack is the closest available match for this stretch of ocean and may be approximate. No exclusion zones are defined: protected areas, no-take reserves and port limits are NOT masked anywhere in this file, and several of these coasts sit inside one. Legal sizes and seasons only appear where legal/<CC>.json exists.",
+      "spearfishing": "restricted",
+      "spearfishing_note": "Banco Chinchorro biosphere reserve is zoned"
     },
     {
       "id": "salvador",
@@ -13475,7 +13549,9 @@
         "baseline": 0.16
       },
       "wind_regimes": null,
-      "note": "Auto-generated entry. bbox, depth band and visibility baseline are reasonable starting values, NOT surveyed ones: open the region, look at the map and tune them before you trust a mark. The species pack is the closest available match for this stretch of ocean and may be approximate. No exclusion zones are defined: protected areas, no-take reserves and port limits are NOT masked anywhere in this file, and several of these coasts sit inside one. Legal sizes and seasons only appear where legal/<CC>.json exists."
+      "note": "Auto-generated entry. bbox, depth band and visibility baseline are reasonable starting values, NOT surveyed ones: open the region, look at the map and tune them before you trust a mark. The species pack is the closest available match for this stretch of ocean and may be approximate. No exclusion zones are defined: protected areas, no-take reserves and port limits are NOT masked anywhere in this file, and several of these coasts sit inside one. Legal sizes and seasons only appear where legal/<CC>.json exists.",
+      "spearfishing": "restricted",
+      "spearfishing_note": "Great Barrier Reef Marine Park zoning; Lady Elliot is a green zone"
     },
     {
       "id": "magnetic-island",
@@ -13504,7 +13580,9 @@
         "baseline": 0.2
       },
       "wind_regimes": null,
-      "note": "Auto-generated entry. bbox, depth band and visibility baseline are reasonable starting values, NOT surveyed ones: open the region, look at the map and tune them before you trust a mark. The species pack is the closest available match for this stretch of ocean and may be approximate. No exclusion zones are defined: protected areas, no-take reserves and port limits are NOT masked anywhere in this file, and several of these coasts sit inside one. Legal sizes and seasons only appear where legal/<CC>.json exists."
+      "note": "Auto-generated entry. bbox, depth band and visibility baseline are reasonable starting values, NOT surveyed ones: open the region, look at the map and tune them before you trust a mark. The species pack is the closest available match for this stretch of ocean and may be approximate. No exclusion zones are defined: protected areas, no-take reserves and port limits are NOT masked anywhere in this file, and several of these coasts sit inside one. Legal sizes and seasons only appear where legal/<CC>.json exists.",
+      "spearfishing": "restricted",
+      "spearfishing_note": "Great Barrier Reef Marine Park zoning applies"
     },
     {
       "id": "broome",
