@@ -1459,7 +1459,25 @@
       },
       "wind_regimes": null,
       "note": "Red Sea fringing reef: the clearest water in this whole file, and the visibility baseline is set accordingly. Spearfishing is banned outright in much of the Egyptian Red Sea and inside the protected areas here. This region is a conditions and structure reference, not an invitation.",
-      "group": "red-sea"
+      "group": "red-sea",
+      "thermocline": {
+        "monthly_drop_c": [
+          0.5,
+          0.5,
+          0.5,
+          1.0,
+          1.5,
+          2.0,
+          2.5,
+          2.5,
+          2.0,
+          1.5,
+          1.0,
+          0.5
+        ],
+        "reference_depth_m": 25.0,
+        "_note": "Red Sea / Gulf of Aqaba: warm and near-uniform to well below diving depth. Set explicitly because the latitude rule in region_config() would otherwise treat 28 N as temperate-ish."
+      }
     },
     {
       "id": "baja-cortez",
@@ -4243,7 +4261,25 @@
         "baseline": 0.1
       },
       "wind_regimes": null,
-      "note": "Auto-generated entry. bbox, depth band and visibility baseline are reasonable starting values, NOT surveyed ones - open the region, look at the map and tune them before you trust a mark. The species pack is the closest available match for this stretch of ocean and may be approximate. No exclusion zones are defined: protected areas, no-take reserves and port limits are NOT masked anywhere in this file, and several of these coasts sit inside one. Legal sizes and seasons only appear where legal/<CC>.json exists."
+      "note": "Auto-generated entry. bbox, depth band and visibility baseline are reasonable starting values, NOT surveyed ones - open the region, look at the map and tune them before you trust a mark. The species pack is the closest available match for this stretch of ocean and may be approximate. No exclusion zones are defined: protected areas, no-take reserves and port limits are NOT masked anywhere in this file, and several of these coasts sit inside one. Legal sizes and seasons only appear where legal/<CC>.json exists.",
+      "thermocline": {
+        "monthly_drop_c": [
+          0.5,
+          0.5,
+          0.5,
+          1.0,
+          1.5,
+          2.0,
+          2.5,
+          2.5,
+          2.0,
+          1.5,
+          1.0,
+          0.5
+        ],
+        "reference_depth_m": 25.0,
+        "_note": "Red Sea / Gulf of Aqaba: warm and near-uniform to well below diving depth. Set explicitly because the latitude rule in region_config() would otherwise treat 28 N as temperate-ish."
+      }
     },
     {
       "id": "marsa-alam",
@@ -4272,7 +4308,25 @@
         "baseline": 0.08
       },
       "wind_regimes": null,
-      "note": "Auto-generated entry. bbox, depth band and visibility baseline are reasonable starting values, NOT surveyed ones - open the region, look at the map and tune them before you trust a mark. The species pack is the closest available match for this stretch of ocean and may be approximate. No exclusion zones are defined: protected areas, no-take reserves and port limits are NOT masked anywhere in this file, and several of these coasts sit inside one. Legal sizes and seasons only appear where legal/<CC>.json exists."
+      "note": "Auto-generated entry. bbox, depth band and visibility baseline are reasonable starting values, NOT surveyed ones - open the region, look at the map and tune them before you trust a mark. The species pack is the closest available match for this stretch of ocean and may be approximate. No exclusion zones are defined: protected areas, no-take reserves and port limits are NOT masked anywhere in this file, and several of these coasts sit inside one. Legal sizes and seasons only appear where legal/<CC>.json exists.",
+      "thermocline": {
+        "monthly_drop_c": [
+          0.5,
+          0.5,
+          0.5,
+          1.0,
+          1.5,
+          2.0,
+          2.5,
+          2.5,
+          2.0,
+          1.5,
+          1.0,
+          0.5
+        ],
+        "reference_depth_m": 25.0,
+        "_note": "Red Sea / Gulf of Aqaba: warm and near-uniform to well below diving depth. Set explicitly because the latitude rule in region_config() would otherwise treat 28 N as temperate-ish."
+      }
     },
     {
       "id": "sharm",
@@ -4301,7 +4355,25 @@
         "baseline": 0.08
       },
       "wind_regimes": null,
-      "note": "Auto-generated entry. bbox, depth band and visibility baseline are reasonable starting values, NOT surveyed ones - open the region, look at the map and tune them before you trust a mark. The species pack is the closest available match for this stretch of ocean and may be approximate. No exclusion zones are defined: protected areas, no-take reserves and port limits are NOT masked anywhere in this file, and several of these coasts sit inside one. Legal sizes and seasons only appear where legal/<CC>.json exists."
+      "note": "Auto-generated entry. bbox, depth band and visibility baseline are reasonable starting values, NOT surveyed ones - open the region, look at the map and tune them before you trust a mark. The species pack is the closest available match for this stretch of ocean and may be approximate. No exclusion zones are defined: protected areas, no-take reserves and port limits are NOT masked anywhere in this file, and several of these coasts sit inside one. Legal sizes and seasons only appear where legal/<CC>.json exists.",
+      "thermocline": {
+        "monthly_drop_c": [
+          0.5,
+          0.5,
+          0.5,
+          1.0,
+          1.5,
+          2.0,
+          2.5,
+          2.5,
+          2.0,
+          1.5,
+          1.0,
+          0.5
+        ],
+        "reference_depth_m": 25.0,
+        "_note": "Red Sea / Gulf of Aqaba: warm and near-uniform to well below diving depth. Set explicitly because the latitude rule in region_config() would otherwise treat 28 N as temperate-ish."
+      }
     },
     {
       "id": "aqaba",
@@ -4330,7 +4402,25 @@
         "baseline": 0.08
       },
       "wind_regimes": null,
-      "note": "Auto-generated entry. bbox, depth band and visibility baseline are reasonable starting values, NOT surveyed ones - open the region, look at the map and tune them before you trust a mark. The species pack is the closest available match for this stretch of ocean and may be approximate. No exclusion zones are defined: protected areas, no-take reserves and port limits are NOT masked anywhere in this file, and several of these coasts sit inside one. Legal sizes and seasons only appear where legal/<CC>.json exists."
+      "note": "Auto-generated entry. bbox, depth band and visibility baseline are reasonable starting values, NOT surveyed ones - open the region, look at the map and tune them before you trust a mark. The species pack is the closest available match for this stretch of ocean and may be approximate. No exclusion zones are defined: protected areas, no-take reserves and port limits are NOT masked anywhere in this file, and several of these coasts sit inside one. Legal sizes and seasons only appear where legal/<CC>.json exists.",
+      "thermocline": {
+        "monthly_drop_c": [
+          0.5,
+          0.5,
+          0.5,
+          1.0,
+          1.5,
+          2.0,
+          2.5,
+          2.5,
+          2.0,
+          1.5,
+          1.0,
+          0.5
+        ],
+        "reference_depth_m": 25.0,
+        "_note": "Red Sea / Gulf of Aqaba: warm and near-uniform to well below diving depth. Set explicitly because the latitude rule in region_config() would otherwise treat 28 N as temperate-ish."
+      }
     },
     {
       "id": "yanbu",
@@ -4359,7 +4449,25 @@
         "baseline": 0.1
       },
       "wind_regimes": null,
-      "note": "Auto-generated entry. bbox, depth band and visibility baseline are reasonable starting values, NOT surveyed ones - open the region, look at the map and tune them before you trust a mark. The species pack is the closest available match for this stretch of ocean and may be approximate. No exclusion zones are defined: protected areas, no-take reserves and port limits are NOT masked anywhere in this file, and several of these coasts sit inside one. Legal sizes and seasons only appear where legal/<CC>.json exists."
+      "note": "Auto-generated entry. bbox, depth band and visibility baseline are reasonable starting values, NOT surveyed ones - open the region, look at the map and tune them before you trust a mark. The species pack is the closest available match for this stretch of ocean and may be approximate. No exclusion zones are defined: protected areas, no-take reserves and port limits are NOT masked anywhere in this file, and several of these coasts sit inside one. Legal sizes and seasons only appear where legal/<CC>.json exists.",
+      "thermocline": {
+        "monthly_drop_c": [
+          0.5,
+          0.5,
+          0.5,
+          1.0,
+          1.5,
+          2.0,
+          2.5,
+          2.5,
+          2.0,
+          1.5,
+          1.0,
+          0.5
+        ],
+        "reference_depth_m": 25.0,
+        "_note": "Red Sea / Gulf of Aqaba: warm and near-uniform to well below diving depth. Set explicitly because the latitude rule in region_config() would otherwise treat 28 N as temperate-ish."
+      }
     },
     {
       "id": "port-sudan",
@@ -4388,7 +4496,25 @@
         "baseline": 0.08
       },
       "wind_regimes": null,
-      "note": "Auto-generated entry. bbox, depth band and visibility baseline are reasonable starting values, NOT surveyed ones - open the region, look at the map and tune them before you trust a mark. The species pack is the closest available match for this stretch of ocean and may be approximate. No exclusion zones are defined: protected areas, no-take reserves and port limits are NOT masked anywhere in this file, and several of these coasts sit inside one. Legal sizes and seasons only appear where legal/<CC>.json exists."
+      "note": "Auto-generated entry. bbox, depth band and visibility baseline are reasonable starting values, NOT surveyed ones - open the region, look at the map and tune them before you trust a mark. The species pack is the closest available match for this stretch of ocean and may be approximate. No exclusion zones are defined: protected areas, no-take reserves and port limits are NOT masked anywhere in this file, and several of these coasts sit inside one. Legal sizes and seasons only appear where legal/<CC>.json exists.",
+      "thermocline": {
+        "monthly_drop_c": [
+          0.5,
+          0.5,
+          0.5,
+          1.0,
+          1.5,
+          2.0,
+          2.5,
+          2.5,
+          2.0,
+          1.5,
+          1.0,
+          0.5
+        ],
+        "reference_depth_m": 25.0,
+        "_note": "Red Sea / Gulf of Aqaba: warm and near-uniform to well below diving depth. Set explicitly because the latitude rule in region_config() would otherwise treat 28 N as temperate-ish."
+      }
     },
     {
       "id": "zanzibar",

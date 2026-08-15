@@ -70,8 +70,15 @@
     "rain_ref_mm_per_h": 1.2,
     "wave_weight": 0.35,
     "rain_weight": 0.65,
+    "river_weight": 0.35,
     "viz_min_m": 1.0,
     "viz_max_m": 11.0,
+    "stir_model": "orbital",
+    "orbital_ref_ms": 0.35,
+    "orbital_exponent": 3.0,
+    "_stir_note": "How wave stirring of the seabed is estimated. 'orbital' uses the near-bed orbital velocity from linear wave theory, u_b = pi*H/(T*sinh(k*h)) with k from the dispersion relation - the quantity that actually lifts sediment, and one that depends on wave PERIOD and on DEPTH. 'hs_cubed' restores the previous behaviour, which used significant height alone: it could not tell 1 m of 4 s wind chop from 1 m of 11 s groundswell over 25 m of water, even though the second stirs the bed about seventy times harder. Wind sea and swell are evaluated separately and combined in quadrature, because orbital velocities are variances and add in energy rather than linearly.",
+    "_orbital_ref_note": "orbital_ref_ms is the near-bed velocity that counts as fully stirred. Fine sand starts moving around 0.1-0.2 m/s, so 0.35 is a shelf that is properly worked over. Lower it on a muddy or silty bottom that clouds at the slightest movement, raise it on coarse sand or gravel that needs a real sea to shift. This is the number to reach for first if the model calls water dirty when it is not.",
+    "_river_note": "river_weight is how much a river in flood counts against clarity, on top of local rainfall. They are different signals: rain here is weather you can see, whereas a catchment that emptied 200 km inland arrives a day or two later under a clear sky. See the river block below.",
     "_note": "Checked against 6 logged dives Aug 2026: predicted 12-13 m while actual ran 5-10 m, correlation r=+0.07. This model is NOT yet predictive.",
     "_baseline_note": "THE FIX FOR 'VISIBILITY IS ALWAYS OVERESTIMATED'. Turbidity used to start at zero, so with no recent swell or rain the model reported viz_max_m - the ceiling - on every calm dry day. It was not forecasting 11 m, it was reporting the maximum. baseline (0-1) is what the water carries when nothing has happened: plankton, current-driven resuspension, river and land input, fine sediment that never fully settles. At 0.35 a flat calm day now reads about 7.5 m instead of 11, 0.6 m of swell about 6 m, and 1 m of swell about 4 m - which is where the dive log actually sits.",
     "_tuning_note": "baseline is the most region-specific number in this file. A turbid north Adriatic shelf and a Cycladic drop-off are not the same water, so the clear-water regions override it downward in regions.json. wave_ref_hs was also lowered 1.4 -> 1.0: cubed and normalised against 1.4 m, anything under about 0.8 m of swell barely registered at all, which is wrong on a shallow sandy shelf where even short chop lifts sediment. The real fix for all of this is calibrate.py --fit-viz once ~15 dives are logged; it writes visibility_correction to weights.json and overrides these guesses with a fit."
@@ -83,6 +90,10 @@
     "wind_bad_kmh": 35.0,
     "hard_floor": 0.2,
     "period_ref_s": 8.0,
+    "current_good_ms": 0.25,
+    "current_bad_ms": 1.0,
+    "_current_note": "Drift. Nothing used to gate on current at all - ocean_current_velocity only ever fed the 'movement' reward, so a screaming spring tide could read as MORE attractive rather than as a reason to stay out of the water. About 0.5 m/s is a knot, which is a drift dive; 1.0 m/s is two knots and is not a dive. Set current_bad_ms to 0 to switch the gate off.",
+    "_split_note": "Wind sea and swell are now judged separately and the worse one decides, because a metre of 4 s chop and a metre of 12 s swell are not the same day on the surface. Where the split fields are missing the combined sea state is used exactly as before.",
     "_period_note": "Reference swell period in seconds; no adjustment at this period. Shorter periods (steep wind chop) scale wave height up toward the bad threshold, longer periods (smooth ground swell) scale it down, capped at 0.6x-1.6x."
   },
   "movement": {
@@ -235,6 +246,12 @@
     "gmrt_resolution": "high",
     "use_sdb": false,
     "min_grid_resolution_m": 40.0
+  },
+  "river": {
+    "_note": "River discharge from Open-Meteo's flood API - free, keyless, cached per region per day. Normalised against the river's OWN median over baseline_days, because the absolute figure means nothing across regions: the Mirna runs at half a cubic metre a second and the Tejo at hundreds. A ratio of 1.0 is a normal day and flood_ratio_ref is where it counts as fully turbid. Regions with no river at the queried point return nothing and fall back to rainfall alone, which is the correct answer for an island.",
+    "enabled": true,
+    "baseline_days": 60,
+    "flood_ratio_ref": 3.0
   },
   "coastline": {
     "_note": "The real shoreline from OpenStreetMap, used to decide what is land. Bathymetry alone reports the average of what is under each cell, so a barrier island or a spit narrower than a cell or two averages out to negative elevation and gets scored as open water - which is how the colour wash and the depth contours ended up painted across the beach at Faro. Cached per region in cache/. Set enabled to false to fall back to the bathymetric land edge alone.",

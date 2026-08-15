@@ -96,6 +96,9 @@ EMODNET_HABITAT_WFS = (
 )
 OPENMETEO_MARINE = "https://marine-api.open-meteo.com/v1/marine"
 OPENMETEO_WEATHER = "https://api.open-meteo.com/v1/forecast"
+# River discharge for the catchment behind the coast. Free and keyless,
+# same family as the others, but a separate host and a separate quota.
+OPENMETEO_FLOOD = "https://flood-api.open-meteo.com/v1/flood"
 
 USER_AGENT = "fish_finder/2.0 (personal spearfishing planner)"
 EARTH_R = 6371008.8
@@ -154,6 +157,7 @@ _RETRY_STATUS = (408, 425, 429, 500, 502, 503, 504)
 _HOST_MIN_INTERVAL = {
     "api.open-meteo.com": 0.15,
     "marine-api.open-meteo.com": 0.15,
+    "flood-api.open-meteo.com": 0.15,
 }
 _HOST_GATE = threading.Lock()
 _HOST_LAST: dict = {}
@@ -309,6 +313,34 @@ def region_config(base, region):
                 cfg[key].update(region[key])
             else:
                 cfg[key] = region[key]
+
+    # The inherited thermocline is a NORTH ADRIATIC one: no stratification
+    # in winter, 8 C of it in July and August. Handed unchanged to a region
+    # in the southern hemisphere that is exactly six months wrong - it puts
+    # the summer thermocline on their winter - and handed to the tropics it
+    # invents an 8 C drop over 25 m in water that is near-uniform to well
+    # below diving depth. 57 of the regions in this file are southern and 80
+    # are tropical, so between them that is most of the catalogue.
+    #
+    # Only applied where a region has NOT supplied its own numbers.
+    tc = cfg.get("thermocline")
+    if tc and "thermocline" not in region and tc.get("monthly_drop_c"):
+        lat0 = 0.5 * (region["bbox"]["lat_min"] + region["bbox"]["lat_max"])
+        drops = list(tc["monthly_drop_c"])
+        notes = []
+        if lat0 < 0:
+            drops = drops[6:] + drops[:6]        # swap the seasons over
+            notes.append("seasons shifted six months for the southern hemisphere")
+        # Away from the temperate belt the seasonal thermocline in the top
+        # 25 m gets weaker, and in the deep tropics it is close to absent.
+        a = abs(lat0)
+        scale = 0.25 if a < 15 else (0.6 if a < 23.5 else (0.85 if a < 30 else 1.0))
+        if scale < 1.0:
+            drops = [round(d * scale, 2) for d in drops]
+            notes.append(f"drops scaled to {scale:g} for latitude {lat0:.0f}")
+        if notes:
+            cfg["thermocline"] = {**tc, "monthly_drop_c": drops,
+                                  "_adjusted": "; ".join(notes)}
     return cfg
 
 
@@ -1251,10 +1283,18 @@ def fetch_conditions(lat, lon, cfg):
     past = cfg["conditions"]["past_days"]
     fwd = cfg["conditions"]["forecast_days"]
 
+    # Wind sea and swell, SEPARATELY, as well as the combined sea state.
+    # They are two different things doing two different jobs: short-period
+    # wind chop is what makes the surface unworkable, long-period swell is
+    # what reaches the bottom and lifts sediment, and they routinely arrive
+    # from different quarters. Collapsing them into one significant height
+    # threw all of that away. Free — same request, more fields.
     marine_vars = [
         "wave_height", "wave_period", "wave_direction",
+        "wind_wave_height", "wind_wave_period", "wind_wave_direction",
+        "swell_wave_height", "swell_wave_period", "swell_wave_direction",
         "sea_surface_temperature", "sea_level_height_msl",
-        "ocean_current_velocity",
+        "ocean_current_velocity", "ocean_current_direction",
     ]
     weather_vars = [
         "precipitation", "wind_speed_10m", "wind_direction_10m",
@@ -1285,6 +1325,81 @@ def fetch_conditions(lat, lon, cfg):
         h[k] = np.array([np.nan if v is None else v
                          for v in w["hourly"].get(k, [None] * len(times))], float)
     return h, w.get("daily", {}), int(w.get("utc_offset_seconds", 0))
+
+
+def river_series(lat, lon, times, cfg, region_id):
+    """Turbidity from river discharge, 0-1, as a multiple of normal flow.
+
+    Local rainfall is not the same signal. A catchment that emptied 200 km
+    inland arrives at the coast a day or two later under a clear sky, and
+    the rain term never sees it — which is exactly the situation that ruins
+    a weekend on any coast with a river on it.
+
+    Open-Meteo's flood API is free and keyless. Discharge is reported daily
+    in m3/s, and the absolute number is meaningless across regions - the
+    Mirna runs at half a cubic metre a second and the Tejo at hundreds - so
+    this is normalised against the river's OWN median over a long window.
+    A ratio of 1 is a normal day; flood_ratio_ref is where it counts as
+    fully turbid. Cached per region per day.
+
+    Returns None if disabled, unavailable, or the point has no river.
+    """
+    c = (cfg.get("river") or {})
+    if not c.get("enabled", True):
+        return None
+    cache_file = CACHE / f"river_{region_id}_{dt.date.today().isoformat()}.json"
+    try:
+        if cache_file.exists():
+            doc = json.loads(cache_file.read_text(encoding="utf-8"))
+        else:
+            days = int(c.get("baseline_days", 60))
+            doc = http_json(f"{OPENMETEO_FLOOD}?" + urllib.parse.urlencode({
+                "latitude": round(lat, 4), "longitude": round(lon, 4),
+                "daily": "river_discharge",
+                "past_days": days, "forecast_days": 3,
+            }))
+            CACHE.mkdir(parents=True, exist_ok=True)
+            cache_file.write_text(json.dumps(doc), encoding="utf-8")
+    except Exception as e:
+        log(f"river: discharge unavailable ({e.__class__.__name__}) - "
+            "using rainfall alone")
+        return None
+
+    daily = (doc.get("daily") or {})
+    dates, q = daily.get("time") or [], daily.get("river_discharge") or []
+    vals = np.array([np.nan if v is None else float(v) for v in q], float)
+    if len(dates) != len(vals) or not np.any(np.isfinite(vals)):
+        return None
+    base = float(np.nanmedian(vals))
+    if not np.isfinite(base) or base <= 0.01:
+        return None                       # no meaningful river at this point
+
+    ratio = np.clip(vals / base, 0.0, None)
+    by_date = {d: r for d, r in zip(dates, ratio) if np.isfinite(r)}
+    hourly = np.array([by_date.get(t[:10], 1.0) for t in times], float)
+
+    hi = float(c.get("flood_ratio_ref", 3.0))
+    out = norm(hourly, 1.0, max(hi, 1.05))
+    log(f"river: median flow {base:.2f} m3/s, now {ratio[-4] if len(ratio) > 4 else ratio[-1]:.2f}x "
+        f"normal, turbidity contribution up to {out.max():.2f}")
+    return out
+
+
+def moon_illumination(times_local, tz_offset_s):
+    """Illuminated fraction of the moon, 0 (new) to 1 (full), per hour.
+
+    Pure arithmetic, no API. Conway's approximation of the synodic phase —
+    good to a day or so, which is far finer than anything it is used for.
+    Surfaced rather than scored: see the note in run().
+    """
+    out = []
+    for t in times_local:
+        u = dt.datetime.fromisoformat(t) - dt.timedelta(seconds=tz_offset_s)
+        # Days since a known new moon: 2000-01-06 18:14 UTC.
+        d = (u - dt.datetime(2000, 1, 6, 18, 14)).total_seconds() / 86400.0
+        phase = (d % 29.530588853) / 29.530588853        # 0 new, 0.5 full
+        out.append(0.5 * (1.0 - math.cos(2 * math.pi * phase)))
+    return np.array(out)
 
 
 def solar_elevation_deg(times_local, lat, lon, tz_offset_s):
@@ -1391,28 +1506,124 @@ def wind_regime_series(h, cfg):
     return names, np.array(vizf), np.array(workf)
 
 
-def visibility_series(h, cfg):
-    """Underwater visibility as a decaying memory of stirring and runoff.
+def wave_number(period_s, depth_m, g=9.81):
+    """Solve the linear dispersion relation w^2 = g k tanh(k h) for k.
 
-    Two independent sources of turbidity on this coast:
-      * wave resuspension of the sandy/muddy shelf — scales roughly with
-        wave energy, so Hs^3, and settles out over about a day
-      * the Mirna plume and general runoff after rain — slower to clear
+    Newton from the deep-water guess k = w^2/g. Converges in a handful of
+    iterations for every period and depth this model sees; twelve is ample
+    and keeps it branch-free over a whole time series.
+    """
+    T = np.clip(np.asarray(period_s, dtype=float), 1.0, 25.0)
+    hh = max(float(depth_m), 0.5)
+    w = 2.0 * math.pi / T
+    k = w * w / g
+    for _ in range(12):
+        tanh = np.tanh(k * hh)
+        f = g * k * tanh - w * w
+        df = g * tanh + g * k * hh * (1.0 - tanh ** 2)
+        k = k - f / np.maximum(df, 1e-12)
+        k = np.maximum(k, 1e-6)
+    return k
+
+
+def bottom_orbital_velocity(height_m, period_s, depth_m):
+    """Near-bed wave orbital velocity, u_b = pi H / (T sinh(k h)), m/s.
+
+    This is the quantity that actually lifts sediment off the seabed, and
+    the reason it matters here is that it depends on PERIOD and DEPTH, which
+    significant height alone does not. A 1 m sea at 25 m stirs the bottom
+    about seventy times harder at 11 s than at 4 s; Hs alone calls them
+    identical. Fine sand starts moving around 0.1-0.2 m/s.
+    """
+    H = np.nan_to_num(np.asarray(height_m, dtype=float), nan=0.0)
+    k = wave_number(period_s, depth_m)
+    hh = max(float(depth_m), 0.5)
+    T = np.clip(np.asarray(period_s, dtype=float), 1.0, 25.0)
+    # sinh overflows for short waves in deep water; those are exactly the
+    # cases where the bed feels nothing, so clamp and let it go to zero.
+    sinh = np.sinh(np.minimum(k * hh, 50.0))
+    return math.pi * H / (T * np.maximum(sinh, 1e-9))
+
+
+def stirring_series(h, cfg, depth_m):
+    """How hard the sea is working the bottom AT A GIVEN DEPTH, 0-1.
+
+    Wind sea and swell are evaluated separately and combined in energy —
+    orbital velocities are variances, so they add in quadrature, not
+    linearly. Falls back to the combined sea state when the split fields are
+    missing, and to the old Hs^3 shape when stir_model is set to
+    "hs_cubed", so the previous behaviour is still reachable for comparison.
     """
     c = cfg["visibility"]
-    hs = np.nan_to_num(h["wave_height"], nan=0.0)
+    if c.get("stir_model", "orbital") == "hs_cubed":
+        hs = np.nan_to_num(h["wave_height"], nan=0.0)
+        return norm(hs ** 3, 0.0, c.get("wave_ref_hs", 1.0) ** 3)
+
+    ref_T = cfg.get("workability", {}).get("period_ref_s", 8.0)
+
+    def part(hkey, tkey):
+        H = h.get(hkey)
+        if H is None or not np.any(np.isfinite(H)):
+            return None
+        T = h.get(tkey)
+        if T is None or not np.any(np.isfinite(T)):
+            T = np.full_like(np.asarray(H, dtype=float), ref_T)
+        return bottom_orbital_velocity(H, np.nan_to_num(T, nan=ref_T), depth_m)
+
+    ub_wind = part("wind_wave_height", "wind_wave_period")
+    ub_swell = part("swell_wave_height", "swell_wave_period")
+    if ub_wind is None and ub_swell is None:
+        ub = part("wave_height", "wave_period")
+        if ub is None:
+            return np.zeros(len(h["time"]))
+    else:
+        a = ub_wind if ub_wind is not None else 0.0
+        b = ub_swell if ub_swell is not None else 0.0
+        ub = np.sqrt(np.square(a) + np.square(b))
+
+    # Energetics: suspended load goes roughly as the cube of the near-bed
+    # velocity, the same shape the old Hs^3 term had — but of the right
+    # quantity this time.
+    ref = float(c.get("orbital_ref_ms", 0.35))
+    p = float(c.get("orbital_exponent", 3.0))
+    return norm(ub ** p, 0.0, ref ** p)
+
+
+def decay_memory(x, tau_h):
+    """What the sea still remembers of an input, e-folding over tau_h."""
+    k = math.exp(-1.0 / tau_h)
+    out = np.zeros_like(np.asarray(x, dtype=float))
+    acc = 0.0
+    for i, v in enumerate(np.asarray(x, dtype=float)):
+        acc = acc * k + v
+        out[i] = acc
+    return out * (1.0 - k)       # normalised so a constant input -> that value
+
+
+def visibility_series(h, cfg, depth_m=None, river=None):
+    """Underwater visibility as a decaying memory of stirring and runoff.
+
+    Three independent sources of turbidity:
+      * wave resuspension of the seabed — now driven by the near-bed orbital
+        velocity at the depth you actually hunt, which is the quantity that
+        moves sediment. It was Hs^3, which has no period and no depth in it
+        at all, so the model could not tell 1 m of 4 s chop from 1 m of 11 s
+        groundswell over the same ground even though the second stirs the
+        bed about seventy times harder at 25 m.
+      * rainfall on the coast itself
+      * river discharge, which is a different thing from local rain: a
+        catchment that emptied 200 km inland arrives here two days later
+        under a clear sky. Optional, and expressed as a multiple of the
+        river's OWN median flow so it means the same on the Mirna as on the
+        Tejo.
+    """
+    c = cfg["visibility"]
     pr = np.nan_to_num(h["precipitation"], nan=0.0)
 
-    def decay_memory(x, tau_h):
-        k = math.exp(-1.0 / tau_h)
-        out = np.zeros_like(x)
-        acc = 0.0
-        for i, v in enumerate(x):
-            acc = acc * k + v
-            out[i] = acc
-        return out * (1.0 - k)   # normalised so a constant input -> that value
-
-    stir = decay_memory(hs ** 3, c["wave_tau_h"])
+    if depth_m is None:
+        best = (cfg.get("depth") or {}).get("best_m") or [4.0, 12.0]
+        depth_m = 0.5 * (float(best[0]) + float(best[1]))
+    stir = decay_memory(stirring_series(h, cfg, depth_m), c["wave_tau_h"])
     plume = decay_memory(pr, c["rain_tau_h"])
 
     # Baseline turbidity: what the water carries when NOTHING has happened.
@@ -1430,9 +1641,12 @@ def visibility_series(h, cfg):
     # most region-specific number in this file: a turbid northern Adriatic
     # shelf and a Cycladic drop-off are not the same water. Override it per
     # region in regions.json.
+    # stirring_series already returns 0-1, so it needs no second normalise.
     turbidity = (float(c.get("baseline", 0.0))
-                 + c["wave_weight"] * norm(stir, 0.0, c["wave_ref_hs"] ** 3)
+                 + c["wave_weight"] * np.clip(stir, 0.0, 1.0)
                  + c["rain_weight"] * norm(plume, 0.0, c["rain_ref_mm_per_h"]))
+    if river is not None:
+        turbidity = turbidity + float(c.get("river_weight", 0.35)) * river
     viz = np.clip(1.0 - turbidity, 0.0, 1.0)
     # rough metres, for a number you can actually reason about
     viz_m = c["viz_min_m"] + viz * (c["viz_max_m"] - c["viz_min_m"])
@@ -1451,14 +1665,48 @@ def workability_series(h, cfg):
     # judging height alone. Bounded so a bad/missing reading cannot swing the
     # result too far — this is a real but secondary effect next to height.
     ref = c.get("period_ref_s", 8.0)
-    period = np.nan_to_num(h.get("wave_period", np.array([])), nan=ref)
-    if period.size != hs.size:
-        period = np.full_like(hs, ref)
-    period = np.clip(period, 2.0, 20.0)
-    hs_eff = hs * np.clip(ref / period, 0.6, 1.6)
+
+    def steepness_scaled(hkey, tkey, fallback_h=None):
+        H = h.get(hkey)
+        if H is None or not np.any(np.isfinite(H)):
+            H = fallback_h
+            if H is None:
+                return None
+        H = np.nan_to_num(np.asarray(H, dtype=float), nan=0.0)
+        T = h.get(tkey)
+        T = (np.nan_to_num(np.asarray(T, dtype=float), nan=ref)
+             if T is not None and np.any(np.isfinite(T))
+             else np.full_like(H, ref))
+        return H * np.clip(ref / np.clip(T, 2.0, 20.0), 0.6, 1.6)
+
+    # Wind sea and swell judged separately, worst one wins. A metre of
+    # 4 s chop and a metre of 12 s swell are not the same day on the
+    # surface, and averaging them into one significant height said they
+    # were. Falls back to the combined sea state where the split is absent.
+    chop = steepness_scaled("wind_wave_height", "wind_wave_period")
+    swell = steepness_scaled("swell_wave_height", "swell_wave_period")
+    if chop is None and swell is None:
+        hs_eff = steepness_scaled("wave_height", "wave_period", fallback_h=hs)
+    else:
+        parts = [p for p in (chop, swell) if p is not None]
+        hs_eff = np.maximum.reduce(parts)
+        # Never claim it is calmer than the combined field says it is.
+        combined = steepness_scaled("wave_height", "wave_period", fallback_h=hs)
+        if combined is not None:
+            hs_eff = np.maximum(hs_eff, 0.8 * combined)
 
     sea = 1.0 - norm(hs_eff, c["hs_good_m"], c["hs_bad_m"])
     air = 1.0 - norm(wind, c["wind_good_kmh"], c["wind_bad_kmh"])
+
+    # Current. A knot of drift is a different dive; two is not a dive at
+    # all, and nothing in this model used to say so — ocean_current_velocity
+    # only ever nudged the "movement" reward, so a screaming spring tide
+    # could read as MORE attractive rather than as a reason to stay out.
+    cur_bad = float(c.get("current_bad_ms", 0.0) or 0.0)
+    if cur_bad > 0 and "ocean_current_velocity" in h:
+        cur = np.nan_to_num(h["ocean_current_velocity"], nan=0.0)
+        flow = 1.0 - norm(cur, float(c.get("current_good_ms", 0.25)), cur_bad)
+        return np.minimum(np.minimum(sea, air), flow), sea, air
     return np.minimum(sea, air), sea, air
 
 
@@ -1677,8 +1925,8 @@ def verdict(viz_now, viz_m_now, work_now, sea_now, air_now, cfg,
     # the sea is, and it contradicted the panel below saying the day was over.
     if light_now <= 0:
         return ("not now",
-                "dark — waiting for first light" if daylight_left
-                else "dark — no daylight left today", day)
+                "dark, waiting for first light" if daylight_left
+                else "dark, no daylight left today", day)
 
     if work_now < cfg["workability"]["hard_floor"]:
         limit = "sea state" if sea_now <= air_now else "wind"
@@ -2324,7 +2572,7 @@ def run(cfg, selftest=False, out_dir=None):
     water_frac = float((~land).mean())
     if water_frac < 0.05:
         raise RuntimeError(
-            f"only {water_frac:.1%} of the box is water — check the bbox "
+            f"only {water_frac:.1%} of the box is water. Check the bbox "
             "(lon/lat order) before trusting anything below")
     log(f"water covers {water_frac:.0%} of the box; "
         f"depth {np.nanmin(depth_m):.1f}-{np.nanmax(depth_m):.1f} m")
@@ -2362,7 +2610,17 @@ def run(cfg, selftest=False, out_dir=None):
         now_i = int(np.argmin([abs((dt.datetime.fromisoformat(t) - now).total_seconds())
                                for t in h["time"]]))
 
-    viz, viz_m = visibility_series(h, cfg)
+    # River discharge, if this coast has a river worth knowing about. The
+    # rainfall term only sees weather that fell HERE.
+    river = None if selftest else river_series(
+        clat, clon, h["time"], cfg, cfg.get("region_id", "default"))
+
+    # Visibility is now evaluated at the depth actually hunted, because the
+    # near-bed orbital velocity that lifts sediment depends on it. A 5 m
+    # spot and a 22 m spot part company completely in groundswell.
+    best_band = (cfg.get("depth") or {}).get("best_m") or [4.0, 12.0]
+    viz_depth = 0.5 * (float(best_band[0]) + float(best_band[1]))
+    viz, viz_m = visibility_series(h, cfg, viz_depth, river)
     work, sea_ok, air_ok = workability_series(h, cfg)
     move = movement_series(h, cfg)
     now_iso = h["time"][now_i]
@@ -2377,6 +2635,37 @@ def run(cfg, selftest=False, out_dir=None):
         log(f"tides: forecast range {tide_range:.1f} m - macrotidal. The movement "
             "term and Open-Meteo's 8 km tide model are not adequate here; treat "
             "timing as unreliable and use a real tide table.")
+
+    # ---- observed, reported, deliberately NOT scored --------------------
+    #
+    # Each of these is real, cheap and plausibly useful, and each would need
+    # a weight this model has no way to justify yet: the existing weights are
+    # already guesses and calibrate.py has nothing to fit against. Adding
+    # unfitted terms to an unfitted model does not make it more accurate, it
+    # makes it more confident-looking, which is the failure this repo has
+    # been careful about everywhere else. So they go out in the payload, the
+    # app shows them, dive_log.csv can record what happened, and calibration
+    # decides later whether any of them predicts anything.
+
+    # Tide state. The movement term uses |d(level)/dt|, which cannot tell a
+    # flood from an ebb — and plenty of ground only fishes on one of them.
+    rate_signed = np.gradient(lvl)
+    tide_state = np.where(rate_signed > 0.01, "flood",
+                          np.where(rate_signed < -0.01, "ebb", "slack"))
+
+    # Sea temperature trend over 24 h. A three-degree drop shuts a coast
+    # down for days and the absolute value alone never shows it.
+    sst = np.nan_to_num(h["sea_surface_temperature"],
+                        nan=float(np.nanmedian(h["sea_surface_temperature"]))
+                        if np.any(np.isfinite(h["sea_surface_temperature"])) else 20.0)
+    sst_trend = np.zeros_like(sst)
+    if sst.size > 24:
+        sst_trend[24:] = sst[24:] - sst[:-24]
+
+    # Moon. Spring and neap are already implicit in the sea-level series, so
+    # this is here for the nocturnal-feeding argument, which is folklore
+    # with a real mechanism behind it and no evidence in this dataset.
+    moon = moon_illumination(h["time"], tz_offset)
 
     regimes, viz_f, work_f = wind_regime_series(h, cfg)
     viz = np.clip(viz * viz_f, 0.0, 1.0)
@@ -2471,13 +2760,22 @@ def run(cfg, selftest=False, out_dir=None):
             log(f"wrecks: could not be scored ({e.__class__.__name__}) - continuing without")
 
     habitat = None
+    # EUSeaMap is a European product, so there is no point asking for a
+    # Hawaiian or Indonesian box: it would be 200-odd WFS calls a run that
+    # can only ever come back empty. Ask only inside the footprint that has
+    # an answer, and say plainly elsewhere that substrate is unknown rather
+    # than silently scoring as though it were uniform.
     if cfg["habitat"]["enabled"] and not selftest:
-        try:
-            habitat = habitat_edge_score(fetch_seabed_habitat(bbox, cfg),
-                                         lats, lons, cfg)
-            log("habitat: EUSeaMap edges included")
-        except Exception as e:
-            log(f"habitat: unavailable ({e.__class__.__name__}), continuing without")
+        if inside(bbox, EMODNET_FOOTPRINT):
+            try:
+                habitat = habitat_edge_score(fetch_seabed_habitat(bbox, cfg),
+                                             lats, lons, cfg)
+                log("habitat: EUSeaMap substrate edges included")
+            except Exception as e:
+                log(f"habitat: unavailable ({e.__class__.__name__}), continuing without")
+        else:
+            log("habitat: outside EUSeaMap coverage - substrate is unknown here, "
+                "so the habitat term is left out rather than guessed")
 
     stamp = dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
     day_scores = []
@@ -2493,7 +2791,17 @@ def run(cfg, selftest=False, out_dir=None):
         wind_d = float(h["wind_direction_10m"][ri])
         if not np.isfinite(wind_d):
             wind_d = 0.0
-        swell_d = float(h["wave_direction"][ri]) if "wave_direction" in h else None
+        # The SWELL direction, not the combined one. combined_shelter exists
+        # precisely for "a light onshore breeze with an old swell still
+        # running in from a different quarter", and feeding it the combined
+        # wave direction — which is dominated by whichever component is
+        # bigger — meant that on the days the split mattered most, both rays
+        # were traced from roughly the same bearing.
+        swell_d = None
+        for key in ("swell_wave_direction", "wave_direction"):
+            if key in h and np.isfinite(h[key][ri]):
+                swell_d = float(h[key][ri])
+                break
         shelter_d, _ = combined_shelter(land, lats, lons, wind_d, swell_d,
                                         cfg, nodata)
         terms_d = {"relief": relief_s, "slope": slope_s, "shelter": shelter_d}
@@ -2623,6 +2931,23 @@ def run(cfg, selftest=False, out_dir=None):
             "wind_from_deg": round(wind_from_now if np.isfinite(wind_from_now) else 0),
             "sea_temp_c": round(float(h["sea_surface_temperature"][now_i]), 1),
             "current_ms": round(float(h["ocean_current_velocity"][now_i]), 2),
+            "current_from_deg": (round(float(h["ocean_current_direction"][now_i]))
+                                 if "ocean_current_direction" in h
+                                 and np.isfinite(h["ocean_current_direction"][now_i])
+                                 else None),
+            # Observed and reported, not scored — see the note in run().
+            "tide_state": str(tide_state[now_i]),
+            "sst_trend_24h_c": round(float(sst_trend[now_i]), 2),
+            "moon_illumination": round(float(moon[now_i]), 2),
+            "swell_height_m": (round(float(h["swell_wave_height"][now_i]), 2)
+                               if "swell_wave_height" in h
+                               and np.isfinite(h["swell_wave_height"][now_i]) else None),
+            "swell_period_s": (round(float(h["swell_wave_period"][now_i]), 1)
+                               if "swell_wave_period" in h
+                               and np.isfinite(h["swell_wave_period"][now_i]) else None),
+            "wind_wave_height_m": (round(float(h["wind_wave_height"][now_i]), 2)
+                                   if "wind_wave_height" in h
+                                   and np.isfinite(h["wind_wave_height"][now_i]) else None),
             "wind_regime": regimes[now_i],
             "wind_from_deg_now": round(wind_from_now),
             "wind_regime_note": (cfg.get("wind_regimes") or {}).get(
@@ -2653,6 +2978,10 @@ def run(cfg, selftest=False, out_dir=None):
         "sea_temp_now_c": round(sea_temp, 1),
         "tide_range_m": round(tide_range, 2),
         "macrotidal": macrotidal,
+        # The depth the visibility number is quoted FOR. Clarity is now
+        # depth-dependent, so a single figure without one is meaningless.
+        "visibility_depth_m": round(viz_depth, 1),
+        "river_influenced": river is not None,
         "species_top_spots": sp_cap,
         # How many days actually have a per-species raster on disk. The app
         # reads this instead of discovering the 404 the hard way.
@@ -2859,7 +3188,7 @@ def main():
     elapsed = time.time() - t_start
     log(f"computed {len(index)} region(s) in {elapsed:.0f} s "
         f"({elapsed / max(len(index), 1):.1f} s each, {jobs} worker(s))"
-        + (f" — {len(failed)} failed" if failed else ""))
+        + (f", {len(failed)} failed" if failed else ""))
 
     if not index:
         raise SystemExit("every region failed - nothing written")
