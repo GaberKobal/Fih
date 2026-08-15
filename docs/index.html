@@ -87,6 +87,32 @@
   .rg .v{font-size:12.5px; color:var(--sound)}
   .rg .tag{font-size:11.5px; color:var(--sound); letter-spacing:.01em;
     display:block; margin-top:2px}
+
+  /* First-open safety gate. */
+  #gate{position:fixed; inset:0; z-index:2000; background:rgba(4,14,19,.93);
+    display:flex; align-items:center; justify-content:center; padding:18px;
+    -webkit-overflow-scrolling:touch; overflow-y:auto}
+  #gate[hidden]{display:none}
+  #gate .card{background:var(--shelf); border:1px solid var(--line);
+    border-radius:10px; padding:20px; max-width:520px; max-height:88vh;
+    overflow-y:auto}
+  #gate h2{margin:0 0 12px; font-size:20px; font-weight:700}
+  #gate p{margin:0 0 11px; font-size:13.5px; line-height:1.6}
+  #gate p.small{font-size:12px; color:var(--sound)}
+  #gate b{color:#fff}
+  #gateok{margin-top:6px; width:100%; padding:12px; cursor:pointer;
+    border:1px solid var(--buoy); border-radius:6px; background:var(--shoal);
+    color:var(--chart); font:600 14px/1 var(--sans)}
+  #gateok:hover{background:var(--line)}
+  /* A stop, not a caveat. This is the one message in the app that is not
+     advisory, so it does not share the amber styling everything else uses. */
+  #banner{display:none; padding:11px 16px; font-size:13px; line-height:1.5;
+    border-bottom:1px solid var(--line)}
+  #banner.stop{background:rgba(228,87,61,.16); color:#FFD9D1;
+    border-left:4px solid var(--flag)}
+  #banner.caution{background:rgba(242,177,56,.12); color:#FFE9C2;
+    border-left:4px solid var(--buoy)}
+  #banner b{color:#fff}
   #regionwarn{padding:9px 16px; font-size:11.5px; color:var(--buoy);
     background:rgba(242,177,56,.08); border-bottom:1px solid var(--line); display:none}
 
@@ -341,6 +367,22 @@
     background:var(--abyss); border:1px solid var(--line); border-radius:2px;
     padding:8px; overflow-x:auto; white-space:pre;
   }
+  details#sources{border-top:1px solid var(--line); padding:0 16px 4px}
+  details#sources > summary{padding:12px 0; cursor:pointer; list-style:none;
+    font:700 13px/1.3 var(--sans); color:var(--sound)}
+  details#sources > summary::-webkit-details-marker{display:none}
+  details#sources > summary::before{content:"+ "}
+  details#sources[open] > summary::before{content:"3 "}
+  .srcbody{font-size:12.5px; line-height:1.6; color:var(--sound);
+    padding-bottom:10px}
+  .srcbody ul{margin:8px 0; padding-left:18px}
+  .srcbody li{margin-bottom:6px}
+  .srcbody b{color:var(--chart)}
+  .srcbody a{color:var(--buoy)}
+  .srcbody .small{font-size:11.5px}
+  #showgate{background:var(--shoal); color:var(--chart);
+    border:1px solid var(--line); border-radius:6px; padding:7px 11px;
+    cursor:pointer; font:600 12px/1 var(--sans)}
   #stamp{padding:10px 16px 16px; font-size:11px; color:var(--sound)}
   #err{padding:20px 16px; color:var(--flag); font-size:14px; display:none}
   /* Tabular lining figures: digits keep their column as a value ticks over,
@@ -382,6 +424,34 @@
 </head>
 <body>
 
+<!-- Shown once, before anything else, and dismissed into localStorage.
+     This app sends people to a coordinate to hold their breath; the risks
+     are not inferable from a colour ramp, and the model's limits are not
+     something a first-time user can be expected to work out. -->
+<div id="gate" hidden>
+  <div class="card">
+    <h2>Before you use this</h2>
+    <p><b>This is a model, not a chart and not advice.</b> The weights in it
+      are estimates that have never been fitted against real dives. It can be
+      confidently wrong about visibility, about conditions and about where
+      fish are.</p>
+    <p><b>It does not know the law.</b> Minimum sizes and closed seasons exist
+      for only 5 of the 134 jurisdictions it covers. Everywhere else it shows
+      no legal information at all, and that means unknown, never permitted.</p>
+    <p><b>It does not reliably know where you may not fish.</b> Protected
+      areas come from OpenStreetMap and its marine coverage is incomplete.
+      A spot shown inside a reserve is entirely possible.</p>
+    <p><b>Breath-hold diving kills experienced people.</b> Shallow water
+      blackout gives no warning and drowns silently. Never dive alone, never
+      hyperventilate, and always dive with someone watching you on the
+      surface.</p>
+    <p class="small">You are responsible for your own safety and for knowing
+      the rules where you dive. Verify everything with the local authority
+      before you get in the water.</p>
+    <button type="button" id="gateok">I understand</button>
+  </div>
+</div>
+
 <div id="left">
   <!-- The "full maps ▾" toggle that used to sit here is gone. The bar itself
        is still the control that opens the coast list — #rgsub says so — so
@@ -394,6 +464,7 @@
     </span>
   </div>
   <div id="regionpanel"></div>
+  <div id="banner"></div>
   <div id="regionwarn"></div>
 
   <header id="verdict">
@@ -456,6 +527,42 @@
       <button id="refresh" type="button">Refresh</button>
       <a href="add-region.html">Add a region</a>
     </div>
+    <details id="sources">
+      <summary>Data sources and licences</summary>
+      <div class="srcbody">
+        <p>Everything here is built from free, public data. Where a licence
+          requires attribution, this is it.</p>
+        <ul>
+          <li><b>OpenStreetMap</b> contributors, under
+            <a href="https://opendatacommons.org/licenses/odbl/" target="_blank" rel="noopener">ODbL</a>
+            — base map, and the coastline, wrecks and protected areas the
+            model derives its land mask and exclusions from, via
+            <a href="https://overpass-api.de/" target="_blank" rel="noopener">Overpass</a>.</li>
+          <li><b>OpenSeaMap</b> — seamark overlay, ODbL.</li>
+          <li><b>EMODnet Bathymetry</b> — European seas, ~90 m.
+            <a href="https://emodnet.ec.europa.eu/" target="_blank" rel="noopener">emodnet.ec.europa.eu</a></li>
+          <li><b>GMRT</b> (Global Multi-Resolution Topography) and
+            <b>SRTM15+</b> via <b>NOAA ERDDAP</b> — bathymetry outside
+            Europe.</li>
+          <li><b>Open-Meteo</b> — marine, weather and river discharge
+            forecasts.
+            <a href="https://open-meteo.com/" target="_blank" rel="noopener">open-meteo.com</a>,
+            CC BY 4.0.</li>
+          <li><b>Copernicus Marine Service</b> — temperature at depth, where
+            credentials are configured.</li>
+          <li><b>Copernicus Sentinel-2</b> — satellite water clarity, where
+            configured.</li>
+        </ul>
+        <p class="small"><b>Protected areas are from OpenStreetMap, not the
+          WDPA.</b> Marine coverage is incomplete. The absence of a mask is
+          not evidence that there is no reserve.</p>
+        <p class="small">This is model output. It is not a nautical chart,
+          not a tide table and not legal advice. Verify everything locally
+          before you dive.</p>
+        <p class="small"><button type="button" id="showgate">Show the safety
+          notice again</button></p>
+      </div>
+    </details>
     <div id="stamp"></div>
   </div>
 </div>
@@ -504,6 +611,23 @@
 // mismatch is easy to create and was previously invisible.
 const PAGE_VERSION = 18;
 
+// Safety gate. Shown until acknowledged, then remembered. Versioned so the
+// notice can be reissued if what it says materially changes.
+const GATE_KEY = "diveforecast.ack.v1";
+(function(){
+  const el = document.getElementById("gate");
+  let seen = false;
+  try{ seen = localStorage.getItem(GATE_KEY) === "1"; }catch(e){}
+  if(!seen) el.hidden = false;
+  document.getElementById("showgate").addEventListener("click", () => {
+    el.hidden = false;
+  });
+  document.getElementById("gateok").addEventListener("click", () => {
+    el.hidden = true;
+    try{ localStorage.setItem(GATE_KEY, "1"); }catch(e){}
+  });
+})();
+
 // Offline: the app must open in a car park with one bar.
 if("serviceWorker" in navigator)
   addEventListener("load",()=>navigator.serviceWorker.register("sw.js").catch(()=>{}));
@@ -526,11 +650,36 @@ const map = L.map("map", {
   worldCopyJump:false, maxBounds:WORLD, maxBoundsViscosity:1.0, minZoom:2,
 });
 L.control.zoom({position:"bottomright"}).addTo(map);
-L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-  maxZoom:18, noWrap:true, bounds:WORLD, attribution:"&copy; OpenStreetMap"
+// BASE MAP.
+//
+// This was tile.openstreetmap.org. The OSM Foundation's tile usage policy
+// is explicit that those servers are for OSM's own use and light,
+// non-commercial traffic, NOT for third-party apps — heavy use gets
+// blocked, and "my app got popular" is not a defence. Serving a public
+// spearfishing app off them would be taking from a donation-funded
+// resource that exists for something else.
+//
+// Carto's free basemaps permit this kind of use with attribution. If this
+// ever carries real traffic, sign up with a tile provider and put the URL
+// and credit in TILES below — it is the only thing that needs to change.
+const TILES = {
+  url: "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",
+  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" '
+    + 'target="_blank" rel="noopener">OpenStreetMap</a> contributors '
+    + '&copy; <a href="https://carto.com/attributions" target="_blank" '
+    + 'rel="noopener">CARTO</a>',
+  subdomains: "abcd",
+};
+L.tileLayer(TILES.url, {
+  maxZoom:18, noWrap:true, bounds:WORLD,
+  subdomains:TILES.subdomains, attribution:TILES.attribution
 }).addTo(map);
 L.tileLayer("https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png", {
-  maxZoom:18, noWrap:true, bounds:WORLD, opacity:.9, attribution:"OpenSeaMap"
+  maxZoom:18, noWrap:true, bounds:WORLD, opacity:.9,
+  attribution:'OpenSeaMap · coastline, wrecks and reserves &copy; '
+    + '<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors (ODbL)'
+    + ' · forecast <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>'
+    + ' · bathymetry EMODnet / GMRT / NOAA'
 }).addTo(map);
 
 // The legend is map furniture, not a map target. Without this Leaflet receives
@@ -1494,7 +1643,44 @@ function renderContext(d, meta){
     rp.style.display="none";
   }
 
+  // Spearfishing status comes first and is styled as a stop, not a caveat.
+  // Everything below it is advisory; this is not.
+  const ban = $("#banner");
+  if(d.spearfishing === "banned"){
+    ban.className = "stop";
+    ban.innerHTML =
+      `<b>Spearfishing is prohibited here.</b> ${d.spearfishing_note || ""}. `
+      + `No spots are published for this region for that reason. Conditions `
+      + `and the structure map are still shown, but do not take anything.`;
+    ban.style.display = "block";
+  }else if(d.spearfishing === "restricted"){
+    ban.className = "caution";
+    ban.innerHTML =
+      `<b>Heavily restricted here.</b> ${d.spearfishing_note || ""}. `
+      + `Zone boundaries are not fully mapped, so a spot shown inside a `
+      + `closed area is entirely possible. Check the current zoning before `
+      + `you get in.`;
+    ban.style.display = "block";
+  }else{
+    ban.style.display = "none";
+  }
+
   const warn=[];
+  // Protected areas: what was masked, and what was found but left alone.
+  const pm = d.protected_masked || [], pn = d.protected_named || [];
+  if(pm.length)
+    warn.push(`${pm.length} strictly protected area${pm.length===1?"":"s"} `
+      + `masked out of the map: ${pm.slice(0,4).map(x=>x.name).join(", ")}`
+      + `${pm.length>4?` and ${pm.length-4} more`:""}.`);
+  if(pn.length)
+    warn.push(`${pn.length} further protected area${pn.length===1?"":"s"} `
+      + `here ${pn.length===1?"is":"are"} <b>not</b> masked, because IUCN `
+      + `categories 4 to 6 often permit fishing: `
+      + `${pn.slice(0,4).map(x=>x.name).join(", ")}`
+      + `${pn.length>4?` and ${pn.length-4} more`:""}. Check them yourself.`);
+  if(!d.point)
+    warn.push("Protected areas come from OpenStreetMap, whose marine coverage "
+      + "is incomplete. <b>No mask is not evidence that there is no reserve.</b>");
   if(d.point){
     const host = POINT ? regionContaining(POINT.lat, POINT.lon) : null;
     warn.push("Point forecast. Conditions are live for this exact spot; press "
