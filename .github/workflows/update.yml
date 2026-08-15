@@ -2,11 +2,16 @@ name: Update dive forecast
 
 on:
   schedule:
-    # Every 8 hours. The forecast itself only moves hourly, but three runs a
-    # day means the map is never more than a third of a day behind whichever
-    # coast you open it on — which matters once the regions span every
-    # timezone rather than one.
-    - cron: "40 3,11,19 * * *"
+    # Every 4 hours, six runs a day. Offset off the hour because scheduled
+    # workflows queue behind everyone else's on the hour and get delayed.
+    #
+    # Worth knowing what this does and does not buy. The app re-anchors "now"
+    # to the real clock from the hourly series in the file it already has
+    # (reanchorNow() in docs/index.html), so a several-hour-old file still
+    # reports the CURRENT hour correctly — staleness was never the problem
+    # this solves. What a fresh run actually buys is a newer upstream model
+    # run and a forecast horizon that reaches further out.
+    - cron: "40 3,7,11,15,19,23 * * *"
   workflow_dispatch:
     inputs:
       regions:
@@ -185,7 +190,7 @@ jobs:
                  - dt.datetime.fromisoformat(d["generated"])).total_seconds() / 3600
           print(f"  publishing {len(d['regions'])} region(s) from a forecast "
                 f"{age:.1f} h old")
-          print( "  the next scheduled run refreshes it (every 8 h)")
+          print( "  the next scheduled run refreshes it (every 4 h)")
           PY
 
       - name: Sentinel-2 turbidity check (weekly, optional)
