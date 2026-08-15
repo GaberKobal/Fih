@@ -73,7 +73,8 @@
       <label>Id<input id="f_id" placeholder="kvarner"></label>
       <label>Country<input id="f_country" placeholder="Croatia"></label>
       <label>Jurisdiction<input id="f_juris" placeholder="HR"></label>
-      <label>Deepest you dive (m)<input id="f_max" inputmode="decimal" value="24"></label>
+      <label>Group<input id="f_group" placeholder="adriatic"></label>
+      <label>Deepest you dive (m)<input id="f_max" inputmode="decimal" value="25"></label>
       <label>Best from (m)<input id="f_bestlo" inputmode="decimal" value="5"></label>
       <label>Best to (m)<input id="f_besthi" inputmode="decimal" value="18"></label>
       <div id="warn"></div>
@@ -92,8 +93,14 @@
 <script>
 const $ = s => document.querySelector(s);
 const map = L.map("map").setView([30, 0], 2);
-L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",
-  {maxZoom:18, attribution:"&copy; OpenStreetMap"}).addTo(map);
+// Same provider as the main map: the OSMF tile policy excludes
+// third-party apps. See the note in index.html.
+L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",
+  {maxZoom:18, subdomains:"abcd",
+   attribution:'&copy; <a href="https://www.openstreetmap.org/copyright" '
+     + 'target="_blank" rel="noopener">OpenStreetMap</a> contributors '
+     + '&copy; <a href="https://carto.com/attributions" target="_blank" '
+     + 'rel="noopener">CARTO</a>'}).addTo(map);
 
 let box = null, rect = null, ISSUE = null;
 
@@ -139,7 +146,11 @@ function build(){
     name: $("#f_name").value.trim() || "Unnamed region",
     country: $("#f_country").value.trim(),
     jurisdiction: $("#f_juris").value.trim().toUpperCase(),
-    enabled: true,
+    group: ($("#f_group").value || "").trim().toLowerCase() || "ungrouped",
+    // Added regions start OFF. With 468 in the file the daily run is
+    // driven by FISH_REGIONS or by the enabled flags, and a submission
+    // silently joining the schedule is not what anyone expects.
+    enabled: false,
     bbox: {
       lon_min: +box.getWest().toFixed(4),  lat_min: +box.getSouth().toFixed(4),
       lon_max: +box.getEast().toFixed(4),  lat_max: +box.getNorth().toFixed(4)
@@ -150,11 +161,12 @@ function build(){
     depth: {
       min_m: 2.0,
       best_m: [+$("#f_bestlo").value || 5, +$("#f_besthi").value || 18],
-      max_m: +$("#f_max").value || 24
+      max_m: +$("#f_max").value || 25
     },
     note: "Added from the map. No species pack, no exclusion zones and no "
         + "closed seasons for this jurisdiction, so structure and conditions only "
-        + "until someone builds them."
+        + "until someone builds them. Protected areas are fetched from "
+        + "OpenStreetMap at run time but its marine coverage is incomplete."
   };
 }
 
