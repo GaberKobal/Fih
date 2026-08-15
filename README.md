@@ -152,9 +152,13 @@ species pack is an outright analogue rather than an approximation: Chile and
 Peru have no pack of their own here, so the Benguela one is used because
 both are cold eastern-boundary upwelling systems. The region notes say so.
 
-**Enable a group at a time, not everything at once.** The first run of a
-region downloads its bathymetry and its coastline; after that both are
-cached and it is roughly forty times cheaper. See the numbers below.
+**You can turn everything on at once.** The first run of a region downloads
+its bathymetry and its coastline; after that both are cached and it is
+roughly forty times cheaper, so a cold catalogue is hours of work. That used
+to mean enabling one group at a time by hand. It no longer does — the run
+now stops itself before the CI job is killed and the next run continues from
+the cache, so a cold 800 converges over a few scheduled runs on its own. See
+**[Runs that do not fit](#runs-that-do-not-fit)**.
 
 ### How many regions can this actually carry?
 
@@ -179,9 +183,9 @@ limits, in the order you will hit them:
 
 1. **The first run.** Cold bathymetry dominates everything else by a factor
    of thirteen. Turning on all 800 at once is a **~7 hour job at six
-   workers**, which does NOT fit the 330-minute timeout and would need `FISH_JOBS` raised; the workflow timeout is 330
-   minutes, so it fits, but only just. Enable a group at a time instead and
-   every later run is minutes.
+   workers**, which does not fit a GitHub job however the timeout is set —
+   360 minutes is the ceiling. Handled by resuming across runs rather than
+   by making one run bigger; see below. Every later run is minutes.
 2. **Open-Meteo's free tier** — 10,000 calls a day, 600 a minute. Two calls
    per region per run this WAS the binding limit — 800 regions six times a
    day would have been 9,600 calls against a 10,000 allowance. Requests are
@@ -202,10 +206,59 @@ limits, in the order you will hit them:
    allowance**. If the repo is private, either make it public, go back to
    the 8-hourly cron, or run fewer regions.
 
-**So: 468 is close to the sensible ceiling on the current design, and past
-about 700 the artifact, not the compute, is what stops you.**
-The two changes that lift it are batching the conditions fetch and shipping
-terrain instead of rendered maps; both are in the roadmap below.
+**So: 800 runs comfortably, and what stops you growing further is the
+artifact, not the compute and no longer the API.** Batching removed the
+quota ceiling; the remaining change is shipping terrain instead of rendered
+maps, which is in the roadmap below.
+
+### Runs that do not fit
+
+A cold 800 is about seven hours. A GitHub-hosted job is killed at **360
+minutes** and that is a ceiling, not a setting.
+
+The reason this matters more than the lost time: **a killed job does not
+reliably run its post steps, and the cache is SAVED in a post step.** A run
+that overruns therefore throws away the hours of bathymetry it just
+downloaded, and the next run starts exactly as cold. Repeat forever. Simply
+raising the timeout does not fix that — it moves the cliff.
+
+So the model stops itself instead:
+
+```bash
+FISH_MAX_MINUTES=300 python fish_finder.py --select all
+```
+
+After the budget is spent it starts no further regions and exits cleanly at
+**exit 0**. Everything finished is published, the cache is written normally,
+and the untouched regions are reported as *deferred*, not failed:
+
+```
+computed 214 region(s) in 17994 s (84.1 s each, 6 worker(s))
+deferred 586 region(s) - the 300 minute budget ran out. This is not an
+error: everything computed so far is published and cached, and the next
+run starts with it already warm. Run again to continue.
+```
+
+The next run walks the same list in `regions.json` order, gets through those
+214 in about nine minutes because their bathymetry is cached, and spends the
+rest of its budget going deeper. **A cold 800 converges over a few scheduled
+runs with nothing recomputed and nothing lost.**
+
+Three details worth knowing:
+
+- The budget is checked **before a region starts, never during it**. A
+  half-computed region would leave a partial folder that the next run,
+  seeing a populated cache, would trust.
+- If the budget runs out before *any* region starts, the previous
+  `index.json` is **left exactly as it was**. Writing an empty catalogue over
+  a good one would blank a working site.
+- The workflow sets `FISH_MAX_MINUTES` to 300 against a 360-minute timeout.
+  That hour is not slack — the artifact upload of 334 MB and 19,200 files is
+  slow, and the cache save is behind it. Override with the
+  `FISH_MAX_MINUTES` repository variable.
+
+The timeout is still set, at the full 360, purely as a backstop for
+something genuinely wedged. In normal operation it should never be reached.
 
 ### What is cached, and why that decides everything
 

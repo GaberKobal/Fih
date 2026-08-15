@@ -3259,12 +3259,31 @@ def main():
                          "The work is dominated by waiting on EMODnet, "
                          "Overpass and Open-Meteo, so this is close to a "
                          "linear speed-up until the services start throttling.")
+    ap.add_argument("--max-minutes", type=float,
+                    default=float(os.environ.get("FISH_MAX_MINUTES", "0") or 0),
+                    help="stop starting new regions after this many minutes "
+                         "and finish cleanly (default 0, meaning no limit). "
+                         "This exists because a GitHub-hosted job is killed "
+                         "hard at 360 minutes and a killed job does not "
+                         "reliably run its post steps - which is where the "
+                         "bathymetry cache is SAVED. Overrunning therefore "
+                         "throws away the very downloads the run spent hours "
+                         "on. Stopping ourselves a little early instead keeps "
+                         "the cache, publishes what is finished, and lets the "
+                         "next run resume from it. Also read from "
+                         "FISH_MAX_MINUTES.")
     ap.add_argument("--list", action="store_true", help="list regions and exit")
     ap.add_argument("--groups", action="store_true",
                     help="list the region groups and how many are in each")
     ap.add_argument("--selftest", action="store_true",
                     help="run the whole pipeline on synthetic data, no network")
     args = ap.parse_args()
+
+    # Anchored here rather than at the region loop so the budget covers the
+    # whole process - installing, loading, and the batched conditions fetch
+    # all happen on the same clock the CI runner is counting.
+    deadline = (time.monotonic() + args.max_minutes * 60
+                if args.max_minutes > 0 else None)
 
     base = json.loads(Path(args.config).read_text(encoding="utf-8"))
     regions = load_regions(Path(args.regions))
@@ -3344,6 +3363,13 @@ def main():
     idx_lock = threading.Lock()
 
     def write_index(entries, failures, done=False):
+        if not entries and not failures:
+            # Nothing has been computed. On a resumed run docs/data still
+            # holds the PREVIOUS catalogue, restored from the cache, and
+            # replacing it with an empty one would blank a working site — so
+            # a run that spends its whole budget before starting anything
+            # leaves the last good index exactly where it is.
+            return
         payload = {
             "schema_version": 18,
             "generated": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
@@ -3374,8 +3400,16 @@ def main():
                     return
                 time.sleep(0.25 * (attempt + 1))
 
+    class Deferred(Exception):
+        """Not started: the run is out of time. NOT a failure."""
+
     def compute(r):
         """One region, start to finish. Runs on a worker thread."""
+        # Checked before any work, never in the middle of it. A half-computed
+        # region would leave a partial folder behind and the next run, seeing
+        # a populated cache, would trust it.
+        if deadline is not None and time.monotonic() >= deadline:
+            raise Deferred()
         log_tag(f"{r['id']}: ")
         cfg = region_config(base, r)
         out = ROOT / "docs" / "data" / r["id"]
@@ -3432,18 +3466,23 @@ def main():
         """A region has finished, one way or the other. Publish immediately."""
         with idx_lock:
             results.append((r, entry, err))
-            if err is not None:
+            if err is not None and not isinstance(err, Deferred):
                 # One region failing must not take the others down with it.
                 log(f"{r['id']} FAILED: {err.__class__.__name__}: {err}")
             done = sorted(results, key=lambda t: order[t[0]["id"]])
             try:
                 write_index([e for _, e, x in done if x is None],
-                            [rr["id"] for rr, _, x in done if x is not None])
+                            [rr["id"] for rr, _, x in done
+                             if x is not None and not isinstance(x, Deferred)])
             except Exception as e:
                 log(f"index: interim write failed ({e.__class__.__name__}) "
                     "- the region itself is fine")
             n = len(results)
-            if n % 10 == 0 or n == len(chosen):
+            # Deferred regions drain in milliseconds, so once the budget is
+            # spent the counter runs to the end almost instantly. Reporting
+            # every tenth of those would bury the summary.
+            skipped = sum(1 for _, _, x in results if isinstance(x, Deferred))
+            if not skipped and (n % 10 == 0 or n == len(chosen)):
                 bad = sum(1 for _, _, x in results if x is not None)
                 rate = (time.time() - t_start) / n
                 left = (len(chosen) - n) * rate
@@ -3470,19 +3509,37 @@ def main():
 
     ordered = sorted(results, key=lambda x: order[x[0]["id"]])
     index = [e for _, e, x in ordered if x is None]
-    failed = [r["id"] for r, _, x in ordered if x is not None]
+    failed = [r["id"] for r, _, x in ordered
+              if x is not None and not isinstance(x, Deferred)]
+    deferred = [r["id"] for r, _, x in ordered if isinstance(x, Deferred)]
 
     elapsed = time.time() - t_start
     log(f"computed {len(index)} region(s) in {elapsed:.0f} s "
         f"({elapsed / max(len(index), 1):.1f} s each, {jobs} worker(s))"
         + (f", {len(failed)} failed" if failed else ""))
 
+    if deferred:
+        log(f"deferred {len(deferred)} region(s) - the {args.max_minutes:g} "
+            "minute budget ran out. This is not an error: everything computed "
+            "so far is published and cached, and the next run starts with it "
+            "already warm. Run again to continue.")
+        log("  first not started: " + ", ".join(deferred[:8])
+            + (f" … and {len(deferred) - 8} more" if len(deferred) > 8 else ""))
+
     if not index:
+        if deferred and not failed:
+            # Out of time before a single region started, which means the
+            # budget is too small for even one cold region rather than
+            # anything being broken. The previous catalogue is untouched.
+            log("nothing computed - the budget was spent before any region "
+                "could start. Raise --max-minutes.")
+            return
         raise SystemExit("every region failed - nothing written")
 
-    write_index(index, failed, done=True)
+    write_index(index, failed, done=not deferred)
     log(f"wrote {idx_path} ({len(index)} region(s)"
-        + (f", {len(failed)} failed" if failed else "") + ")")
+        + (f", {len(failed)} failed" if failed else "")
+        + (f", {len(deferred)} deferred" if deferred else "") + ")")
 
 
 def write_model(base, regions):

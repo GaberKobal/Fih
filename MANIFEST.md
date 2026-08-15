@@ -1,125 +1,95 @@
-# v14 — 800 regions, and the API limit removed
+# v15 — the timeout, and why raising it was not the fix
 
 ```
-v14/
+v15/
 ├── fish_finder.py
-├── regions.json
 ├── README.md
-└── docs/index.html
+└── .github/workflows/update.yml
 ```
 
-`config.json`, `docs/structure.js`, `docs/sw.js` current as of **v10**;
-`docs/add-region.html` v12; `docs/anywhere.js` v8; the workflow v13.
+`regions.json` and `docs/index.html` current as of **v14**; `config.json`,
+`docs/structure.js`, `docs/sw.js` v10; `docs/add-region.html` v12;
+`docs/anywhere.js` v8.
 
 ---
 
-## First: 800 at 4-hourly did not fit
+## The ceiling is 360 and a cold 800 is ~7 hours
 
-Two calls per region, six runs a day, 800 regions = **9,600 Open-Meteo calls
-against a 10,000 free allowance**. At the ceiling, with nothing spare for a
-retry or a manual run. So the regions came second and this came first.
+`timeout-minutes` is now **360**, up from 330. That is as high as it goes —
+360 minutes is GitHub's hard kill for a hosted job. It does not make a cold
+800 fit, and nothing can.
 
-**Open-Meteo accepts comma-separated coordinate lists** and returns one
-result per location. The part that made it usable here: `timezone=auto`
-resolves **per location** — Novigrad comes back on Europe/Zagreb and Honolulu
-on Pacific/Honolulu in the same response, which matters because every hour in
-this model is local wall-clock time. Verified before writing any code, along
-with the batch ceiling (200 locations succeeded; 100 is used).
+More importantly, **reaching that timeout is itself the danger**, which is
+why the number alone was never the fix:
 
-| | before | after |
-| --- | --- | --- |
-| calls per run, 800 regions | 1,600 | **16** |
-| calls per day, 4-hourly | 9,600 | **96** |
-| share of the free tier | 96% | **1%** |
+> `actions/cache` saves in a **post-job step**. A job killed by
+> `timeout-minutes` does not reliably run its post steps. So a run that
+> overruns discards the bathymetry it just spent five hours downloading, and
+> the next run starts equally cold — forever.
 
-Any location the batch cannot answer for falls back to its own single
-request, so one bad point never poisons a batch of a hundred.
+Raising 330 to 360 moves that cliff by half an hour. It does not remove it.
 
-Testing it immediately caught a bug: `now_i` — which hour is "now" — was
-computed inside the single-fetch branch only, so every batched region failed
-with `UnboundLocalError`. Hoisted so both paths compute it.
+## So the model stops itself
 
-## Then: 468 → 800 regions
+New `--max-minutes` / **`FISH_MAX_MINUTES`**, which the workflow sets to
+**300** against the 360-minute kill. Once the budget is spent no further
+region is started and the process exits **cleanly, code 0**: finished
+regions are published, the cache is saved by a post step that actually runs,
+and the rest are reported as **deferred, not failed**.
 
-All disabled, `novigrad` still the only one on. **128 countries**, 164
-jurisdictions, 22 groups.
+```
+computed 214 region(s) in 17994 s (84.1 s each, 6 worker(s))
+deferred 586 region(s) - the 300 minute budget ran out. This is not an
+error: everything computed so far is published and cached, and the next
+run starts with it already warm. Run again to continue.
+  first not started: rab-pag, lastovo, kotor, vlore … and 582 more
+```
 
-`med-west` 100, `coral-triangle` 66, `caribbean` 61, `nw-europe` 59,
-`med-east` 57, `indian-west` 52, `pacific-islands` 46, `iberia-atlantic` 38,
-`adriatic` 36, `pacific-ne` 34, `atlantic-sw` 27, `australia-temperate` 25,
-`africa-west` 25, `macaronesia` 24, `atlantic-nw` 24, `pacific-nw` 23,
-`med-south` 21, `africa-south` 18, `pacific-se` 18, `nz` 16, `red-sea` 15,
-`australia-tropical` 15.
+The next run walks the same `regions.json` order, clears those 214 in ~9
+minutes because their bathymetry is cached, and spends its budget going
+deeper. **A cold 800 converges over a few scheduled runs, nothing
+recomputed, nothing lost.** The 60-minute margin is not slack: a 334 MB,
+19,200-file artifact upload is slow and the cache save sits behind it.
 
-New ground includes Socotra, the Cocos (Keeling) and Christmas Islands,
-Jardines de la Reina, Tubbataha, Misool and Raja Ampat's south, the Marquesas,
-Kiritimati, Isla Guadalupe, Prince William Sound, Bornholm and Helgoland,
-Principe and Bioko, the Mergui archipelago and the whole Chilean and Peruvian
-coast.
+This retires the v14 instruction to enable groups by hand. `all` is now a
+reasonable thing to set.
 
-I aimed for 800 and got to 759 before running out of coasts I was confident
-about; the last 41 are ones I could place properly rather than padding to hit
-a round number.
+## Two details that decide whether this is safe
 
-Four boxes came out spanning separate island groups and were tightened:
-Maio, Alphonse, Miyako and Rurutu.
+**The budget is checked before a region starts, never during it.** A
+half-computed region would leave a partial folder behind, and the next run —
+seeing a populated cache — would trust it.
 
-## A bug the scale exposed
+**A run that defers everything must not write an empty catalogue.** Found
+while testing: `index.json` is rewritten as each region lands, so a run that
+started nothing would have written zero regions over the *previous*
+catalogue restored from cache, blanking a working site. `write_index()` now
+returns early when there is nothing to write, and that case exits 0 with an
+explanation rather than the "every region failed" error, which would have
+been a lie.
 
-The first 800-run reported `hvar-vis FAILED: PermissionError ... index.json.tmp`.
-The region was fine. `write_index()` — the incremental catalogue write added
-in v6 — runs inside the per-region completion handler, so when the atomic
-rename hit a transient Windows lock (OneDrive holding the file), **the
-exception was attributed to whichever region happened to land at that
-instant** and a good result was marked failed.
+## Verified
 
-Now retried four times with backoff and swallowed if it still fails: the next
-region to land rewrites the catalogue anyway, and the write at the end of the
-run is the one that counts. Wrapped a second time at the call site so nothing
-about publishing the index can ever sink a region.
+Four behaviours, each run for real:
 
-Re-run clean: **800 regions, 0 failures.**
+| | result |
+| --- | --- |
+| no budget (control), 3 regions | 3 computed, unchanged behaviour |
+| partial budget, 36 regions | **9 computed, 27 deferred, 0 failed**, exit 0, `complete: false` |
+| budget already spent | 0 started, **index.json byte-identical**, exit 0 |
+| budget with room | 36/36, `complete: true` |
+| `--max-minutes 0` | still means unlimited |
 
-## Verification
+Plus **13/13 assertions** on output from 8 regions across 8 groups (Novigrad,
+Cascais, Socotra, Gizo, Arica, Skye, Bimini, Miyako), and the workflow YAML
+parsed and asserted.
 
-- **All 800 through `--selftest`, 6 workers: exit 0, no failures**, 1,131 s.
-- 14 assertions over generated output: all pass.
-- **24 new regions on live network**, spread across every new area — Krk,
-  Portofino, Naxos, Sousse, Figueira, Pico, Skye, Safi, Saldanha, Nuweiba,
-  Khasab, Misool, Miyako, Gizo, Catalina, Arica, Acadia, Bimini, Recife,
-  Wollongong, Whangarei, Socotra, Cocos Keeling, Mona. **0 failures**, water
-  coverage 12–78%, and the batch fetch confirmed live: *24 regions from 2
-  requests*.
-- Structural checks on all 800: no duplicate ids, no malformed bbox, none
-  over 130 km or under 2 km, every depth band ordered, every region grouped,
-  every species pack present.
+No frontend change needed: the app never reads `complete`, so a partial
+catalogue renders as a smaller one — which was already the behaviour when a
+run was killed.
 
-## Cost at 800
+## Still true
 
-| | per region | 800 regions |
-| --- | --- | --- |
-| first ever run, 6 workers | ~32 s | **~7 h** |
-| every run after that | ~2.5 s | **~33 min** |
-| pure compute (`--selftest`) | 1.4 s | 19 min |
-| output | 427 KB, 24 files | **334 MB, 19,200 files** |
-| Open-Meteo | — | **16 calls/run, 96/day** |
-| index.json every visitor loads | — | 755 KB raw, **54 KB gzipped** |
-
-**The artifact is now the only real constraint.** 334 MB and 19,200 files
-against a 1 GB Pages limit; upload and deploy time grow with it. Lifting that
-needs the remaining roadmap item — shipping terrain rasters instead of
-rendered per-species maps.
-
-**A cold run of all 800 is about 7 hours and does NOT fit the 330-minute
-timeout.** It has to be done a group at a time. That is no longer painful:
-since v6 a timeout costs only the unfinished tail, `index.json` is rewritten
-as each region lands, and every finished group is permanently cheap.
-
-Set `FISH_REGIONS` cumulatively — `adriatic,med-west`, then add the next
-group once the first has landed — and `FISH_JOBS` to 6.
-
-## Unchanged and still true
-
-745 of 800 regions are auto-generated: plausible bboxes and baselines, not
-surveyed ones. 159 of 164 jurisdictions have no legal pack. The weights are
-still guesses. All three are said in the app, not just here.
+745 of 800 regions are auto-generated. 159 of 164 jurisdictions have no
+legal pack. The weights are guesses. The artifact, at 334 MB and 19,200
+files against a 1 GB limit, is now the only real ceiling.
