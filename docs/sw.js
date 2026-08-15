@@ -8,7 +8,7 @@
 //   tiles   cache-first with a cap - map tiles never change and are the
 //           slowest thing on a bad connection
 
-const VERSION = "v20";
+const VERSION = "v21";
 const SHELL = `shell-${VERSION}`;
 const DATA = `data-${VERSION}`;
 const TILES = "tiles";
@@ -86,7 +86,7 @@ self.addEventListener("fetch", e => {
   }
 
   // --- map tiles: cache-first, they are immutable ---
-  if (/tile\.openstreetmap\.org|tiles\.openseamap\.org/.test(url.hostname)) {
+  if (/basemaps\.cartocdn\.com|tile\.openstreetmap\.org|tiles\.openseamap\.org/.test(url.hostname)) {
     e.respondWith((async () => {
       const c = await caches.open(TILES);
       const hit = await c.match(req);

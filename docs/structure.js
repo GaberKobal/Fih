@@ -20,6 +20,7 @@
 
 const GMRT = "https://www.gmrt.org/services/GridServer";
 const BATHY_CACHE = "bathy-v1";
+const OSM_CACHE = "osm-v1";
 
 export const defaults = {
   radius_km: 30,          // how far the box reaches out from the tapped point
@@ -235,6 +236,35 @@ function openSea(land, nx, ny, depth, blocked){
  *
  *  Returns {coast, wrecks}. */
 export async function fetchSeabedContext(box){
+  // CACHED FOREVER, in the browser.
+  //
+  // Overpass is volunteer-funded infrastructure and its usage policy asks
+  // people not to build applications that make it a dependency for many
+  // users. Server-side that is honoured already: 468 regions, fetched once
+  // each, then cached on disk. Client-side it was not — every press of
+  // "Scan structure" issued a fresh query, including re-scanning the same
+  // stretch of coast, which is exactly the pattern the policy is about.
+  //
+  // Coastlines, wrecks and reserves do not change between scans, so the
+  // response is stored in the Cache API keyed by the box. Scanning the same
+  // area again costs nothing and reaches nobody's server.
+  const key = `https://cache.local/overpass/${box.lat_min.toFixed(4)},`
+            + `${box.lon_min.toFixed(4)},${box.lat_max.toFixed(4)},`
+            + `${box.lon_max.toFixed(4)}`;
+  let store = null;
+  try{ store = await caches.open(OSM_CACHE); }catch(e){ /* private mode */ }
+  if(store){
+    const hit = await store.match(key);
+    if(hit) return JSON.parse(await hit.text());
+  }
+  const out = await fetchSeabedContextUncached(box);
+  if(store){
+    try{ await store.put(key, new Response(JSON.stringify(out))); }catch(e){}
+  }
+  return out;
+}
+
+async function fetchSeabedContextUncached(box){
   const b = `${box.lat_min},${box.lon_min},${box.lat_max},${box.lon_max}`;
   const q = `[out:json][timeout:90];(
     way["natural"="coastline"](${b});
@@ -747,7 +777,24 @@ const OVERPASS_MIRRORS = [
 
 /** POST one Overpass query, falling through the mirrors on rate limit,
  *  gateway timeout or an unreachable host. Throws only when they all fail. */
+// Never more than one Overpass request in flight from this tab, and never
+// two closer together than OVERPASS_MIN_GAP_MS. The cache above means most
+// scans reach it not at all; this bounds the rest.
+const OVERPASS_MIN_GAP_MS = 3000;
+let _opChain = Promise.resolve(), _opLast = 0;
+
+function overpassSlot(){
+  const run = _opChain.then(async () => {
+    const wait = OVERPASS_MIN_GAP_MS - (Date.now() - _opLast);
+    if(wait > 0) await new Promise(r => setTimeout(r, wait));
+    _opLast = Date.now();
+  });
+  _opChain = run.catch(() => {});
+  return run;
+}
+
 async function overpass(query){
+  await overpassSlot();
   let last = null;
   for(const url of OVERPASS_MIRRORS){
     try{
