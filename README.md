@@ -9,7 +9,7 @@ Covers any coast in the world, at two very different levels of usefulness:
 point forecast anywhere else you tap.
 
 ```
-GitHub Actions (cron, every 8 hours)
+GitHub Actions (cron, every 4 hours)
         │  fetches EMODnet bathymetry (once, then cached)
         │  fetches Open-Meteo waves / wind / rain / tide / SST
         │  scores the grid, extracts the top spots
@@ -173,9 +173,9 @@ The warm figure comes from 16 real regions spread across the world, which is
 a fair mix of easy and hard — small Mediterranean boxes alone come in nearer
 0.9 s each, Lofoten and its 2,965 coastline ways very much do not.
 
-So the steady state for an 8-hourly schedule is **about 20 minutes of
-compute plus CI overhead, three times a day**, with everything enabled. The
-binding limits, in the order you will hit them:
+So the steady state is **about 20 minutes of compute plus CI overhead, six
+times a day** on the 4-hourly schedule with everything enabled. The binding
+limits, in the order you will hit them:
 
 1. **The first run.** Cold bathymetry dominates everything else by a factor
    of thirteen. Turning on all 468 at once is a **~4.2 hour job at six
@@ -183,9 +183,10 @@ binding limits, in the order you will hit them:
    minutes, so it fits, but only just. Enable a group at a time instead and
    every later run is minutes.
 2. **Open-Meteo's free tier** — 10,000 calls a day, 600 a minute. Two calls
-   per region per run, three runs a day: 468 regions uses 2,808 a day, about
-   28%. That leaves room to roughly **1,600 regions** before the daily quota
-   binds. The per-minute limit is handled in code by a cross-thread throttle
+   per region per run, six runs a day: 468 regions uses **5,616 a day, about
+   56%**. That is the constraint the 4-hourly schedule moved most — it
+   leaves room to roughly **800 regions** before the daily quota binds,
+   down from 1,600 on the 8-hourly one. The per-minute limit is handled in code by a cross-thread throttle
    (`_HOST_MIN_INTERVAL`), which holds the whole process to ~400/min no
    matter how many workers run.
 3. **GitHub Pages** will not publish a site over 1 GB, and the artifact
@@ -193,9 +194,11 @@ binding limits, in the order you will hit them:
    11,248 files**, so the hard stop is near 2,000 regions and the
    *uncomfortable* one is nearer **900**, where upload and deploy start to
    dominate the run. This is now the tightest of the four.
-4. **Actions minutes** — free and unlimited on a public repository. On a
-   private one, 3 runs a day at ~14 minutes is ~1,260 of the 2,000 free
-   monthly minutes, which is fine but no longer roomy.
+4. **Actions minutes** — free and unlimited on a **public** repository.
+   On a **private** one this is now the hard blocker: six runs a day at
+   ~25 minutes is roughly **4,500 minutes a month against a 2,000 free
+   allowance**. If the repo is private, either make it public, go back to
+   the 8-hourly cron, or run fewer regions.
 
 **So: 468 is close to the sensible ceiling on the current design, and past
 about 700 the artifact, not the compute, is what stops you.**
