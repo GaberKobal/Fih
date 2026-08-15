@@ -72,6 +72,17 @@
     border-bottom:1px solid var(--line); flex:0 0 auto; max-height:52vh;
     overflow-y:auto}
   #regionpanel.open{display:block}
+  .rgsearch{position:sticky; top:0; z-index:2; background:var(--abyss);
+    padding:10px 16px; border-bottom:1px solid var(--line)}
+  .rgsearch input{width:100%; background:var(--shelf); color:var(--chart);
+    border:1px solid var(--line); border-radius:6px; padding:9px 11px;
+    font:400 14px/1.3 var(--sans)}
+  .rgsearch input::placeholder{color:var(--sound)}
+  .ban,.restr{display:inline-block; margin-right:6px; padding:1px 6px;
+    border-radius:3px; font-size:10.5px; font-weight:700;
+    letter-spacing:.02em; text-transform:uppercase; vertical-align:1px}
+  .ban{background:rgba(228,87,61,.9); color:#fff}
+  .restr{background:rgba(242,177,56,.85); color:#2A1B00}
   #regionpanel .grp{padding:10px 16px 3px; font:700 11.5px/1.3 var(--sans);
     letter-spacing:.01em; color:var(--sound)}
   .rg{
@@ -556,6 +567,14 @@
         <p class="small"><b>Protected areas are from OpenStreetMap, not the
           WDPA.</b> Marine coverage is incomplete. The absence of a mask is
           not evidence that there is no reserve.</p>
+        <p class="small"><b>Usage counting.</b> If a counting endpoint is
+          configured, this page reports one short request per view: a page
+          path, the title and the referring site. <b>No cookies, no
+          identifiers, no tracking between visits, and never any
+          coordinates</b> — a point forecast is reported as
+          <code>/point</code>, never as the latitude and longitude in the
+          address bar. Do Not Track and Global Privacy Control are honoured.
+          Nothing is sent if no endpoint is configured.</p>
         <p class="small">This is model output. It is not a nautical chart,
           not a tide table and not legal advice. Verify everything locally
           before you dive.</p>
@@ -627,6 +646,79 @@ const GATE_KEY = "diveforecast.ack.v1";
     try{ localStorage.setItem(GATE_KEY, "1"); }catch(e){}
   });
 })();
+
+
+// ---- usage counting -------------------------------------------------------
+//
+// OFF until you put an endpoint in ANALYTICS.endpoint below. GitHub Pages
+// gives you no server logs, so counting has to happen in the browser.
+//
+// This deliberately loads NO third-party script. It sends one short GET to
+// a counting endpoint and nothing else: no cookies, no localStorage, no
+// fingerprinting, no identifiers, no session stitching. That keeps it
+// cookieless under ePrivacy, which is why there is no consent banner for it,
+// and it keeps the offline story intact — the request simply fails and the
+// app does not notice.
+//
+// THE PATH IS SANITISED, and that is the point.
+//
+// The URL hash of this app carries real coordinates: "#@38.6900,-9.3500" is
+// somewhere a person is thinking about diving, to about eleven metres. Every
+// off-the-shelf analytics snippet reports location.href verbatim, which
+// would hand a third party a list of people's dive spots — quite possibly
+// their home coast. So nothing here reports the hash as written:
+//
+//   #cascais           -> /r/cascais    (a public region id, harmless)
+//   #@38.69,-9.35      -> /point        (NO coordinates, ever)
+//   no hash            -> /
+//
+// Recommended endpoint is GoatCounter: free for non-commercial use, open
+// source, cookieless, and it takes a plain GET so no script tag is needed.
+//   ANALYTICS.endpoint = "https://YOURCODE.goatcounter.com/count"
+// Anything that accepts ?p=<path>&t=<title>&r=<referrer> works the same way.
+const ANALYTICS = {
+  endpoint: "",            // e.g. "https://yourcode.goatcounter.com/count"
+  countScans: true,        // also count structure scans, as /scan
+};
+
+const track = (() => {
+  let last = null;
+  // Do Not Track and Global Privacy Control are honoured. They are a stated
+  // preference not to be counted, and this is not important enough to
+  // override one.
+  const optedOut = () => {
+    try{
+      return navigator.doNotTrack === "1" || window.doNotTrack === "1"
+          || navigator.msDoNotTrack === "1" || navigator.globalPrivacyControl === true;
+    }catch(e){ return false; }
+  };
+  return function track(path, title){
+    if(!ANALYTICS.endpoint || optedOut()) return;
+    if(path === last) return;          // never count the same view twice
+    last = path;
+    try{
+      const u = ANALYTICS.endpoint
+        + "?p=" + encodeURIComponent(path)
+        + "&t=" + encodeURIComponent((title || "").slice(0, 80))
+        // Referrer only if it is another site, never our own hash-laden URL.
+        + "&r=" + encodeURIComponent(
+            document.referrer && !document.referrer.startsWith(location.origin)
+              ? document.referrer : "");
+      if(navigator.sendBeacon) navigator.sendBeacon(u);
+      else fetch(u, {mode:"no-cors", keepalive:true}).catch(()=>{});
+    }catch(e){ /* counting must never break the app */ }
+  };
+})();
+
+/** Turn whatever is on screen into a path that carries no location. */
+function trackView(){
+  const h = (location.hash || "").replace("#", "");
+  if(!h)                 return track("/", "Dive forecast");
+  if(h.startsWith("@"))  return track("/point", "Point forecast");
+  // Region ids are a fixed public list, so they are safe to report.
+  if(/^[a-z0-9-]{2,40}$/.test(h)) return track("/r/" + h, h);
+  track("/", "Dive forecast");
+}
 
 // Offline: the app must open in a car park with one bar.
 if("serviceWorker" in navigator)
@@ -848,6 +940,13 @@ async function loadPoint(lat, lonRaw){
     // Point forecasts inherit a guide only inside a configured region.
     d.region_id = host?.id || null;
     d.species_source = speciesSource;
+    // ...and, more importantly, they inherit its spearfishing status. A
+    // point forecast is the DEFAULT mode, so without this a tap inside
+    // Bonaire or the Galapagos showed no warning whatsoever — the one
+    // place the warning matters most, because there is no region page to
+    // have read first.
+    d.spearfishing = host?.spearfishing || null;
+    d.spearfishing_note = host?.spearfishing_note || null;
     $("#err").style.display = "none";
     DATA = d; sel = null;
     renderAll(d, host);
@@ -901,7 +1000,13 @@ async function paintStructure(){
   // know how far to hold the wash back from the shoreline.
   overlay = L.imageOverlay(STRUCT.toDataURL(TERRAIN, field, 0.35, 0.80, TERRAIN.opts),
                            STRUCT.bounds(TERRAIN), {opacity: overlayOpacity}).addTo(map);
-  const spots = STRUCT.findSpots(TERRAIN, field, TERRAIN.opts);
+  // The server refuses to publish waypoints in a banned region; the
+  // client-side scan has to refuse too, or "Scan structure" becomes a way
+  // straight around it. The structure map itself still paints, because
+  // seeing where the ground is interesting is not the problem — being
+  // handed thirty numbered coordinates to swim to is.
+  const banned = DATA && DATA.spearfishing === "banned";
+  const spots = banned ? [] : STRUCT.findSpots(TERRAIN, field, TERRAIN.opts);
   // findSpots only knows the static terms, so the shelter bar in the spot
   // list rendered as width:NaN% — an invisible, permanently empty bar.
   // Each spot carries its grid index, so read the value straight off the
@@ -915,6 +1020,12 @@ async function paintStructure(){
                       + `(${sp.depth_best_m[0]}–${sp.depth_best_m[1]} m), `
                       + `relief weighted ${sp.relief_affinity}, slope ${sp.slope_affinity}`
                     : `${spots.length} spot${spots.length===1?"":"s"} · any target`;
+  if(banned){
+    $("#scanmsg").innerHTML =
+      `<span style="color:var(--flag)"><b>No spots listed.</b> Spearfishing `
+      + `is prohibited in this area, so the scan shows structure only.</span>`;
+    return;
+  }
   $("#scanmsg").innerHTML = target
     + ` · shelter for wind ${Math.round(wind)}°`
     + `${swell!=null?` and swell ${Math.round(swell)}°`:""}`
@@ -971,6 +1082,7 @@ $("#scan").addEventListener("click", async () => {
       }
     }
     await paintStructure();
+    if(ANALYTICS.countScans) track("/scan", "Structure scan");
     map.fitBounds(STRUCT.bounds(TERRAIN));
   }catch(e){
     $("#scanmsg").innerHTML = `<span style="color:var(--flag)">${e.message}</span>`;
@@ -1413,8 +1525,31 @@ $("#locate").addEventListener("click",()=>{
   },()=>{},{enableHighAccuracy:true,timeout:8000});
 });
 
+// What the user has typed into the region filter, lower-cased.
+let regionQuery = "";
+
 function renderRegions(){
   const host=$("#regionpanel"); host.innerHTML="";
+
+  // A search box. Scrolling 468 regions across 104 countries to find your
+  // own coast is not a list, it is a haystack, and grouping alone does not
+  // fix it once the catalogue is worldwide.
+  const search=document.createElement("div");
+  search.className="rgsearch";
+  search.innerHTML=`<input id="rgfilter" type="search" autocomplete="off"
+      placeholder="Search 468 coasts by name, country or group"
+      value="${regionQuery.replace(/"/g,"&quot;")}">`;
+  host.appendChild(search);
+  const input=search.querySelector("input");
+  input.addEventListener("input",e=>{
+    regionQuery=e.target.value.trim().toLowerCase();
+    const at=e.target.selectionStart;
+    renderRegions();
+    const again=$("#rgfilter");
+    if(again){ again.focus(); try{ again.setSelectionRange(at,at); }catch(_){} }
+  });
+  // Keep taps on the box from closing the panel underneath it.
+  search.addEventListener("click",e=>e.stopPropagation());
   const any=document.createElement("button");
   any.type="button"; any.className="rg";
   any.setAttribute("aria-current", String(POINT !== null));
@@ -1432,8 +1567,21 @@ function renderRegions(){
     loadPoint(c.lat, c.lng);
   });
   host.appendChild(any);
+  const q=regionQuery;
+  const match=r => !q
+    || (r.name||"").toLowerCase().includes(q)
+    || (r.country||"").toLowerCase().includes(q)
+    || (r.group||"").toLowerCase().includes(q)
+    || (r.id||"").toLowerCase().includes(q);
+  const shown=INDEX.regions.filter(match);
+  if(q){
+    const n=document.createElement("div");
+    n.className="grp";
+    n.textContent=`${shown.length} of ${INDEX.regions.length} match "${q}"`;
+    host.appendChild(n);
+  }
   const byCountry={};
-  INDEX.regions.forEach(r=>{ (byCountry[r.country||"Other"] ||= []).push(r); });
+  shown.forEach(r=>{ (byCountry[r.country||"Other"] ||= []).push(r); });
 
   // Sorted best-first inside each country, so the panel doubles as a
   // "where in Europe is actually diveable today" view.
@@ -1453,7 +1601,11 @@ function renderRegions(){
         tags.push(`${r.bathymetry_native_m} m bathymetry, slope only`);
       if(!r.has_species)    tags.push("no species pack");
       if(!r.has_exclusions) tags.push("no exclusion zones");
-      b.innerHTML=`<span><span class="n">${r.name}</span>
+      // Say it in the list, not only after you have opened the region.
+      const ban = r.spearfishing === "banned"
+        ? `<span class="ban">prohibited</span> `
+        : r.spearfishing === "restricted" ? `<span class="restr">restricted</span> ` : "";
+      b.innerHTML=`<span><span class="n">${ban}${r.name}</span>
           ${tags.length?`<span class="tag">${tags.join(" · ")}</span>`:""}</span>
         <span class="w" style="color:${col}">${r.verdict}</span>
         <span class="v">${r.visibility_m} m</span>`;
@@ -1694,6 +1846,15 @@ function renderContext(d, meta){
     else if(!d.has_species)
       warn.push("No species data for this point. Even the worldwide fallback has no "
               + "confident match for this stretch of ocean.");
+    // Protected areas are fetched per configured region, not per arbitrary
+    // point, so a point forecast genuinely does not know. Say so rather
+    // than let the absence of a warning read as an all-clear.
+    warn.push(d.spearfishing
+      ? "Protected areas are not checked for an arbitrary point. The status "
+        + "above comes from the configured region this point falls inside."
+      : "<b>Protected areas are not checked for an arbitrary point.</b> "
+        + "Nothing here has been tested against reserve boundaries. Check "
+        + "before you get in.");
   }else{
     // Region-only caveats. These come from the region catalogue, so they
     // must not be shown while a point forecast is on screen.
@@ -1989,6 +2150,8 @@ $("#refresh").addEventListener("click",()=>{
 // No resize handler for the verdict wash any more. It is a CSS gradient on
 // an inset:0 element, so the layout engine resizes it — which is the whole
 // reason the stale-rectangle bug cannot come back.
+trackView();
+addEventListener("hashchange", trackView);
 load();
 </script>
 </body>
