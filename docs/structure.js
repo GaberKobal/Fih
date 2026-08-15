@@ -146,11 +146,11 @@ export async function fetchBathymetry(box, opts = {}){
     res = await fetch(url);
   }catch(e){
     throw new Error("GMRT could not be reached from the browser. If this is a "
-      + "CORS block there is no client-side fix — use a precomputed region.");
+      + "CORS block there is no client-side fix, so use a precomputed region.");
   }
   if(!res.ok) throw new Error(
     `GMRT returned HTTP ${res.status}. 404 means the request parameters are `
-    + `wrong; 413 means the box is too big — try a smaller radius.`);
+    + `wrong; 413 means the box is too big, so try a smaller radius.`);
   const text = await res.text();
   if(/<html|<\?xml/i.test(text.slice(0, 200)))
     throw new Error("GMRT returned an error page rather than a grid");

@@ -23,6 +23,67 @@ function decayMemory(x, tauHours){
   return x.map(v => (acc = acc * k + (v || 0)) * (1 - k));
 }
 
+/** Linear dispersion relation, w^2 = g k tanh(k h), solved for k by Newton
+ *  from the deep-water guess. Mirrors wave_number() in fish_finder.py. */
+function waveNumber(T, h, g = 9.81){
+  const Tc = Math.min(25, Math.max(1, T)), hh = Math.max(0.5, h);
+  const w = 2 * Math.PI / Tc;
+  let k = w * w / g;
+  for(let i = 0; i < 12; i++){
+    const th = Math.tanh(k * hh);
+    const f = g * k * th - w * w;
+    const df = g * th + g * k * hh * (1 - th * th);
+    k = Math.max(1e-6, k - f / Math.max(df, 1e-12));
+  }
+  return k;
+}
+
+/** Near-bed orbital velocity, u_b = pi H / (T sinh(k h)), m/s.
+ *
+ *  The quantity that actually lifts sediment, and the reason visibility now
+ *  depends on wave PERIOD and on DEPTH. The old model used Hs cubed, which
+ *  has neither in it: 1 m at 4 s and 1 m at 11 s scored identically over
+ *  25 m of water even though the second stirs the bed about seventy times
+ *  harder. Mirrors bottom_orbital_velocity() in fish_finder.py. */
+function orbitalVelocity(H, T, depth){
+  if(!isFinite(H) || H <= 0) return 0;
+  const Tc = Math.min(25, Math.max(1, isFinite(T) ? T : 8));
+  const hh = Math.max(0.5, depth);
+  const k = waveNumber(Tc, hh);
+  const sinh = Math.sinh(Math.min(k * hh, 50));
+  return Math.PI * H / (Tc * Math.max(sinh, 1e-9));
+}
+
+/** How hard the sea works the bottom at `depth`, 0-1. Wind sea and swell
+ *  are combined in quadrature because orbital velocities are variances and
+ *  add in energy, not linearly. */
+function stirring(h, cfg, depth){
+  const c = cfg.visibility, n = h.time.length;
+  if((c.stir_model || "orbital") === "hs_cubed"){
+    const ref = Math.pow(c.wave_ref_hs ?? 1, 3);
+    return h.wave_height.map(v => clamp01(Math.pow(v || 0, 3) / ref));
+  }
+  const refT = cfg.workability?.period_ref_s ?? 8;
+  const has = k => h[k] && h[k].some(isFinite);
+  const split = has("wind_wave_height") || has("swell_wave_height");
+  const ref = Math.pow(c.orbital_ref_ms ?? 0.35, c.orbital_exponent ?? 3);
+  const out = new Array(n);
+  for(let i = 0; i < n; i++){
+    let ub;
+    if(split){
+      const a = orbitalVelocity(h.wind_wave_height?.[i],
+                                h.wind_wave_period?.[i] ?? refT, depth);
+      const b = orbitalVelocity(h.swell_wave_height?.[i],
+                                h.swell_wave_period?.[i] ?? refT, depth);
+      ub = Math.sqrt(a*a + b*b);
+    }else{
+      ub = orbitalVelocity(h.wave_height[i], h.wave_period?.[i] ?? refT, depth);
+    }
+    out[i] = clamp01(Math.pow(ub, c.orbital_exponent ?? 3) / ref);
+  }
+  return out;
+}
+
 /** NOAA solar position — pure arithmetic, valid anywhere. */
 function solarElevation(times, lat, lon, tzOffsetSec){
   return times.map(t => {
@@ -161,8 +222,14 @@ function speciesDayFactors(sp, sst, vizScore, date, cfg, legalPack){
 /** One point on Earth, scored exactly as the Python model would score it. */
 export async function forecastPoint(lat, lon, cfg, legalPack){
   const past = (cfg.conditions?.past_days ?? 5), fwd = (cfg.conditions?.forecast_days ?? 3);
-  const mVars = ["wave_height","wave_period","wave_direction","sea_surface_temperature",
-                 "sea_level_height_msl","ocean_current_velocity"];
+  // Wind sea and swell separately as well as combined: they do different
+  // jobs (chop makes it unworkable, swell reaches the bottom) and arrive
+  // from different quarters. Same request, more fields.
+  const mVars = ["wave_height","wave_period","wave_direction",
+                 "wind_wave_height","wind_wave_period","wind_wave_direction",
+                 "swell_wave_height","swell_wave_period","swell_wave_direction",
+                 "sea_surface_temperature","sea_level_height_msl",
+                 "ocean_current_velocity","ocean_current_direction"];
   const wVars = ["precipitation","wind_speed_10m","wind_direction_10m",
                  "wind_gusts_10m","cloud_cover","pressure_msl"];
   const q = `latitude=${lat.toFixed(4)}&longitude=${lon.toFixed(4)}`
@@ -174,7 +241,7 @@ export async function forecastPoint(lat, lon, cfg, legalPack){
   ]);
   if(m.error || w.error) throw new Error(m.reason || w.reason || "Open-Meteo error");
   if(!m.hourly || !m.hourly.wave_height)
-    throw new Error("no marine data here — this looks like an inland point");
+    throw new Error("no marine data here, this looks like an inland point");
 
   const times = m.hourly.time;
   const h = {time: times};
@@ -213,7 +280,12 @@ export async function forecastPoint(lat, lon, cfg, legalPack){
 
   // ---- visibility: decaying memory of stirring and runoff ----
   const c = cfg.visibility;
-  const stir = decayMemory(h.wave_height.map(v => Math.pow(v||0, 3)), c.wave_tau_h);
+  // Stirring is evaluated at the depth actually hunted, because the near-bed
+  // orbital velocity that lifts sediment depends on it. A 5 m spot and a
+  // 22 m spot part company completely under groundswell.
+  const dBest = cfg.depth?.best_m || [4, 12];
+  const vizDepth = 0.5 * (dBest[0] + dBest[1]);
+  const stir = decayMemory(stirring(h, cfg, vizDepth), c.wave_tau_h);
   const plume = decayMemory(h.precipitation.map(v => v||0), c.rain_tau_h);
   // c.baseline is the turbidity the water carries when nothing has happened
   // — see visibility_series() in fish_finder.py for why it has to exist.
@@ -221,8 +293,9 @@ export async function forecastPoint(lat, lon, cfg, legalPack){
   // why the number always read optimistically: it was the ceiling, not a
   // forecast.
   const vBase = c.baseline ?? 0;
+  // stirring() already returns 0-1, so no second normalise here.
   let viz = stir.map((s,i) => clamp01(1 - (vBase
-    + c.wave_weight * norm(s, 0, Math.pow(c.wave_ref_hs,3))
+    + c.wave_weight * clamp01(s)
     + c.rain_weight * norm(plume[i], 0, c.rain_ref_mm_per_h))));
 
   // ---- workability, wind regime, movement, light ----
@@ -236,14 +309,34 @@ export async function forecastPoint(lat, lon, cfg, legalPack){
   // short-period wind chop is steep, long-period ground swell of the same
   // height is smooth. Mirrors workability_series() in fish_finder.py.
   const periodRef = wc.period_ref_s ?? 8.0;
-  const hsEff = h.wave_height.map((v,i) => {
-    const hv = isFinite(v) ? v : 1;
-    const pv = Math.min(20, Math.max(2, isFinite(h.wave_period[i]) ? h.wave_period[i] : periodRef));
+  const steep = (H, T) => {
+    const hv = isFinite(H) ? H : 0;
+    const pv = Math.min(20, Math.max(2, isFinite(T) ? T : periodRef));
     return hv * Math.min(1.6, Math.max(0.6, periodRef / pv));
+  };
+  // Wind sea and swell judged separately, worst one decides. A metre of 4 s
+  // chop and a metre of 12 s swell are not the same day on the surface.
+  const hasSplit = (h.wind_wave_height || []).some(isFinite)
+                || (h.swell_wave_height || []).some(isFinite);
+  const hsEff = times.map((_,i) => {
+    const comb = steep(isFinite(h.wave_height[i]) ? h.wave_height[i] : 1, h.wave_period[i]);
+    if(!hasSplit) return comb;
+    const a = steep(h.wind_wave_height?.[i], h.wind_wave_period?.[i]);
+    const b = steep(h.swell_wave_height?.[i], h.swell_wave_period?.[i]);
+    return Math.max(a, b, 0.8 * comb);
   });
   const seaOk = hsEff.map(v => 1 - norm(v, wc.hs_good_m, wc.hs_bad_m));
   const airOk = h.wind_speed_10m.map(v => 1 - norm(isFinite(v)?v:30, wc.wind_good_kmh, wc.wind_bad_kmh));
-  const work = seaOk.map((s,i) => clamp01(Math.min(s, airOk[i]) * regimes[i].work));
+  // Drift. Nothing used to gate on current at all, so a screaming spring
+  // tide read as MORE attractive through the movement reward rather than as
+  // a reason to stay out.
+  const curBad = wc.current_bad_ms ?? 0;
+  const flowOk = times.map((_,i) => curBad > 0
+    ? 1 - norm(isFinite(h.ocean_current_velocity[i]) ? h.ocean_current_velocity[i] : 0,
+               wc.current_good_ms ?? 0.25, curBad)
+    : 1);
+  const work = seaOk.map((s,i) =>
+    clamp01(Math.min(s, airOk[i], flowOk[i]) * regimes[i].work));
 
   const mc = cfg.movement || {};
   const lvl = h.sea_level_height_msl.map(v => isFinite(v) ? v : 0);
@@ -339,8 +432,8 @@ export async function forecastPoint(lat, lon, cfg, legalPack){
   let word, limit;
   if(light[nowI] <= 0){
     word = "not now";
-    limit = lightLeft ? "dark — waiting for first light"
-                      : "dark — no daylight left today";
+    limit = lightLeft ? "dark, waiting for first light"
+                      : "dark, no daylight left today";
   }
   else if(work[nowI] < wc.hard_floor)
     { word = "stay home"; limit = seaOk[nowI] <= airOk[nowI] ? "sea state" : "wind"; }
