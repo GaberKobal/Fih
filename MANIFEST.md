@@ -1,95 +1,92 @@
-# v15 — the timeout, and why raising it was not the fix
+# v16 — the budget had to fit the cron, not the timeout
 
 ```
-v15/
-├── fish_finder.py
+v16/
 ├── README.md
 └── .github/workflows/update.yml
 ```
 
-`regions.json` and `docs/index.html` current as of **v14**; `config.json`,
-`docs/structure.js`, `docs/sw.js` v10; `docs/add-region.html` v12;
-`docs/anywhere.js` v8.
+`fish_finder.py` current as of **v15** — no code change, the logic was right,
+the number was wrong. `regions.json` and `docs/index.html` v14.
 
 ---
 
-## The ceiling is 360 and a cold 800 is ~7 hours
+## Yes, you can run all 800 now. One correction first.
 
-`timeout-minutes` is now **360**, up from 330. That is as high as it goes —
-360 minutes is GitHub's hard kill for a hosted job. It does not make a cold
-800 fit, and nothing can.
+v15 set `FISH_MAX_MINUTES` to 300 to stay clear of the 360-minute job kill.
+That was the wrong constraint to measure against:
 
-More importantly, **reaching that timeout is itself the danger**, which is
-why the number alone was never the fix:
-
-> `actions/cache` saves in a **post-job step**. A job killed by
-> `timeout-minutes` does not reliably run its post steps. So a run that
-> overruns discards the bathymetry it just spent five hours downloading, and
-> the next run starts equally cold — forever.
-
-Raising 330 to 360 moves that cliff by half an hour. It does not remove it.
-
-## So the model stops itself
-
-New `--max-minutes` / **`FISH_MAX_MINUTES`**, which the workflow sets to
-**300** against the 360-minute kill. Once the budget is spent no further
-region is started and the process exits **cleanly, code 0**: finished
-regions are published, the cache is saved by a post step that actually runs,
-and the rest are reported as **deferred, not failed**.
-
-```
-computed 214 region(s) in 17994 s (84.1 s each, 6 worker(s))
-deferred 586 region(s) - the 300 minute budget ran out. This is not an
-error: everything computed so far is published and cached, and the next
-run starts with it already warm. Run again to continue.
-  first not started: rab-pag, lastovo, kotor, vlore … and 582 more
+```yaml
+- cron: "40 3,7,11,15,19,23 * * *"   # every 240 minutes
+concurrency:
+  cancel-in-progress: true
 ```
 
-The next run walks the same `regions.json` order, clears those 214 in ~9
-minutes because their bathymetry is cached, and spends its budget going
-deeper. **A cold 800 converges over a few scheduled runs, nothing
-recomputed, nothing lost.** The 60-minute margin is not slack: a 334 MB,
-19,200-file artifact upload is slow and the cache save sits behind it.
+Runs are **four hours apart and cancel each other**. A 300-minute run is
+still working when the next one fires, so during a cold build **every run
+would be killed by its own schedule at ~240 minutes** — never reaching the
+clean stop, and putting the cache save back in exactly the jeopardy v15
+existed to remove.
 
-This retires the v14 instruction to enable groups by hand. `all` is now a
-reasonable thing to set.
+**`FISH_MAX_MINUTES` is now 180**, leaving an hour for cache restore
+(~1.4 GB at 800), the 334 MB artifact upload, and the deploy. The 360-minute
+timeout stays as the backstop.
 
-## Two details that decide whether this is safe
+## What actually happens when you set it to `all`
 
-**The budget is checked before a region starts, never during it.** A
-half-computed region would leave a partial folder behind, and the next run —
-seeing a populated cache — would trust it.
+Modelled on the **measured** cold cost — 84.9 s/region at 6 workers, from
+the 24-region live run in v14, not the older optimistic 32 s:
 
-**A run that defers everything must not write an empty catalogue.** Found
-while testing: `index.json` is rewritten as each region lands, so a run that
-started nothing would have written zero regions over the *previous*
-catalogue restored from cache, blanking a working site. `write_index()` now
-returns early when there is nothing to write, and that case exits 0 with an
-explanation rather than the "every region failed" error, which would have
-been a lie.
+| run | re-walking warm | new cold | total |
+| --- | --- | --- | --- |
+| 1 | — | 127 | 127 |
+| 2 | 5 min | 123 | 250 |
+| 3 | 10 min | 119 | 369 |
+| 4 | 15 min | 116 | 485 |
+| 5 | 20 min | 112 | 597 |
+| 6 | 25 min | 109 | 706 |
+| 7 | 29 min | 94 | **800** |
 
-## Verified
+**Seven runs, about 28 hours**, unattended. The site grows each run and is
+live and correct throughout — it just has fewer coasts on it at first.
 
-Four behaviours, each run for real:
+Note the shape: the re-walk grows while the new-cold count shrinks. This
+converges more slowly the larger the catalogue. At 800 it is comfortable; it
+would not scale to 5,000.
 
-| | result |
+## Set these three
+
+| variable | value |
 | --- | --- |
-| no budget (control), 3 regions | 3 computed, unchanged behaviour |
-| partial budget, 36 regions | **9 computed, 27 deferred, 0 failed**, exit 0, `complete: false` |
-| budget already spent | 0 started, **index.json byte-identical**, exit 0 |
-| budget with room | 36/36, `complete: true` |
-| `--max-minutes 0` | still means unlimited |
+| `FISH_REGIONS` | `all` |
+| `FISH_JOBS` | `6` |
+| `FISH_MAX_MINUTES` | leave unset — 180 is the default |
 
-Plus **13/13 assertions** on output from 8 regions across 8 groups (Novigrad,
-Cascais, Socotra, Gizo, Arica, Skye, Bimini, Miyako), and the workflow YAML
-parsed and asserted.
+Settings → Secrets and variables → Actions → Variables.
 
-No frontend change needed: the app never reads `complete`, so a partial
-catalogue renders as a smaller one — which was already the behaviour when a
-run was killed.
+## Two things to check before you start
 
-## Still true
+**Is the repository public?** Actions minutes are free and unlimited on
+public repos. On a private one the cold build alone is roughly **7 runs x 3.5
+h = 1,500 minutes against a 2,000/month allowance**, and the steady state
+after that is ~4,500 a month. Private is not viable on the free tier.
 
-745 of 800 regions are auto-generated. 159 of 164 jurisdictions have no
-legal pack. The weights are guesses. The artifact, at 334 MB and 19,200
-files against a 1 GB limit, is now the only real ceiling.
+**Watch the artifact.** The "Report output size" step prints it every run.
+334 MB and 19,200 files at 800 regions, against a 1 GB Pages limit. If the
+upload starts dragging, that is the ceiling arriving, and the fix is the
+roadmap item: ship terrain rasters instead of rendered per-species maps.
+
+## How to tell it is working
+
+Each run should end with either a `deferred` line or a clean completion, and
+**the cache must grow**:
+
+```
+computed 127 region(s) in 10783 s (84.9 s each, 6 worker(s))
+deferred 673 region(s) - the 180 minute budget ran out. This is not an error...
+bathymetry grids cached: 127
+```
+
+If `bathymetry grids cached` is not larger than the previous run, the cache
+is not being saved and every run is starting cold — stop and look at that
+before letting it churn for a day.

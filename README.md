@@ -225,7 +225,7 @@ raising the timeout does not fix that — it moves the cliff.
 So the model stops itself instead:
 
 ```bash
-FISH_MAX_MINUTES=300 python fish_finder.py --select all
+FISH_MAX_MINUTES=180 python fish_finder.py --select all
 ```
 
 After the budget is spent it starts no further regions and exits cleanly at
@@ -233,16 +233,31 @@ After the budget is spent it starts no further regions and exits cleanly at
 and the untouched regions are reported as *deferred*, not failed:
 
 ```
-computed 214 region(s) in 17994 s (84.1 s each, 6 worker(s))
-deferred 586 region(s) - the 300 minute budget ran out. This is not an
+computed 127 region(s) in 10783 s (84.9 s each, 6 worker(s))
+deferred 673 region(s) - the 180 minute budget ran out. This is not an
 error: everything computed so far is published and cached, and the next
 run starts with it already warm. Run again to continue.
 ```
 
 The next run walks the same list in `regions.json` order, gets through those
-214 in about nine minutes because their bathymetry is cached, and spends the
-rest of its budget going deeper. **A cold 800 converges over a few scheduled
-runs with nothing recomputed and nothing lost.**
+127 in about five minutes because their bathymetry is cached, and spends the
+rest of its budget going deeper. **A cold 800 converges in about seven runs,
+roughly a day on the 4-hourly schedule, with nothing recomputed and nothing
+lost:**
+
+| run | re-walking warm | new cold | total |
+| --- | --- | --- | --- |
+| 1 | — | 127 | 127 |
+| 2 | 5 min | 123 | 250 |
+| 3 | 10 min | 119 | 369 |
+| 4 | 15 min | 116 | 485 |
+| 5 | 20 min | 112 | 597 |
+| 6 | 25 min | 109 | 706 |
+| 7 | 29 min | 94 | **800** |
+
+The re-walk grows and the new-cold count shrinks, so this converges slower
+the bigger the catalogue gets. At 800 it is comfortable. It is not a
+strategy that scales to 5,000.
 
 Three details worth knowing:
 
@@ -252,10 +267,13 @@ Three details worth knowing:
 - If the budget runs out before *any* region starts, the previous
   `index.json` is **left exactly as it was**. Writing an empty catalogue over
   a good one would blank a working site.
-- The workflow sets `FISH_MAX_MINUTES` to 300 against a 360-minute timeout.
-  That hour is not slack — the artifact upload of 334 MB and 19,200 files is
-  slow, and the cache save is behind it. Override with the
-  `FISH_MAX_MINUTES` repository variable.
+- The workflow sets `FISH_MAX_MINUTES` to **180**, and the constraint that
+  picks that number is **the cron, not the timeout**. Runs are four hours
+  apart with `cancel-in-progress: true`, so a run still working when the
+  next one fires is killed by its own schedule — any budget much over 240
+  would guarantee that during a cold build. The remaining hour covers cache
+  restore (~1.4 GB at 800 regions), the 334 MB artifact upload and the
+  deploy. Override with the `FISH_MAX_MINUTES` repository variable.
 
 The timeout is still set, at the full 360, purely as a backstop for
 something genuinely wedged. In normal operation it should never be reached.
