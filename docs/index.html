@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#071A22">
-<title>Novigrad — dive forecast</title>
+<title>Dive forecast</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" media="print" onload="this.media='all'"
@@ -144,6 +144,12 @@
   #vitals{display:flex; gap:16px; margin-top:12px; flex-wrap:wrap}
   #vitals div{min-width:56px}
   #vitals b{display:block; font-size:18px; font-weight:600; margin-top:1px}
+  /* Signals the model observes but deliberately does not score, so they read
+     as context rather than as part of the verdict. */
+  #observed{position:relative; margin-top:10px; padding-top:8px;
+    border-top:1px solid rgba(201,221,227,.14);
+    font-size:12px; color:var(--sound); line-height:1.5; display:none}
+  #observed .eyebrow{display:inline; margin-right:4px}
 
   /* ---- species strip: ranked by how catchable each is today ---- */
   #species{
@@ -395,11 +401,12 @@
     <div class="row">
       <div>
         <div class="eyebrow" id="region">loading</div>
-        <div id="word">—</div>
+        <div id="word">…</div>
         <div id="limit"></div>
       </div>
     </div>
     <div id="vitals"></div>
+    <div id="observed"></div>
   </header>
 
   <div id="sheet">
@@ -409,7 +416,7 @@
     <section id="regionguide" aria-live="polite" hidden></section>
     <section class="band">
       <div class="eyebrow">Best window</div>
-      <div id="window"><span class="when">—</span></div>
+      <div id="window"><span class="when">…</span></div>
       <div id="days" role="group" aria-label="Forecast day"></div>
       <div id="hours" role="group" aria-label="Hour by hour"></div>
       <div id="hourax"><span>00</span><span>06</span><span>12</span><span>18</span><span>23</span></div>
@@ -702,7 +709,7 @@ async function loadPoint(lat, lonRaw){
     // rate limit or an offline phone all read as "you tapped on land".
     const inland = /inland|marine data/i.test(e.message);
     $("#err").textContent = "Could not get a forecast here: " + e.message
-      + (inland ? " Open-Meteo has no marine data for inland points — tap"
+      + (inland ? " Open-Meteo has no marine data for inland points, so tap"
                 + " closer to open water." : "");
   }
 }
@@ -764,7 +771,7 @@ async function paintStructure(){
     + `${swell!=null?` and swell ${Math.round(swell)}°`:""}`
     + `${WRECKS ? ` · ${WRECKS.features.length} charted wreck${WRECKS.features.length===1?"":"s"} boosting nearby score` : ""}`
     + `${TERRAIN.coastUsed ? " · coastline from OpenStreetMap"
-                           : " · <span style='color:var(--buoy)'>no OSM coastline — land edge is bathymetry only</span>"}.`;
+                           : " · <span style='color:var(--buoy)'>no OSM coastline, land edge is bathymetry only</span>"}.`;
 }
 
 $("#scan").addEventListener("click", async () => {
@@ -938,7 +945,7 @@ function selectTarget(id){
     const L = sp.legal || {};
     const rules = [];
     if(sp.legally_open===false)
-      rules.push(`<b style="color:var(--flag)">CLOSED — ${sp.closed_reason}`+
+      rules.push(`<b style="color:var(--flag)">CLOSED: ${sp.closed_reason}`+
                  `${sp.reopens?`, reopens ${sp.reopens}`:""}</b>`);
     if(sp.seasons_unknown)
       rules.push(`<b style="color:var(--buoy)">closed seasons not researched for `+
@@ -962,7 +969,7 @@ function selectTarget(id){
   const gpx = $("#gpx");
   if(d.point || !REGION){
     gpx.removeAttribute("href");
-    gpx.textContent = "GPX — precomputed regions only";
+    gpx.textContent = "GPX: precomputed regions only";
     gpx.style.opacity = ".5";
   }else{
     gpx.style.opacity = "";
@@ -1009,7 +1016,7 @@ function selectTarget(id){
   if(spStale)
     $("#spnote").innerHTML +=
       `<div style="margin-top:6px;font-size:11.5px;color:var(--buoy)">`
-      + `Map shown is today's for this species — per-species maps are only `
+      + `Map shown is today's for this species, because per-species maps are only `
       + `rendered for the first ${spDays} day${spDays===1?"":"s"}. The score, `
       + `the spots and the season above are still this day's.</div>`;
 
@@ -1033,7 +1040,7 @@ function renderDays(d){
     const label=day.is_today?"Today":dt.toLocaleDateString([], {weekday:"short"});
     const best=day.best
       ? day.best.start.slice(11,16)+"–"+day.best.end.slice(11,16)
-      : "—";
+      : "none";
     const col=day.peak_score>=.6?"var(--kelp)":day.peak_score>=.3?"var(--buoy)":"var(--flag)";
     const extra = (day.wind_from_deg!==undefined)
       ? `<span class="dl" style="margin-top:3px;letter-spacing:.06em;text-transform:none">`+
@@ -1062,7 +1069,7 @@ function renderHours(d){
     $("#window").innerHTML = w
       ? `<span class="when">${w.start.slice(11,16)} – ${w.end.slice(11,16)}</span>
          <span style="color:var(--sound);font-size:13px">${w.wave_height_m} m · ${w.wind_speed_kmh} km/h</span>`
-      : `<span class="when">—</span>`;
+      : `<span class="when">none</span>`;
     $("#hourdet").innerHTML =
       '<span style="color:var(--flag)">Hour-by-hour needs the current fish_finder.py. '+
       'Upload it and re-run the workflow.</span>';
@@ -1107,7 +1114,7 @@ function renderHours(d){
       ? `<span class="when">nothing diveable</span>
          <span style="color:var(--sound);font-size:13px">conditions rule this day out</span>`
       : `<span class="when">day is over</span>
-         <span style="color:var(--sound);font-size:13px">no daylight left — try tomorrow</span>`;
+         <span style="color:var(--sound);font-size:13px">no daylight left, try tomorrow</span>`;
   }
 }
 
@@ -1277,7 +1284,7 @@ function renderRegions(){
   });
   host.appendChild(any);
   const byCountry={};
-  INDEX.regions.forEach(r=>{ (byCountry[r.country||"—"] ||= []).push(r); });
+  INDEX.regions.forEach(r=>{ (byCountry[r.country||"Other"] ||= []).push(r); });
 
   // Sorted best-first inside each country, so the panel doubles as a
   // "where in Europe is actually diveable today" view.
@@ -1294,7 +1301,7 @@ function renderRegions(){
                 : r.verdict==="not now" ? "var(--sound)" : "var(--flag)";
       const tags=[];
       if(r.relief_meaningful===false)
-        tags.push(`${r.bathymetry_native_m} m bathymetry — slope only`);
+        tags.push(`${r.bathymetry_native_m} m bathymetry, slope only`);
       if(!r.has_species)    tags.push("no species pack");
       if(!r.has_exclusions) tags.push("no exclusion zones");
       b.innerHTML=`<span><span class="n">${r.name}</span>
@@ -1379,7 +1386,7 @@ async function load(){
     $("#err").style.display = "block";
     $("#err").innerHTML =
       `<b>Version mismatch.</b> This page is v${PAGE_VERSION}, the data is v${dataV}. ` +
-      `Upload the current <b>${stale}</b> and re-run the workflow — until then ` +
+      `Upload the current <b>${stale}</b> and re-run the workflow. Until then ` +
       `some features (day switching, the submit button) will not work.`;
   }
 
@@ -1478,7 +1485,7 @@ function renderContext(d, meta){
        <div style="margin-top:6px;font-size:11.5px;color:var(--sound)">
          ${LP.confidence==="researched"
            ? "Checked against the national regulator; still verify before the season."
-           : "<b style='color:var(--buoy)'>Framework only</b> — widely reported, not taken from the primary source. Verify at "
+           : "<b style='color:var(--buoy)'>Framework only</b>: widely reported, not taken from the primary source. Verify at "
              + (LP.official_source||"the national regulator") + " before you dive."}
          ${LP.closed_seasons_researched ? "" :
            "<br>Closed seasons for this country are <b>not encoded</b>. An open species here means unknown, not legal."}
@@ -1495,28 +1502,28 @@ function renderContext(d, meta){
             + "relief, slope and shelter around it."
             + (host ? ` This point is also inside <b>${host.name}</b>, which has a precomputed map with wrecks, contours and exclusion zones.` : ""));
     if(d.species_source === "biome")
-      warn.push("Species here are a coarse worldwide approximation — the nearest matching "
-              + "ocean-basin reference list, not a pack tuned to this spot — and carry no "
-              + "legal size or season information at all.");
+      warn.push("Species here are a coarse worldwide approximation: the nearest matching "
+              + "ocean-basin reference list, rather than a pack tuned to this spot. "
+              + "They carry no legal size or season information at all.");
     else if(!d.has_species)
-      warn.push("No species data for this point — even the worldwide fallback has no "
+      warn.push("No species data for this point. Even the worldwide fallback has no "
               + "confident match for this stretch of ocean.");
   }else{
     // Region-only caveats. These come from the region catalogue, so they
     // must not be shown while a point forecast is on screen.
     if(meta.has_species===false)
-      warn.push("No validated species pack for this region — structure and conditions only. "
+      warn.push("No validated species pack for this region, so structure and conditions only. "
               + "Croatian closed seasons are NOT applied here.");
     if(meta.has_exclusions===false)
-      warn.push("No exclusion zones defined — check protected areas and port limits yourself.");
+      warn.push("No exclusion zones defined, so check protected areas and port limits yourself.");
   }
   if(d.relief_meaningful===false)
     warn.push(`Bathymetry here is ~${d.bathymetry_native_m} m per cell `
             + `(${d.bathymetry_provider}). A reef is smaller than one cell, so the `
-            + `structure map shows broad slope only — read a mark as "the shelf does `
+            + `structure map shows broad slope only, so read a mark as "the shelf does `
             + `something here", not as a spot.`);
   if(d.macrotidal)
-    warn.push(`Tidal range ${d.tide_range_m} m — macrotidal. The 8 km tide model `
+    warn.push(`Tidal range ${d.tide_range_m} m, which is macrotidal. The 8 km tide model `
             + `behind the timing is not adequate here; use a real tide table.`);
   // Say when the land edge is only as good as the depth grid. On a coast
   // with barrier islands or spits that is the difference between a map and
@@ -1524,8 +1531,8 @@ function renderContext(d, meta){
   if(d.coastline_applied === false)
     warn.push("The OpenStreetMap coastline could not be fetched for this region, "
             + "so the land edge comes from the bathymetry alone. Any strip of "
-            + "land narrower than a grid cell — a spit, a breakwater, a barrier "
-            + "island — may be scored and shaded as if it were water.");
+            + "land narrower than a grid cell, such as a spit, a breakwater or a "
+            + "barrier island, may be scored and shaded as if it were water.");
   $("#regionwarn").style.display = warn.length ? "block" : "none";
   $("#regionwarn").innerHTML = warn.join("<br>");
 }
@@ -1534,6 +1541,11 @@ function renderAll(d, meta){
   meta = meta || {};
   renderContext(d, meta);
   $("#region").textContent = d.region;
+  // The title used to be the hardcoded string "Novigrad", which stopped
+  // being true at region number two. A browser tab, a bookmark and a
+  // home-screen shortcut all show this, and "which coast is this" is the
+  // one thing they need to answer.
+  document.title = (d.region ? d.region + " · " : "") + "dive forecast";
   // A cached forecast may predate the night gate. Never present a calm local
   // 02:30 as diveable when the current-hour light value says it is dark.
   const isDark = Number(d.now.light) <= 0;
@@ -1548,13 +1560,13 @@ function renderAll(d, meta){
     // daylight left today", and overwriting both with one generic string
     // threw that away.
     if(isDark && !/dark/i.test(d.now.limited_by || ""))
-      d.now.limited_by = "dark — no daylight at this local hour";
+      d.now.limited_by = "dark, no daylight at this local hour";
     // Use the per-day daylight-gated windows, never the legacy overall value
     // which older data may have calculated without a light check.
     const w = (d.days||[]).find(day=>day.best)?.best || null;
     const nxt = w ? new Date(w.start+"Z").toLocaleString([], {weekday:"short",
                     hour:"2-digit", minute:"2-digit"}) : null;
-    $("#limit").textContent = d.now.limited_by + (nxt ? ` — next window ${nxt}` : "");
+    $("#limit").textContent = d.now.limited_by + (nxt ? `. Next window ${nxt}` : "");
   }else{
     $("#limit").textContent = d.now.limited_by === "nothing limiting"
       ? "nothing holding it back" : "limited by " + d.now.limited_by;
@@ -1598,14 +1610,45 @@ function renderAll(d, meta){
     })
     .catch(() => {});
 
-  $("#vitals").innerHTML = [
-    ["viz",       `${fmt(d.now.visibility_m,0)} m`],
+  // Visibility is now quoted FOR a depth, because clarity depends on one:
+  // near-bed stirring falls off with depth, so 5 m and 22 m genuinely differ
+  // under groundswell. Saying "7 m" without saying where is meaningless.
+  const vizAt = d.visibility_depth_m != null ? ` at ${d.visibility_depth_m} m` : "";
+  const vit = [
+    ["viz" + vizAt, `${fmt(d.now.visibility_m,0)} m`],
     ["swell",     `${fmt(d.now.wave_height_m,2)} m`],
     ["wind",      `${fmt(d.now.wind_speed_kmh,0)} km/h`],
     ["wind from", `${d.now.wind_from_deg}°`],
     ["water",     `${fmt(d.now.sea_temp_c,1)} °C`],
     ["current",   `${fmt(d.now.current_ms,2)} m/s`],
-  ].map(([k,v])=>`<div><span class="eyebrow">${k}</span><b>${v}</b></div>`).join("");
+  ];
+  // Wind sea and swell are fetched separately now. Show the split when it
+  // exists, because a metre of 12 s swell and a metre of 4 s chop are not
+  // the same day and the combined figure hides which one you are getting.
+  if(d.now.swell_period_s != null)
+    vit.push(["swell period", `${fmt(d.now.swell_period_s,0)} s`]);
+  if(d.now.wind_wave_height_m != null)
+    vit.push(["wind chop", `${fmt(d.now.wind_wave_height_m,2)} m`]);
+  $("#vitals").innerHTML =
+    vit.map(([k,v])=>`<div><span class="eyebrow">${k}</span><b>${v}</b></div>`).join("");
+
+  // Observed, reported, deliberately not scored. These are real signals with
+  // no fitted weight behind them yet, so they are shown for you to judge
+  // and for dive_log.csv to record, rather than folded into a number that
+  // would look more confident than it has earned.
+  const obs = [];
+  if(d.now.tide_state) obs.push(`tide ${d.now.tide_state}`);
+  if(d.now.sst_trend_24h_c != null && Math.abs(d.now.sst_trend_24h_c) >= 0.3)
+    obs.push(`water ${d.now.sst_trend_24h_c > 0 ? "warming" : "cooling"} `
+           + `${Math.abs(d.now.sst_trend_24h_c).toFixed(1)} °C/day`);
+  if(d.now.moon_illumination != null)
+    obs.push(`moon ${Math.round(d.now.moon_illumination*100)}%`);
+  if(d.now.current_from_deg != null) obs.push(`current from ${d.now.current_from_deg}°`);
+  if(d.river_influenced) obs.push("river influenced");
+  $("#observed").innerHTML = obs.length
+    ? `<span class="eyebrow">Also happening</span> ${obs.join(" · ")}`
+    : "";
+  $("#observed").style.display = obs.length ? "block" : "none";
 
   selDay = 0;
   renderDays(d);
@@ -1636,7 +1679,7 @@ function renderAll(d, meta){
   // A point forecast has no raster, so bathymetry_native_m and
   // grid_resolution_m are null and printed as "~null m · grid null m".
   const bathy = d.bathymetry_native_m == null
-    ? `Bathymetry: ${d.bathymetry_provider || "none"} — press Scan structure to fetch it`
+    ? `Bathymetry: ${d.bathymetry_provider || "none"}. Press Scan structure to fetch it`
     : `Bathymetry ${d.bathymetry_provider} ~${d.bathymetry_native_m} m`
       + (d.grid_resolution_m != null ? ` · grid ${d.grid_resolution_m} m` : "");
   $("#stamp").innerHTML =
