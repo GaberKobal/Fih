@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#071A22">
-<title>Add a region — dive forecast</title>
+<title>Add a region · dive forecast</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" media="print" onload="this.media='all'"
@@ -64,12 +64,12 @@
   <div id="panel">
     <div class="hint">
       Drag a box on the map over the coast you want. Keep it roughly
-      20–50&nbsp;km across — bigger boxes are slower, produce heavier maps and
+      20 to 50&nbsp;km across. Bigger boxes are slower, produce heavier maps and
       rarely tell you more. Then submit it, and a workflow adds it to
       <code>regions.json</code>.
     </div>
     <div class="form">
-      <label class="wide">Name<input id="f_name" placeholder="Kvarner — Krk and Cres"></label>
+      <label class="wide">Name<input id="f_name" placeholder="Kvarner, Krk and Cres"></label>
       <label>Id<input id="f_id" placeholder="kvarner"></label>
       <label>Country<input id="f_country" placeholder="Croatia"></label>
       <label>Jurisdiction<input id="f_juris" placeholder="HR"></label>
@@ -153,7 +153,7 @@ function build(){
       max_m: +$("#f_max").value || 24
     },
     note: "Added from the map. No species pack, no exclusion zones and no "
-        + "closed seasons for this jurisdiction — structure and conditions only "
+        + "closed seasons for this jurisdiction, so structure and conditions only "
         + "until someone builds them."
   };
 }
@@ -163,9 +163,9 @@ function render(){
   if(!r){ return; }
   const [w,h] = km(box);
   const warn = [];
-  if(w > 80 || h > 80) warn.push(`Box is ${w.toFixed(0)}×${h.toFixed(0)} km — large. Expect slow builds and heavy maps.`);
+  if(w > 80 || h > 80) warn.push(`Box is ${w.toFixed(0)}×${h.toFixed(0)} km, which is large. Expect slow builds and heavy maps.`);
   if(w < 3 || h < 3)   warn.push("Box is tiny; you may get almost no water cells.");
-  if(window.EXISTING && window.EXISTING.has(r.id)) warn.push(`Id "${r.id}" already exists — it will be rejected.`);
+  if(window.EXISTING && window.EXISTING.has(r.id)) warn.push(`Id "${r.id}" already exists, so it will be rejected.`);
   $("#warn").textContent = warn.join(" ");
   $("#out").textContent = JSON.stringify(r, null, 2);
 }
@@ -185,7 +185,7 @@ $("#submit").addEventListener("click", () => {
   if(!r){ $("#warn").textContent = "Drag a box on the map first."; return; }
   if(!$("#f_name").value.trim() || !$("#f_id").value.trim()){
     $("#warn").textContent = "Needs at least a name and an id."; return; }
-  if(!ISSUE){ $("#warn").textContent = "No repo_issue_url in the data — set it in config.json."; return; }
+  if(!ISSUE){ $("#warn").textContent = "No repo_issue_url in the data. Set it in config.json."; return; }
   const body = "Added from the map.\n\n```json\n"
              + JSON.stringify(r, null, 2) + "\n```\n";
   window.open(ISSUE + "?labels=add-region"
