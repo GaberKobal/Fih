@@ -1397,52 +1397,112 @@ def habitat_edge_score(gj, lats, lons, cfg):
 # conditions — Open-Meteo, keyless
 # --------------------------------------------------------------------------
 
-def fetch_conditions(lat, lon, cfg):
-    past = cfg["conditions"]["past_days"]
-    fwd = cfg["conditions"]["forecast_days"]
-
+MARINE_VARS = [
     # Wind sea and swell, SEPARATELY, as well as the combined sea state.
     # They are two different things doing two different jobs: short-period
     # wind chop is what makes the surface unworkable, long-period swell is
     # what reaches the bottom and lifts sediment, and they routinely arrive
     # from different quarters. Collapsing them into one significant height
     # threw all of that away. Free — same request, more fields.
-    marine_vars = [
-        "wave_height", "wave_period", "wave_direction",
-        "wind_wave_height", "wind_wave_period", "wind_wave_direction",
-        "swell_wave_height", "swell_wave_period", "swell_wave_direction",
-        "sea_surface_temperature", "sea_level_height_msl",
-        "ocean_current_velocity", "ocean_current_direction",
-    ]
-    weather_vars = [
-        "precipitation", "wind_speed_10m", "wind_direction_10m",
-        "wind_gusts_10m", "cloud_cover", "pressure_msl",
-    ]
+    "wave_height", "wave_period", "wave_direction",
+    "wind_wave_height", "wind_wave_period", "wind_wave_direction",
+    "swell_wave_height", "swell_wave_period", "swell_wave_direction",
+    "sea_surface_temperature", "sea_level_height_msl",
+    "ocean_current_velocity", "ocean_current_direction",
+]
+WEATHER_VARS = [
+    "precipitation", "wind_speed_10m", "wind_direction_10m",
+    "wind_gusts_10m", "cloud_cover", "pressure_msl",
+]
+
+
+def _merge_conditions(m, w):
+    """One location's marine + weather response, merged onto one time axis."""
+    times = m["hourly"]["time"]
+    if w["hourly"]["time"] != times:
+        raise RuntimeError("marine and weather time axes differ; cannot merge")
+    h = {"time": times}
+    for k in MARINE_VARS:
+        h[k] = np.array([np.nan if v is None else v
+                         for v in m["hourly"].get(k, [None] * len(times))], float)
+    for k in WEATHER_VARS:
+        h[k] = np.array([np.nan if v is None else v
+                         for v in w["hourly"].get(k, [None] * len(times))], float)
+    return h, w.get("daily", {}), int(w.get("utc_offset_seconds", 0))
+
+
+def fetch_conditions_batch(points, cfg):
+    """Conditions for MANY locations in a handful of requests.
+
+    Open-Meteo takes comma-separated coordinate lists and returns one result
+    per location, and — the part that makes this usable here — `timezone=auto`
+    resolves PER LOCATION, so Novigrad comes back on Europe/Zagreb and
+    Honolulu on Pacific/Honolulu in the same response. The whole model is
+    local-time based, so that mattered more than the batching itself.
+
+    This is what removes the API quota as a scaling limit. One request per
+    region per endpoint was 2 calls x 800 regions x 6 runs a day = 9,600
+    against a 10,000 free allowance: at the ceiling, with nothing left for a
+    retry. Batched at 100 a request it is 16 calls a run, about 96 a day.
+
+    points: list of (key, lat, lon). Returns {key: (h, daily, tz)}, missing
+    any location the API could not answer for — the caller falls back to a
+    single fetch for those, so one bad point never poisons a batch.
+    """
+    past = cfg["conditions"]["past_days"]
+    fwd = cfg["conditions"]["forecast_days"]
+    size = max(1, int((cfg.get("conditions") or {}).get("batch_size", 100)))
+    out = {}
+    for i in range(0, len(points), size):
+        chunk = points[i:i + size]
+        lats = ",".join(f"{p[1]:.4f}" for p in chunk)
+        lons = ",".join(f"{p[2]:.4f}" for p in chunk)
+        common = {"latitude": lats, "longitude": lons, "past_days": past,
+                  "forecast_days": fwd, "timezone": "auto"}
+        try:
+            m = http_json(f"{OPENMETEO_MARINE}?" + urllib.parse.urlencode(
+                {**common, "hourly": ",".join(MARINE_VARS)}), timeout=180)
+            w = http_json(f"{OPENMETEO_WEATHER}?" + urllib.parse.urlencode(
+                {**common, "hourly": ",".join(WEATHER_VARS),
+                 "daily": "sunrise,sunset"}), timeout=180)
+        except Exception as e:
+            log(f"conditions: batch of {len(chunk)} failed "
+                f"({e.__class__.__name__}) - those regions will fetch singly")
+            continue
+        # A single-location request comes back as an object, not a list.
+        m = m if isinstance(m, list) else [m]
+        w = w if isinstance(w, list) else [w]
+        if len(m) != len(chunk) or len(w) != len(chunk):
+            log(f"conditions: batch returned {len(m)}/{len(w)} results for "
+                f"{len(chunk)} locations - falling back to single fetches")
+            continue
+        for (key, _, _), mm, ww in zip(chunk, m, w):
+            try:
+                out[key] = _merge_conditions(mm, ww)
+            except Exception as e:
+                log(f"conditions: {key} unusable in batch "
+                    f"({e.__class__.__name__}) - will fetch singly")
+    log(f"conditions: {len(out)}/{len(points)} region(s) from "
+        f"{2 * ((len(points) + size - 1) // size)} batched request(s)")
+    return out
+
+
+def fetch_conditions(lat, lon, cfg):
+    past = cfg["conditions"]["past_days"]
+    fwd = cfg["conditions"]["forecast_days"]
 
     m = http_json(f"{OPENMETEO_MARINE}?" + urllib.parse.urlencode({
         "latitude": lat, "longitude": lon,
-        "hourly": ",".join(marine_vars),
+        "hourly": ",".join(MARINE_VARS),
         "past_days": past, "forecast_days": fwd, "timezone": "auto",
     }))
     w = http_json(f"{OPENMETEO_WEATHER}?" + urllib.parse.urlencode({
         "latitude": lat, "longitude": lon,
-        "hourly": ",".join(weather_vars),
+        "hourly": ",".join(WEATHER_VARS),
         "daily": "sunrise,sunset",
         "past_days": past, "forecast_days": fwd, "timezone": "auto",
     }))
-
-    times = m["hourly"]["time"]
-    if w["hourly"]["time"] != times:
-        raise RuntimeError("marine and weather time axes differ; cannot merge")
-
-    h = {"time": times}
-    for k in marine_vars:
-        h[k] = np.array([np.nan if v is None else v
-                         for v in m["hourly"].get(k, [None] * len(times))], float)
-    for k in weather_vars:
-        h[k] = np.array([np.nan if v is None else v
-                         for v in w["hourly"].get(k, [None] * len(times))], float)
-    return h, w.get("daily", {}), int(w.get("utc_offset_seconds", 0))
+    return _merge_conditions(m, w)
 
 
 def river_series(lat, lon, times, cfg, region_id):
@@ -2571,7 +2631,7 @@ def synthetic_bathymetry(bbox, res_deg):
     return lats, lons, elev
 
 
-def run(cfg, selftest=False, out_dir=None):
+def run(cfg, selftest=False, out_dir=None, conditions=None):
     # OUT is a LOCAL, not the module global it used to reassign. Two regions
     # computed at the same time would otherwise race on it and write each
     # other's PNGs into the wrong folder — which is the one thing that has to
@@ -2720,9 +2780,17 @@ def run(cfg, selftest=False, out_dir=None):
         now_i = 24
         tz_offset = 0
     else:
-        log("conditions: Open-Meteo marine + weather")
-        h, daily, tz_offset = fetch_conditions(clat, clon, cfg)
-        # API returned local wall-clock times, so compare against local now.
+        if conditions is not None:
+            # Already fetched, batched with every other region in this run.
+            h, daily, tz_offset = conditions
+            log("conditions: from the batched fetch")
+        else:
+            log("conditions: Open-Meteo marine + weather")
+            h, daily, tz_offset = fetch_conditions(clat, clon, cfg)
+        # Which hour is "now" here. Computed for BOTH paths: it lived inside
+        # the single-fetch branch, so the batched one reached the next line
+        # with now_i unbound and every region failed.
+        # The API returns local wall-clock times, so compare against local now.
         now = (dt.datetime.now(dt.timezone.utc) + dt.timedelta(seconds=tz_offset)
                ).replace(minute=0, second=0, microsecond=0, tzinfo=None)
         now_i = int(np.argmin([abs((dt.datetime.fromisoformat(t) - now).total_seconds())
@@ -3247,6 +3315,21 @@ def main():
     # First, before anything can go wrong: the point model's constants.
     write_model(base, regions)
 
+    # Conditions for every chosen region, in a handful of requests rather
+    # than two per region. Any region missing from the result simply fetches
+    # its own inside run(), so a partial batch costs nothing but calls.
+    CONDITIONS = {}
+    if not args.selftest:
+        pts = [(r["id"],
+                0.5 * (r["bbox"]["lat_min"] + r["bbox"]["lat_max"]),
+                0.5 * (r["bbox"]["lon_min"] + r["bbox"]["lon_max"]))
+               for r in chosen]
+        try:
+            CONDITIONS = fetch_conditions_batch(pts, base)
+        except Exception as e:
+            log(f"conditions: batching unavailable ({e.__class__.__name__}) - "
+                "every region will fetch its own")
+
     # index.json is what the app reads to know which coasts exist, and it
     # used to be written only after every region had finished. A run that
     # was killed — a workflow timeout, a cancelled job — therefore threw away
@@ -3269,9 +3352,27 @@ def main():
             "regions": entries,
             "failed": failures,
         }
+        # Atomic, so a reader never sees a half-written index. The rename
+        # can still fail transiently on Windows when something else has the
+        # file open for a moment - OneDrive syncing it, a virus scanner -
+        # and THAT MUST NOT FAIL THE REGION. This runs inside the per-region
+        # completion handler, so an exception here was being attributed to
+        # whichever region happened to finish at that instant, marking a
+        # perfectly good result as failed. Retry briefly, then give up
+        # quietly: the next region to land writes the catalogue again, and
+        # the final write at the end of the run is the one that matters.
         tmp = idx_path.with_suffix(".json.tmp")
-        tmp.write_text(json.dumps(payload, indent=1), encoding="utf-8")
-        tmp.replace(idx_path)          # atomic: never a half-written index
+        for attempt in range(4):
+            try:
+                tmp.write_text(json.dumps(payload, indent=1), encoding="utf-8")
+                tmp.replace(idx_path)
+                return
+            except OSError as e:
+                if attempt == 3:
+                    log(f"index: could not be rewritten ({e.__class__.__name__}) "
+                        "- carrying on; the next region will retry")
+                    return
+                time.sleep(0.25 * (attempt + 1))
 
     def compute(r):
         """One region, start to finish. Runs on a worker thread."""
@@ -3279,7 +3380,8 @@ def main():
         cfg = region_config(base, r)
         out = ROOT / "docs" / "data" / r["id"]
         log(f"--- {r['name']} ---")
-        payload = run(cfg, selftest=args.selftest, out_dir=out)
+        payload = run(cfg, selftest=args.selftest, out_dir=out,
+                      conditions=CONDITIONS.get(r["id"]))
         return {
             "id": r["id"], "name": r["name"], "country": r.get("country", ""),
             "jurisdiction": r.get("jurisdiction", ""),
@@ -3334,8 +3436,12 @@ def main():
                 # One region failing must not take the others down with it.
                 log(f"{r['id']} FAILED: {err.__class__.__name__}: {err}")
             done = sorted(results, key=lambda t: order[t[0]["id"]])
-            write_index([e for _, e, x in done if x is None],
-                        [rr["id"] for rr, _, x in done if x is not None])
+            try:
+                write_index([e for _, e, x in done if x is None],
+                            [rr["id"] for rr, _, x in done if x is not None])
+            except Exception as e:
+                log(f"index: interim write failed ({e.__class__.__name__}) "
+                    "- the region itself is fine")
             n = len(results)
             if n % 10 == 0 or n == len(chosen):
                 bad = sum(1 for _, _, x in results if x is not None)

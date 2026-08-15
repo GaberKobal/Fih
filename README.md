@@ -5,7 +5,7 @@ web page on your phone. Nothing runs on your machine, nothing needs to stay
 switched on, and no API key is required.
 
 Covers any coast in the world, at two very different levels of usefulness:
-**468 configured regions** with precomputed structure maps, and a live
+**800 configured regions** with precomputed structure maps, and a live
 point forecast anywhere else you tap.
 
 ```
@@ -122,7 +122,7 @@ seasons at all.
 
 ### Turning regions on
 
-`regions.json` has **468 regions in 22 groups**, and one, `novigrad`, is
+`regions.json` has **800 regions in 22 groups**, and one, `novigrad`, is
 enabled, so the site is never empty and tests stay fast. Three ways to run
 more, none of which need a code change:
 
@@ -140,12 +140,12 @@ string — `med-west,adriatic`, or `all`. No commit required. The manual
 falls back to whatever has `"enabled": true` in `regions.json`, which is the
 setting to change if you want it permanent.
 
-Groups, with sizes: `med-west` 60, `coral-triangle` 37, `caribbean` 35,
-`med-east` 33, `indian-west` 29, `nw-europe` 28, `pacific-islands` 27,
-`iberia-atlantic` 26, `adriatic` 23, `pacific-ne` 19, `macaronesia` 18,
-`atlantic-sw` 16, `australia-temperate` 15, `atlantic-nw` 14,
-`med-south` 13, `pacific-nw` 13, `africa-west` 12, `africa-south` 11,
-`nz` 11, `red-sea` 11, `australia-tropical` 9, `pacific-se` 8.
+Groups, with sizes: `med-west` 100, `coral-triangle` 66, `caribbean` 61,
+`nw-europe` 59, `med-east` 57, `indian-west` 52, `pacific-islands` 46,
+`iberia-atlantic` 38, `adriatic` 36, `pacific-ne` 34, `atlantic-sw` 27,
+`australia-temperate` 25, `africa-west` 25, `macaronesia` 24,
+`atlantic-nw` 24, `pacific-nw` 23, `med-south` 21, `africa-south` 18,
+`pacific-se` 18, `nz` 16, `red-sea` 15, `australia-tropical` 15.
 
 `pacific-se` is the Humboldt current, and it is the one group where the
 species pack is an outright analogue rather than an approximation: Chile and
@@ -160,14 +160,14 @@ cached and it is roughly forty times cheaper. See the numbers below.
 
 Measured, not estimated, on this hardware:
 
-| | per region | 468 regions |
+| | per region | 800 regions |
 | --- | --- | --- |
 | **first ever run** (cold bathymetry + coastline), 6 workers | ~32 s | ~4.2 h |
 | **first ever run**, serial | ~56 s | ~7.3 h |
-| **every run after that**, 6 workers | **~2.5 s** | **~20 min** |
-| pure compute, no network (`--selftest`, 6 workers) | 2.2 s | 17 min |
-| output | 466 KB, 24 files | **213 MB, 11,248 files** |
-| Open-Meteo calls | 2 | 936 per run |
+| **every run after that**, 6 workers | **~2.5 s** | **~33 min** |
+| pure compute, no network (`--selftest`, 6 workers) | 1.4 s | 19 min |
+| output | 427 KB, 24 files | **334 MB, 19,200 files** |
+| Open-Meteo calls | — | **16 per run, batched** |
 
 The warm figure comes from 16 real regions spread across the world, which is
 a fair mix of easy and hard — small Mediterranean boxes alone come in nearer
@@ -178,22 +178,24 @@ times a day** on the 4-hourly schedule with everything enabled. The binding
 limits, in the order you will hit them:
 
 1. **The first run.** Cold bathymetry dominates everything else by a factor
-   of thirteen. Turning on all 468 at once is a **~4.2 hour job at six
-   workers** and would need `FISH_JOBS` raised; the workflow timeout is 330
+   of thirteen. Turning on all 800 at once is a **~7 hour job at six
+   workers**, which does NOT fit the 330-minute timeout and would need `FISH_JOBS` raised; the workflow timeout is 330
    minutes, so it fits, but only just. Enable a group at a time instead and
    every later run is minutes.
 2. **Open-Meteo's free tier** — 10,000 calls a day, 600 a minute. Two calls
-   per region per run, six runs a day: 468 regions uses **5,616 a day, about
-   56%**. That is the constraint the 4-hourly schedule moved most — it
-   leaves room to roughly **800 regions** before the daily quota binds,
-   down from 1,600 on the 8-hourly one. The per-minute limit is handled in code by a cross-thread throttle
+   per region per run this WAS the binding limit — 800 regions six times a
+   day would have been 9,600 calls against a 10,000 allowance. Requests are
+   now **batched 100 locations at a time**, so a full run is **16 calls**
+   and a day is **96, about 1%**. This constraint is gone, and with it the
+   ceiling it implied. The per-minute limit is handled in code by a cross-thread throttle
    (`_HOST_MIN_INTERVAL`), which holds the whole process to ~400/min no
    matter how many workers run.
 3. **GitHub Pages** will not publish a site over 1 GB, and the artifact
-   upload degrades well before that. 468 regions measures **213 MB and
-   11,248 files**, so the hard stop is near 2,000 regions and the
-   *uncomfortable* one is nearer **900**, where upload and deploy start to
-   dominate the run. This is now the tightest of the four.
+   upload degrades well before that. 800 regions is roughly **364 MB and
+   19,200 files**. This is now comfortably the tightest constraint: the hard
+   stop is near 2,000 regions and things get uncomfortable well before it.
+   Lifting it needs the other roadmap item — shipping terrain rasters
+   instead of rendered per-species maps.
 4. **Actions minutes** — free and unlimited on a **public** repository.
    On a **private** one this is now the hard blocker: six runs a day at
    ~25 minutes is roughly **4,500 minutes a month against a 2,000 free
@@ -420,7 +422,7 @@ actually bans spearfishing, which is exactly why the curated flag exists.
 The app says in as many words that no mask is not evidence of no reserve.
 
 **A safety notice on first open.** Not a footnote. It says the model has
-never been fitted against real dives, that legal data exists for 5 of 134
+never been fitted against real dives, that legal data exists for 5 of 164
 jurisdictions, that protected-area coverage is incomplete, and that
 breath-hold diving kills experienced people through shallow water blackout.
 Acknowledged once, remembered, and reachable again from Sources.
@@ -435,6 +437,22 @@ to Carto's free basemaps. Overpass responses are now cached in the browser
 and rate-limited to one request per three seconds per tab, because
 client-side scanning was the one place this app could genuinely have abused
 a volunteer-funded service.
+
+### Why the API quota stopped mattering
+
+Conditions used to be two requests per region. At 800 regions on a 4-hourly
+schedule that is 9,600 calls a day against a 10,000 free allowance — at the
+ceiling, with nothing left for a retry.
+
+Open-Meteo accepts **comma-separated coordinate lists** and returns one
+result per location, and crucially `timezone=auto` resolves **per location**:
+Novigrad comes back on Europe/Zagreb and Honolulu on Pacific/Honolulu in the
+same response, which matters because the whole model is local-time based.
+Batched 100 at a time, a full 800-region run is **16 calls**, and a day is
+**96 — about 1% of the free tier**.
+
+Any location the batch cannot answer for simply falls back to its own single
+request, so one bad point never poisons a batch of a hundred.
 
 ### Counting how many people use it
 
@@ -502,9 +520,9 @@ A handful of gaps that were invisible while you were the only user:
 
 - The weights are **guesses**. Nothing has been fitted. This is the biggest
   remaining problem and only dive logs fix it.
-- **129 of 134 jurisdictions have no legal pack**, including HR. No sizes,
+- **159 of 164 jurisdictions have no legal pack**, including HR. No sizes,
   no seasons, anywhere but ES, FR, GR, IT and PT.
-- **413 of 468 regions are auto-generated**: plausible bboxes and baselines,
+- **745 of 800 regions are auto-generated**: plausible bboxes and baselines,
   not surveyed ones.
 - `max_swim_km` still gates nothing, because `entry_points` is empty.
 
