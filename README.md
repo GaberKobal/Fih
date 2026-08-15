@@ -1,13 +1,15 @@
-# European dive forecast
+# Dive forecast
 
-A daily spearfishing forecast that runs entirely in GitHub's cloud and opens
-as a web page on your phone. Nothing runs on your machine, nothing needs to
-stay switched on, and no API key is required.
+A spearfishing forecast that runs entirely in GitHub's cloud and opens as a
+web page on your phone. Nothing runs on your machine, nothing needs to stay
+switched on, and no API key is required.
 
-Covers any coast in the world, at two very different levels of usefulness.
+Covers any coast in the world, at two very different levels of usefulness:
+**468 configured regions** with precomputed structure maps, and a live
+point forecast anywhere else you tap.
 
 ```
-GitHub Actions (cron, 03:40 UTC)
+GitHub Actions (cron, every 8 hours)
         │  fetches EMODnet bathymetry (once, then cached)
         │  fetches Open-Meteo waves / wind / rain / tide / SST
         │  scores the grid, extracts the top spots
@@ -94,16 +96,16 @@ provider abstraction is built to take them.
 `regions.json` is the catalogue. `python fish_finder.py --list` shows it:
 
 ```
-  on  novigrad       Novigrad, Istria             Croatia    species+exclusions
-  on  kvarner        Kvarner — Krk and Cres       Croatia    species
-  on  split          Split and Brač channel       Croatia    species
-  on  piran          Piran and the Gulf           Slovenia   structure only
-  off cyclades       Paros and Naxos              Greece     structure only
+  on  novigrad     adriatic     Novigrad, Istria        Croatia   species+exclusions
+  off cascais      iberia-atl.. Cascais and Parede      Portugal  species
+  off versilia     med-west     Versilia                Italy     species
+  off komodo       coral-tri..  Komodo                  Indonesia species
+  off valparaiso   pacific-se   Valparaiso              Chile     species
 ```
 
-Flip `enabled` to add one. Each costs roughly 600 KB of output and 5 seconds
-of compute per day, and the region picker in the app doubles as a "where is
-diveable today" view, sorted best-first within each country.
+Flip `enabled` to add one. Each costs roughly 434 KB of output and a couple
+of seconds of compute per run, and the region picker in the app doubles as a
+"where is diveable today" view, sorted best-first within each country.
 
 **Clicking a region in the app does not enable it, and cannot.** The app
 renders precomputed output, so a region that has never run has nothing to
@@ -120,7 +122,7 @@ seasons at all.
 
 ### Turning regions on
 
-`regions.json` has **264 regions in 21 groups**, and one — `novigrad` — is
+`regions.json` has **468 regions in 22 groups**, and one, `novigrad`, is
 enabled, so the site is never empty and tests stay fast. Three ways to run
 more, none of which need a code change:
 
@@ -138,11 +140,17 @@ string — `med-west,adriatic`, or `all`. No commit required. The manual
 falls back to whatever has `"enabled": true` in `regions.json`, which is the
 setting to change if you want it permanent.
 
-Groups: `adriatic`, `med-west`, `med-east`, `med-south`, `iberia-atlantic`,
-`macaronesia`, `nw-europe`, `africa-west`, `africa-south`, `red-sea`,
-`indian-west`, `coral-triangle`, `pacific-nw`, `pacific-islands`,
-`pacific-ne`, `atlantic-nw`, `atlantic-sw`, `caribbean`,
-`australia-temperate`, `australia-tropical`, `nz`.
+Groups, with sizes: `med-west` 60, `coral-triangle` 37, `caribbean` 35,
+`med-east` 33, `indian-west` 29, `nw-europe` 28, `pacific-islands` 27,
+`iberia-atlantic` 26, `adriatic` 23, `pacific-ne` 19, `macaronesia` 18,
+`atlantic-sw` 16, `australia-temperate` 15, `atlantic-nw` 14,
+`med-south` 13, `pacific-nw` 13, `africa-west` 12, `africa-south` 11,
+`nz` 11, `red-sea` 11, `australia-tropical` 9, `pacific-se` 8.
+
+`pacific-se` is the Humboldt current, and it is the one group where the
+species pack is an outright analogue rather than an approximation: Chile and
+Peru have no pack of their own here, so the Benguela one is used because
+both are cold eastern-boundary upwelling systems. The region notes say so.
 
 **Enable a group at a time, not everything at once.** The first run of a
 region downloads its bathymetry and its coastline; after that both are
@@ -152,43 +160,45 @@ cached and it is roughly forty times cheaper. See the numbers below.
 
 Measured, not estimated, on this hardware:
 
-| | per region | 264 regions |
+| | per region | 468 regions |
 | --- | --- | --- |
-| **first ever run** (cold bathymetry + coastline), 6 workers | ~32 s | ~2.3 h |
-| **first ever run**, serial | ~56 s | ~4.1 h |
-| **every run after that**, 6 workers | **~2.5 s** | **~11 min** |
-| pure compute, no network (`--selftest`, 6 workers) | 1.9 s | 8.3 min |
-| output | 434 KB, 28 files | **129 MB, 6,408 files** |
-| Open-Meteo calls | 2 | 528 per run |
+| **first ever run** (cold bathymetry + coastline), 6 workers | ~32 s | ~4.2 h |
+| **first ever run**, serial | ~56 s | ~7.3 h |
+| **every run after that**, 6 workers | **~2.5 s** | **~20 min** |
+| pure compute, no network (`--selftest`, 6 workers) | 2.2 s | 17 min |
+| output | 466 KB, 24 files | **213 MB, 11,248 files** |
+| Open-Meteo calls | 2 | 936 per run |
 
 The warm figure comes from 16 real regions spread across the world, which is
 a fair mix of easy and hard — small Mediterranean boxes alone come in nearer
 0.9 s each, Lofoten and its 2,965 coastline ways very much do not.
 
-So the steady state for an 8-hourly schedule is **about 11 minutes of
-compute plus CI overhead, three times a day**. The binding limits, in the
-order you will hit them:
+So the steady state for an 8-hourly schedule is **about 20 minutes of
+compute plus CI overhead, three times a day**, with everything enabled. The
+binding limits, in the order you will hit them:
 
 1. **The first run.** Cold bathymetry dominates everything else by a factor
-   of thirty. Turning on all 264 at once is a ~2.3 hour job. Enable a group
-   at a time and each subsequent run is minutes.
+   of thirteen. Turning on all 468 at once is a **~4.2 hour job at six
+   workers** and would need `FISH_JOBS` raised; the workflow timeout is 330
+   minutes, so it fits, but only just. Enable a group at a time instead and
+   every later run is minutes.
 2. **Open-Meteo's free tier** — 10,000 calls a day, 600 a minute. Two calls
-   per region per run, three runs a day: 264 regions uses 1,584 a day, about
-   16%. That leaves room to roughly **1,600 regions** before the daily quota
+   per region per run, three runs a day: 468 regions uses 2,808 a day, about
+   28%. That leaves room to roughly **1,600 regions** before the daily quota
    binds. The per-minute limit is handled in code by a cross-thread throttle
    (`_HOST_MIN_INTERVAL`), which holds the whole process to ~400/min no
    matter how many workers run.
 3. **GitHub Pages** will not publish a site over 1 GB, and the artifact
-   upload degrades well before that. 264 regions is already 129 MB and 6,408
-   files, so at this rate the hard stop is near 2,000 regions and the
-   *uncomfortable* one is nearer **700**, where upload and deploy start to
-   dominate the run.
+   upload degrades well before that. 468 regions measures **213 MB and
+   11,248 files**, so the hard stop is near 2,000 regions and the
+   *uncomfortable* one is nearer **900**, where upload and deploy start to
+   dominate the run. This is now the tightest of the four.
 4. **Actions minutes** — free and unlimited on a public repository. On a
    private one, 3 runs a day at ~14 minutes is ~1,260 of the 2,000 free
    monthly minutes, which is fine but no longer roomy.
 
-**So: 264 is comfortable, ~500 is the sensible ceiling on the current
-design, and past that the artifact — not the compute — is what stops you.**
+**So: 468 is close to the sensible ceiling on the current design, and past
+about 700 the artifact, not the compute, is what stops you.**
 The two changes that lift it are batching the conditions fetch and shipping
 terrain instead of rendered maps; both are in the roadmap below.
 
