@@ -433,6 +433,68 @@ and rate-limited to one request per three seconds per tab, because
 client-side scanning was the one place this app could genuinely have abused
 a volunteer-funded service.
 
+### Counting how many people use it
+
+GitHub Pages gives you no server logs, so counting has to happen in the
+browser. It is **off until you set an endpoint**, at the top of the script in
+`docs/index.html`:
+
+```js
+const ANALYTICS = {
+  endpoint: "https://YOURCODE.goatcounter.com/count",
+  countScans: true,
+};
+```
+
+[GoatCounter](https://www.goatcounter.com/) is the suggested one: free for
+non-commercial use, open source, cookieless, and it accepts a plain GET so no
+third-party script has to be loaded at all. Anything taking
+`?p=<path>&t=<title>&r=<referrer>` works the same way.
+
+**The path is sanitised, and that is the whole point.** The hash of this app
+carries real coordinates — `#@38.6900,-9.3500` is somewhere a person is
+thinking about diving, to about eleven metres. An off-the-shelf snippet
+reports `location.href` verbatim, which would hand a third party a list of
+people's dive spots. So:
+
+| on screen | reported as |
+| --- | --- |
+| `#cascais` | `/r/cascais` — a public region id |
+| `#@38.6900,-9.3500` | **`/point`** — never the coordinates |
+| a structure scan | `/scan` |
+| anything unrecognised | `/` |
+
+No cookies, no identifiers, no tracking between visits, no third-party
+script. Do Not Track and Global Privacy Control are honoured. Because it sets
+no cookie and stores nothing, it does not need a consent banner under
+ePrivacy — but the Sources section in the app says exactly what is sent
+regardless, which is the part that actually matters.
+
+It also cannot break anything: the whole thing is wrapped, and offline the
+request just fails unnoticed.
+
+### Things that only matter once other people are looking
+
+A handful of gaps that were invisible while you were the only user:
+
+- **Point mode had no ban warning at all.** It is the default mode, so a tap
+  inside Bonaire or the Galapagos showed nothing — precisely where the
+  warning matters most, since there is no region page to have read first. A
+  point forecast now inherits the status of whatever configured region it
+  falls inside, and says plainly that protected areas are *not* checked for
+  an arbitrary point rather than letting silence read as an all-clear.
+- **The client-side scan would have walked straight around the ban.** The
+  daily job refuses to publish waypoints in a banned region; *Scan
+  structure* did not. It does now, and says why.
+- **468 regions across 104 countries is a haystack, not a list.** The region
+  picker has a search box (name, country, group or id) and marks banned and
+  restricted coasts in the list itself, not only after you open them.
+- **`add-region.html` was writing stale defaults** — a 24 m depth band, no
+  `group` (so the region would be invisible to `--select <group>`), and
+  `enabled: true`, which would have quietly added a stranger's submission to
+  the schedule. It now writes 25 m, asks for a group, and defaults to off.
+  It was also still pulling OSM's own tiles.
+
 ### Still true, and stated in the app
 
 - The weights are **guesses**. Nothing has been fitted. This is the biggest

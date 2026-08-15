@@ -3295,6 +3295,7 @@ def main():
             "species_file": r.get("species_file"),
             "has_exclusions": bool(r.get("exclusions_file")),
             "spearfishing": r.get("spearfishing"),
+            "spearfishing_note": r.get("spearfishing_note"),
             "bathymetry_provider": payload.get("bathymetry_provider"),
             "bathymetry_native_m": payload.get("bathymetry_native_m"),
             "relief_meaningful": payload.get("relief_meaningful"),

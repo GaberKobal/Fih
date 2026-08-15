@@ -1,130 +1,98 @@
-# v10 — public readiness
+# v12 — final review pass
 
 ```
-v10/
+v12/
 ├── fish_finder.py
-├── config.json
-├── regions.json
 ├── README.md
 └── docs/
     ├── index.html
-    ├── structure.js
-    └── sw.js
+    └── add-region.html
 ```
 
-`docs/anywhere.js` and `docs/add-region.html` are current as of **v8**;
+`config.json`, `regions.json`, `docs/structure.js` and `docs/sw.js` are
+current as of **v10**; `docs/anywhere.js` as of v8;
 `.github/workflows/update.yml` as of v7; `calibrate.py`, `sdb.py`,
 `s2_turbidity.py` as of v3.
 
 ---
 
-## 1. Protected areas
+I went looking for what a public launch would expose that a private one did
+not. Four things, and the first two were holes in the work I had just
+finished.
 
-467 of 468 regions had **no exclusion mask at all**, on a catalogue that
-includes coasts where spearfishing is banned outright. Two layers now:
+## 1. Point mode had no ban warning at all
 
-**Automatic.** OSM protected areas are fetched per region (cached forever)
-and rasterised into the existing exclusion gate. IUCN management categories
-**1a, 1b, 2 and 3 are masked**; **4, 5 and 6 are named but not masked**,
-because they routinely permit fishing — the Great Barrier Reef Marine Park is
-a category 6, and blanking it would delete most of the usable water in
-Queensland for no reason. Multipolygon relations are assembled properly:
-Overpass returns the outer boundary as unordered way fragments, so they are
-chained end to end and only closed rings are used.
+This is the one that mattered. `anywhere.js` never set `spearfishing`, so
+the **default mode** — the one every first-time visitor lands in — showed
+nothing when you tapped inside Bonaire or the Galápagos. Exactly where the
+warning matters most, because there is no region page to have read first.
 
-**Curated.** OSM alone is not enough, and Bonaire proves it. OSM has the
-individual reserves — King Willem-Alexander, Klein Bonaire, Lac Baai — but
-**not the island-wide marine park that actually bans spearfishing**. Masking
-gave 8.2% of the box when the true answer is "all of it". So `regions.json`
-carries a hand-checked flag: **6 regions banned, 33 restricted.**
+A point forecast now inherits the status of whatever configured region it
+falls inside, and where it falls outside all of them it says so plainly
+rather than letting silence read as an all-clear:
 
-**A banned region publishes no waypoints at all.** Not a warning above a
-list of thirty numbered coordinates — the coordinates are what gets used.
-Conditions and the structure map still run, because knowing what the sea is
-doing is not itself a problem.
+> **Protected areas are not checked for an arbitrary point.** Nothing here
+> has been tested against reserve boundaries. Check before you get in.
 
-```
-bonaire            status=banned      general spots=0   species spots=0
-galapagos          status=banned      general spots=0   species spots=0
-poor-knights       status=banned      general spots=0   species spots=0
-fernando-noronha   status=banned      general spots=0   species spots=0
-novigrad           status=None        general spots=30  species spots=96
-```
+## 2. The scan walked straight around the ban
 
-The app shows a red stop banner for banned, amber for restricted, and states
-plainly that OSM marine coverage is incomplete: **no mask is not evidence of
-no reserve.**
+The daily job refuses to publish waypoints in a banned region. *Scan
+structure* did not — it computes spots in the browser, so a user could get
+the coordinates the server had deliberately withheld. It now returns none
+there and says why. The structure map still paints, because seeing that
+ground is interesting was never the problem.
 
-## 2. A safety notice on first open
+## 3. 468 regions across 104 countries is a haystack
 
-Shown before anything else, acknowledged once, remembered in localStorage,
-reachable again from Sources. It says four things a first-time user cannot
-infer from a colour ramp:
+The picker was a flat scroll through every coast on Earth grouped by
+country. There is now a search box matching name, country, group or id, and
+banned and restricted coasts are badged **in the list**, not only once you
+open them.
 
-- the model has **never been fitted against real dives** and can be
-  confidently wrong
-- legal data exists for **5 of 134 jurisdictions**; everywhere else means
-  unknown, not permitted
-- protected-area coverage is incomplete and a spot inside a reserve is
-  possible
-- **breath-hold diving kills experienced people** — shallow water blackout
-  gives no warning; never dive alone
+Filter tested against all four fields: `parede` → cascais, `croatia` →
+novigrad, `caribbean` → bonaire, `komodo` → komodo, no match → empty.
 
-Verified to fit a 375 px phone (653 px card in an 812 px viewport) and to
-scroll if it does not.
+## 4. `add-region.html` was writing stale defaults
 
-## 3. Attribution
+Submissions would have carried a **24 m** depth band, **no `group`** — which
+makes a region invisible to `--select <group>`, the mechanism the whole
+schedule now runs on — and **`enabled: true`**, quietly adding a stranger's
+box to the daily job. Now 25 m, asks for a group, defaults to off. It was
+also still pulling OSM's own tiles, which the v10 policy fix had missed.
 
-A Sources section credits OpenStreetMap under ODbL **for the derived
-coastline, wrecks and protected areas, not just the tiles**, plus OpenSeaMap,
-EMODnet, GMRT, NOAA, Open-Meteo (CC BY 4.0) and Copernicus. The map's own
-attribution line was extended to match.
+## Final run
 
-## 4. Third-party services, used within their policies
+Everything above, plus v10 and v11, verified together:
 
-**The base map moved off `tile.openstreetmap.org`.** The OSMF tile usage
-policy is explicit that those servers are not for third-party applications;
-"my app got popular" is not a defence, and it is a donation-funded resource
-for something else. Now Carto's free basemaps, with attribution. The URL and
-credit are in one `TILES` object at the top of the map setup — that is the
-only thing to change if you later take a provider account.
-
-**Overpass responses are cached in the browser and rate-limited.** This was
-the one place the app could genuinely have abused volunteer infrastructure:
-every press of *Scan structure* issued a fresh query, including re-scanning
-the same coast. Now cached forever in the Cache API keyed by box, and capped
-at one request per three seconds per tab. Server-side was already fine —
-468 regions, once each, cached on disk.
-
-## 5. Payload
-
-`index.json` carried a `note` for every region that the app never renders.
-Removed: **542 KB → 427 KB raw, 32 KB gzipped**, on a file every visitor
-downloads before anything can happen. The note still travels in each
-region's own `latest.json`, fetched only when that coast is opened.
-
-## Verification
-
-- **All 468 through `--selftest`, 6 workers: exit 0, no failures**, 1,086 s.
+- **All 468 regions, `--selftest`, 6 workers: exit 0, no failures**, 1,228 s.
 - 14 assertions over generated output: all pass.
-- Live runs on Bonaire and Novigrad confirming the mask, the curated flag and
-  the waypoint suppression.
-- `index.html` parses; the gate, banner, Sources section and "show again"
-  button all present and correct; both JS modules parse.
-- Artifact 212 MB, unchanged.
+- **Waypoint suppression holds across the whole catalogue**: 6 banned
+  regions, **0 waypoints published**, no violations. 33 restricted regions
+  keep their spots and carry the amber warning.
+- `index.json` 443 KB raw, **33 KB gzipped**, notes confirmed absent.
+- Artifact 213 MB.
+- `fish_finder.py` compiles; `index.html`, `add-region.html`, `anywhere.js`
+  and `structure.js` all parse.
+- No live use of `tile.openstreetmap.org` remains anywhere.
 
-## What is still true, and now said in the app rather than the README
+## What I did not do, and why
 
-- **The weights are guesses.** Nothing has been fitted. This is the largest
-  remaining problem and only dive logs fix it — `calibrate.py` wants about
-  30, blanks included.
-- **129 of 134 jurisdictions have no legal pack**, including HR, which
-  covers Novigrad, Zadar and Dubrovnik.
-- **413 of 468 regions are auto-generated** — plausible bboxes and
-  baselines, not surveyed ones.
-- `max_swim_km` still gates nothing, because `entry_points` is empty. You
-  parked that deliberately.
+**I did not write `legal/HR.json`.** It is the largest remaining gap and it
+covers the three Croatian regions including your home one — but the README
+says HR was the *only* jurisdiction whose closed seasons you had actually
+researched, so that file existed and was lost in the upload rather than
+never written. Reconstructing it from memory would mean inventing fishing
+law, which is the one thing in this repo that must not be guessed. Look for
+the original; if it is gone, it needs an hour with the current *Pravilnik o
+zaštiti riba i drugih morskih organizama* at ribarstvo.mps.hr.
 
-If you want one more thing before launch, make it the Croatian legal pack:
-it is the only jurisdiction you personally dive, and it is the one gap where
-the missing data is both small and entirely knowable.
+The failure mode is at least safe: with no pack, every species reports
+`seasons_unknown`, and the app says "closed seasons not researched" rather
+than implying anything is open.
+
+**Access points are still parked** at your request, so `max_swim_km` gates
+nothing.
+
+**The weights are still guesses.** Nothing has been fitted. That is the
+honest headline for launch, it is the first thing the safety notice says,
+and only dive logs change it.
