@@ -57,17 +57,22 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    # A region that has never been computed downloads its bathymetry and
-    # coastline first: ~32 s at 6 workers against ~2.5 s once cached. Turning
-    # on all 264 at once is therefore a 2-3 hour job, and 180 minutes left
-    # only ~17 minutes of headroom at the default worker count.
+    # 360 minutes is the hard ceiling for a GitHub-hosted job, so this is as
+    # high as it goes. A region that has never been computed downloads its
+    # bathymetry and coastline first: ~32 s at 6 workers against ~2.5 s once
+    # cached, which puts a cold run of all 800 at roughly 7 hours. It does
+    # not fit, and no timeout setting can make it fit.
     #
-    # A timeout is no longer catastrophic — index.json is rewritten as each
-    # region lands and model.json is written before any of them, so a killed
-    # run leaves a smaller but perfectly good site, and the next run picks up
-    # the cached regions in seconds. Still worth the headroom: the ceiling
-    # for a GitHub-hosted job is 360 minutes.
-    timeout-minutes: 330
+    # What matters far more than the number is NOT REACHING IT. This timeout
+    # kills the job, and a killed job does not reliably run its post steps —
+    # which is where actions/cache SAVES. Overrunning would therefore throw
+    # away the several hours of bathymetry the run had just downloaded and
+    # leave the next run just as cold. That is the real cost, not the lost
+    # minutes.
+    #
+    # So FISH_MAX_MINUTES below stops the model cleanly, well short of this,
+    # and this value is only the backstop for something genuinely wedged.
+    timeout-minutes: 360
     steps:
       - uses: actions/checkout@v4
         with:
@@ -177,6 +182,25 @@ jobs:
           COPERNICUSMARINE_SERVICE_PASSWORD: ${{ secrets.COPERNICUSMARINE_SERVICE_PASSWORD }}
           FISH_REGIONS: ${{ github.event.inputs.regions || vars.FISH_REGIONS || '' }}
           FISH_JOBS: ${{ github.event.inputs.jobs || vars.FISH_JOBS || '4' }}
+          # Stop starting regions after this long and exit cleanly.
+          #
+          # 180, not 300, and the binding constraint is NOT the 360-minute
+          # timeout — it is the cron above. Runs are 4 hours apart and
+          # `cancel-in-progress` is on, so any run still working when the
+          # next one fires is killed by its own schedule. A budget over
+          # ~240 minutes guarantees that during a cold build.
+          #
+          # 180 leaves a full hour for everything around the model: cache
+          # restore (~1.4 GB at 800 regions), the artifact upload (334 MB,
+          # 19,200 files, slow), the deploy, and above all the cache save.
+          #
+          # This is what makes a catalogue too big for one run a non-issue.
+          # The model works through regions in regions.json order; already
+          # computed ones cost ~2.5 s because their bathymetry is cached, so
+          # each run gets meaningfully further than the last and a cold 800
+          # converges over a few scheduled runs on its own. Nothing is ever
+          # recomputed and nothing is ever lost.
+          FISH_MAX_MINUTES: ${{ vars.FISH_MAX_MINUTES || '180' }}
         run: python fish_finder.py
 
       - name: Reusing the cached forecast
