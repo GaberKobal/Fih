@@ -237,12 +237,7 @@
       "country": "Spain",
       "jurisdiction": "ES",
       "enabled": false,
-      "bbox": {
-        "lon_min": -0.2,
-        "lat_min": 38.05,
-        "lon_max": 0.25,
-        "lat_max": 38.45
-      },
+      "bbox": {"lon_min": -0.62, "lat_min": 38.1, "lon_max": -0.15, "lat_max": 38.45},
       "species_file": "species.json",
       "exclusions_file": null,
       "depth": {

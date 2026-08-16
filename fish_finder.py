@@ -1448,13 +1448,23 @@ def fetch_conditions_batch(points, cfg):
     points: list of (key, lat, lon). Returns {key: (h, daily, tz)}, missing
     any location the API could not answer for — the caller falls back to a
     single fetch for those, so one bad point never poisons a batch.
+
+    The chunks run CONCURRENTLY. They were serial at first, which was fine
+    at 468 regions and not fine at 800: a hundred locations is real work for
+    the API to compute, about 39 s a response measured, so 16 requests
+    back-to-back was a TEN MINUTE prologue during which every worker sat
+    idle and nothing else could start. The chunks share no state, so the
+    only reason it was serial was that it was written that way. Concurrency
+    against the API is not a concern here either — _throttle() already
+    paces every request to a host across all threads.
     """
     past = cfg["conditions"]["past_days"]
     fwd = cfg["conditions"]["forecast_days"]
     size = max(1, int((cfg.get("conditions") or {}).get("batch_size", 100)))
-    out = {}
-    for i in range(0, len(points), size):
-        chunk = points[i:i + size]
+    chunks = [points[i:i + size] for i in range(0, len(points), size)]
+
+    def one(chunk):
+        """One chunk, both endpoints. Returns {key: merged} — never raises."""
         lats = ",".join(f"{p[1]:.4f}" for p in chunk)
         lons = ",".join(f"{p[2]:.4f}" for p in chunk)
         common = {"latitude": lats, "longitude": lons, "past_days": past,
@@ -1468,22 +1478,36 @@ def fetch_conditions_batch(points, cfg):
         except Exception as e:
             log(f"conditions: batch of {len(chunk)} failed "
                 f"({e.__class__.__name__}) - those regions will fetch singly")
-            continue
+            return {}
         # A single-location request comes back as an object, not a list.
         m = m if isinstance(m, list) else [m]
         w = w if isinstance(w, list) else [w]
         if len(m) != len(chunk) or len(w) != len(chunk):
             log(f"conditions: batch returned {len(m)}/{len(w)} results for "
                 f"{len(chunk)} locations - falling back to single fetches")
-            continue
+            return {}
+        got = {}
         for (key, _, _), mm, ww in zip(chunk, m, w):
             try:
-                out[key] = _merge_conditions(mm, ww)
+                got[key] = _merge_conditions(mm, ww)
             except Exception as e:
                 log(f"conditions: {key} unusable in batch "
                     f"({e.__class__.__name__}) - will fetch singly")
+        return got
+
+    out = {}
+    if len(chunks) == 1:
+        out.update(one(chunks[0]))
+    else:
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=min(8, len(chunks))) as pool:
+            # Merged here on the main thread rather than in the workers, so
+            # nothing depends on dict writes being atomic.
+            for got in pool.map(one, chunks):
+                out.update(got)
     log(f"conditions: {len(out)}/{len(points)} region(s) from "
-        f"{2 * ((len(points) + size - 1) // size)} batched request(s)")
+        f"{2 * len(chunks)} batched request(s) in {len(chunks)} parallel "
+        f"chunk(s)")
     return out
 
 
@@ -2695,7 +2719,10 @@ def run(cfg, selftest=False, out_dir=None, conditions=None):
     nodata = ~np.isfinite(elev_g)
     land = nodata | (elev_g >= 0)
     if nodata.any():
-        log(f"bathymetry: {nodata.mean():.0%} of the box has no EMODnet data "
+        # Name the provider that was actually used. This said "EMODnet"
+        # unconditionally, so every GMRT and SRTM15+ region in the world
+        # reported a gap in a source it had never queried.
+        log(f"bathymetry: {nodata.mean():.0%} of the box has no {provider} data "
             "(raster does not reach the bbox) - treated as unusable, not as land")
 
     # Intersect with the real coastline before deciding what is sea. Without

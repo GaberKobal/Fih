@@ -194,6 +194,13 @@ limits, in the order you will hit them:
    ceiling it implied. The per-minute limit is handled in code by a cross-thread throttle
    (`_HOST_MIN_INTERVAL`), which holds the whole process to ~400/min no
    matter how many workers run.
+
+   The chunks are fetched **concurrently**. They were serial to begin with,
+   which was invisible at 468 regions and expensive at 800: a hundred
+   locations is real work for the API, and one production run spent **10
+   minutes** on 16 back-to-back requests before a single region started,
+   with all six workers idle. Same call count, one chunk's wait instead of
+   eight.
 3. **GitHub Pages** will not publish a site over 1 GB, and the artifact
    upload degrades well before that. 800 regions is roughly **364 MB and
    19,200 files**. This is now comfortably the tightest constraint: the hard

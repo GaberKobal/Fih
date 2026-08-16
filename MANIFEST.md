@@ -1,92 +1,116 @@
-# v16 — the budget had to fit the cron, not the timeout
+# v17 — three bugs the 800-region run exposed, and the phone legend
 
 ```
-v16/
+v17/
+├── fish_finder.py
+├── config.json
+├── regions.json
 ├── README.md
-└── .github/workflows/update.yml
+└── docs/index.html
 ```
 
-`fish_finder.py` current as of **v15** — no code change, the logic was right,
-the number was wrong. `regions.json` and `docs/index.html` v14.
+`.github/workflows/update.yml` current as of **v16**; `docs/structure.js`
+and `docs/sw.js` v10; `docs/add-region.html` v12; `docs/anywhere.js` v8.
+
+**Do not push while a run is in progress.** `cancel-in-progress: true` plus
+the `push` trigger means a commit kills the running job, and a cancelled job
+does not reliably save the cache.
 
 ---
 
-## Yes, you can run all 800 now. One correction first.
+## 1. CMEMS was dead everywhere outside the Mediterranean
 
-v15 set `FISH_MAX_MINUTES` to 300 to stay clear of the 360-minute job kill.
-That was the wrong constraint to measure against:
-
-```yaml
-- cron: "40 3,7,11,15,19,23 * * *"   # every 240 minutes
-concurrency:
-  cancel-in-progress: true
-```
-
-Runs are **four hours apart and cancel each other**. A 300-minute run is
-still working when the next one fires, so during a cold build **every run
-would be killed by its own schedule at ~240 minutes** — never reaching the
-clean stop, and putting the cache save back in exactly the jeopardy v15
-existed to remove.
-
-**`FISH_MAX_MINUTES` is now 180**, leaving an hour for cache restore
-(~1.4 GB at 800), the 334 MB artifact upload, and the deploy. The 360-minute
-timeout stays as the backstop.
-
-## What actually happens when you set it to `all`
-
-Modelled on the **measured** cold cost — 84.9 s/region at 6 workers, from
-the 24-region live run in v14, not the older optimistic 32 s:
-
-| run | re-walking warm | new cold | total |
-| --- | --- | --- | --- |
-| 1 | — | 127 | 127 |
-| 2 | 5 min | 123 | 250 |
-| 3 | 10 min | 119 | 369 |
-| 4 | 15 min | 116 | 485 |
-| 5 | 20 min | 112 | 597 |
-| 6 | 25 min | 109 | 706 |
-| 7 | 29 min | 94 | **800** |
-
-**Seven runs, about 28 hours**, unattended. The site grows each run and is
-live and correct throughout — it just has fewer coasts on it at first.
-
-Note the shape: the re-walk grows while the new-cold count shrinks. This
-converges more slowly the larger the catalogue. At 800 it is comfortable; it
-would not scale to 5,000.
-
-## Set these three
-
-| variable | value |
-| --- | --- |
-| `FISH_REGIONS` | `all` |
-| `FISH_JOBS` | `6` |
-| `FISH_MAX_MINUTES` | leave unset — 180 is the default |
-
-Settings → Secrets and variables → Actions → Variables.
-
-## Two things to check before you start
-
-**Is the repository public?** Actions minutes are free and unlimited on
-public repos. On a private one the cold build alone is roughly **7 runs x 3.5
-h = 1,500 minutes against a 2,000/month allowance**, and the steady state
-after that is ~4,500 a month. Private is not viable on the free tier.
-
-**Watch the artifact.** The "Report output size" step prints it every run.
-334 MB and 19,200 files at 800 regions, against a 1 GB Pages limit. If the
-upload starts dragging, that is the ceiling arriving, and the fix is the
-roadmap item: ship terrain rasters instead of rendered per-species maps.
-
-## How to tell it is working
-
-Each run should end with either a `deferred` line or a clean completion, and
-**the cache must grow**:
+Every global region in the production log:
 
 ```
-computed 127 region(s) in 10783 s (84.9 s each, 6 worker(s))
-deferred 673 region(s) - the 180 minute budget ran out. This is not an error...
-bathymetry grids cached: 127
+cmems: unavailable (VariableDoesNotExistInTheDataset: The variable 'thetao'
+is neither a variable or a standard name in the dataset.)
 ```
 
-If `bathymetry grids cached` is not larger than the previous run, the cache
-is not being saved and every run is starting cold — stop and look at that
-before letting it churn for a day.
+Mediterranean regions were fine, which is exactly what hid it. Copernicus
+splits **both** products into one dataset per variable — which is why the
+Med id already carried `-tem` — but the global id was the bare bundle:
+
+| | id | temperature |
+| --- | --- | --- |
+| Med | `cmems_mod_med_phy**-tem**_anfc_4.2km_P1D-m` | yes |
+| global, before | `cmems_mod_glo_phy_anfc_0.083deg_P1D-m` | **no** |
+| global, now | `cmems_mod_glo_phy**-thetao**_anfc_0.083deg_P1D-m` | yes |
+
+Confirmed against the public STAC catalogue rather than reasoned from the
+pattern: `GLOBAL_ANALYSISFORECAST_PHY_001_024` lists both ids, and only the
+`-thetao` one carries temperature. Its version suffix is `_202406`, which is
+the version the production log printed.
+
+It fell back to the thermocline estimate every time, so nothing broke — the
+CMEMS credentials were simply buying nothing outside the Med.
+
+## 2. `costa-blanca` had no coastline in its box
+
+`lon -0.2 … 0.25` at that latitude is open sea; the coast is near `-0.5`.
+The log agreed: `no OSM coastline in this box`, water 99%, **minimum depth
+70.6 m**, `contours.geojson (0 lines)`.
+
+Moved to `lon -0.62 … -0.15`, `lat 38.10 … 38.45` — 41 x 39 km, containing
+Santa Pola, Tabarca and Alicante. Verified on the live network:
+
+| | before | after |
+| --- | --- | --- |
+| OSM coastline ways | 0 | **33** |
+| shallowest water | 70.6 m | **0.0 m** |
+| spots | unusable | **30** |
+| depth contours | 0 | **13** |
+
+## 3. Ten minutes of every run bought nothing
+
+The batch fetch looped chunks serially. Invisible at 468 regions; at 800 it
+was **16 back-to-back requests taking 10 min 18 s before a single region
+started**, with all six workers idle — and it came out of the 180-minute
+budget on every run.
+
+The chunks share no state. They now go through a thread pool, and
+`_throttle()` already paces requests per host across threads, so the API
+sees nothing new. Same 16 calls, one chunk's wait instead of eight.
+
+Measured on 250 real region centres, 3 chunks: **250/250 in 3 s.** Worth
+saying plainly — the CI run's ~39 s per request did not reproduce locally,
+so the size of the saving depends on API load. The shape of the fix does not.
+
+Also fixed: the no-data message hard-coded "EMODnet", so every GMRT and
+SRTM15+ region reported a gap in a source it had never queried.
+
+## 4. The legend took two-thirds of the phone map
+
+Measured at 375x812: the map is `50vh` = 406 px and the legend was **268 px
+of it**. It now collapses to the score ramp, which is the only part you read
+at a glance; everything else is a setting you touch once.
+
+| 375x812 | before | after |
+| --- | --- | --- |
+| default | 268 px, **66%** | **64 px, 16%** |
+| opened by tapping | — | 179 px, 44%, then scrolls |
+
+The choice persists in `localStorage`, because the controls inside are ones
+you set and want to stay set. **Desktop is untouched** — verified at
+1280x860: no toggle, no height cap, 210 x 332 px exactly as before.
+
+One correction worth recording: my first cap was `33vh`, which I described
+as "a third of the map". It is a third of the *viewport*, and the map is
+only `50vh` — so it was still 66% of the map and fixed nothing. The comment
+in the CSS now says to halve any `vh` figure to get the number that matters.
+
+## Verified
+
+- **10/10 assertions**, plus a 36-region and an 8-region selftest, 0 failures.
+- Costa Blanca **on the live network** — the table above.
+- The batch fetch **on the live API** — 250/250, and per-location timezones
+  still resolving correctly through the thread pool (Novigrad +2, Oahu -10,
+  Rottnest +8, Poor Knights +12).
+- The legend **in a real browser** at 375x812 and 1280x860: first load
+  collapses on the phone and stays open on the desktop, the toggle persists,
+  and `#ctoggle`, `#wtoggle`, `#opac`, `#scanbox`, `#scan`, `#radius` all
+  remain reachable inside the scroll area.
+
+Not verified: the rotate-across-breakpoint handler. Its first-load
+equivalent is verified at both sizes; the live `matchMedia` change did not
+fire in my test harness, so that one path is reasoned, not measured.

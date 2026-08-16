@@ -202,7 +202,8 @@
     "variable": "thetao",
     "pad_deg": 0.1,
     "max_depth_m": 50.0,
-    "dataset_id_global": "cmems_mod_glo_phy_anfc_0.083deg_P1D-m"
+    "_note_global": "Note the -thetao. Copernicus splits both the Mediterranean and the global analysis-forecast products into one dataset per variable, which is why dataset_id above carries -tem. The global id here was the bare cmems_mod_glo_phy_anfc_0.083deg_P1D-m, which exists but does not serve temperature: every region outside the Mediterranean failed with 'The variable thetao is neither a variable or a standard name in the dataset' and silently fell back to the thermocline estimate. The Mediterranean worked throughout, which is what hid it.",
+    "dataset_id_global": "cmems_mod_glo_phy-thetao_anfc_0.083deg_P1D-m"
   },
   "water": {
     "_note": "min_width_cells severs narrow channels; require_sea_connection then discards whatever is left inland. EMODnet carries the Mirna estuary several km up the valley and it was being scored as diveable sea.",
