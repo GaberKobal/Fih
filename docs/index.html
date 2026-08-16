@@ -262,7 +262,18 @@
     background:rgba(7,26,34,.88); border:1px solid var(--line); border-radius:3px;
     padding:9px 11px; font-family:var(--sans); max-width:210px;
   }
-  #maptools .eyebrow{margin-bottom:5px}
+  #maptools .mthead{display:flex; align-items:center; justify-content:space-between;
+    gap:10px; margin-bottom:5px}
+  #maptools .mthead .eyebrow{margin:0}
+  /* Hidden on desktop: there the panel is a small corner box and collapsing
+     it would only add a click. It appears at the phone breakpoint below. */
+  #mtoggle{display:none; flex:0 0 auto; width:26px; height:26px; margin:-5px -5px -3px 0;
+    background:none; border:1px solid var(--line); border-radius:3px;
+    color:var(--sound); cursor:pointer; font:600 15px/1 var(--sans)}
+  #mtoggle::before{content:"\2212"}            /* minus */
+  #maptools.collapsed #mtoggle::before{content:"+"}
+  #maptools.collapsed #mtbody{display:none}
+  #maptools.collapsed #ramplab{margin-bottom:0}
   #ramp{height:9px; border-radius:2px; margin-bottom:3px;
     background:linear-gradient(90deg,#440154,#3b528b,#21918c,#5ec962,#fde725)}
   #ramplab{display:flex; justify-content:space-between;
@@ -424,6 +435,20 @@
     #verdict{order:1; flex:0 0 auto}
     #map{order:2; flex:0 0 auto; height:50vh; min-height:0}
     #sheet{order:3; flex:0 0 auto; max-height:none; overflow:visible}
+    /* The map is 50vh here, so on an 812 px phone it is 406 px and the legend
+       was 268 px of it. Collapsed it is 64 px, or 16%.
+       max-height is in vh while the map is 50vh, so HALVE it to read the
+       figure that matters: 22vh is 179 px, about 44% of the map, and only
+       while the reader has deliberately opened it. Past that it scrolls
+       rather than growing. */
+    #mtoggle{display:block}
+    /* min-width matters once it collapses: the box shrink-wraps its content,
+       and with only the header left that was 84 px, squashing the ramp the
+       panel exists to show. */
+    #maptools{max-height:22vh; overflow-y:auto; padding:8px 10px;
+      max-width:190px; min-width:158px}
+    #maptools .keyrow{font-size:11px}
+    #maptools label{margin-top:7px; font-size:12px}
   }
   @media (min-width:820px){
     body{flex-direction:row}
@@ -589,9 +614,18 @@
 <div id="map">
   <button id="locate" type="button" title="Show my position">◎</button>
   <div id="maptools">
-    <div class="eyebrow">Score</div>
+    <!-- On a phone this panel was about 300 px tall against a ~440 px map:
+         the score ramp, two key rows, three controls and the scan box. It
+         collapses to just the ramp there, which is the only part you read
+         at a glance; everything else is a setting you touch once. -->
+    <div class="mthead">
+      <div class="eyebrow">Score</div>
+      <button type="button" id="mtoggle" aria-expanded="true"
+              aria-controls="mtbody" aria-label="Show or hide map controls"></button>
+    </div>
     <div id="ramp"></div>
     <div id="ramplab"><span>low</span><span>high</span></div>
+   <div id="mtbody">
     <!-- Key. The wreck symbol was on the map with nothing anywhere saying
          what it meant, so it read as either a hazard or another model
          mark. It is neither: it is charted third-party data. -->
@@ -620,6 +654,7 @@
       </label>
       <div id="scanmsg" style="font-size:11.5px;color:var(--sound);margin-top:5px;line-height:1.4"></div>
     </div>
+   </div><!-- /#mtbody -->
   </div>
 </div>
 
@@ -781,6 +816,31 @@ L.DomEvent.disableClickPropagation(mapTools);
 L.DomEvent.disableScrollPropagation(mapTools);
 ["pointerdown", "pointerup", "touchstart", "touchend"].forEach(type =>
   mapTools.addEventListener(type, e => e.stopPropagation()));
+
+// Start collapsed on a phone, open on a desktop. Matched to the CSS
+// breakpoint above rather than to a user-agent string. Once the reader has
+// chosen, remember it: the controls inside are things you set and then want
+// to stay set, and reopening the panel on every visit to reach them is worse
+// than the height it costs.
+const mtBreak = window.matchMedia("(max-width:819px)");
+const mtBtn = $("#mtoggle");
+function setTools(open){
+  mapTools.classList.toggle("collapsed", !open);
+  mtBtn.setAttribute("aria-expanded", String(open));
+}
+let mtSaved = null;
+try { mtSaved = localStorage.getItem("maptools"); } catch {}
+setTools(mtSaved === null ? !mtBreak.matches : mtSaved === "open");
+mtBtn.addEventListener("click", () => {
+  const open = mapTools.classList.contains("collapsed");
+  setTools(open);
+  try { localStorage.setItem("maptools", open ? "open" : "shut"); } catch {}
+});
+// Rotating the phone, or resizing a desktop window across the breakpoint,
+// should pick the sensible default again for anyone who has never chosen.
+mtBreak.addEventListener("change", e => {
+  if (mtSaved === null) setTools(!e.matches);
+});
 
 let overlay=null, marks=[], DATA=null, sel=null;   // sel: null = structure map
 let INDEX=null, REGION=null, contours=null, wreckLayer=null, meMarker=null;
