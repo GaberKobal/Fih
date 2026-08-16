@@ -1086,8 +1086,17 @@ def fetch_osm_context(bbox, cfg, region_id):
 
     Returns (coastline_lines, wrecks_geojson).
     """
-    cf = CACHE / f"coastline_{region_id}.json"
-    wf = CACHE / f"wrecks_{region_id}.geojson"
+    # Keyed by region id AND bbox. It used to be the id alone, which is
+    # wrong in the one case that matters: MOVING A REGION'S BOX. The
+    # bathymetry cache is keyed by bbox and would refetch correctly, so a
+    # corrected box would silently keep the OLD coastline and wrecks and
+    # look unchanged. costa-blanca is exactly that case — its box had no
+    # coastline at all, and that empty result would have been served back
+    # forever, defeating the fix. A moved box now simply misses.
+    bkey = (f"{bbox['lon_min']}_{bbox['lat_min']}_"
+            f"{bbox['lon_max']}_{bbox['lat_max']}")
+    cf = CACHE / f"coastline_{region_id}_{bkey}.json"
+    wf = CACHE / f"wrecks_{region_id}_{bkey}.geojson"
     if cf.exists() and wf.exists():
         return (json.loads(cf.read_text(encoding="utf-8")),
                 json.loads(wf.read_text(encoding="utf-8")))

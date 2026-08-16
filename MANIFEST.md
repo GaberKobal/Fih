@@ -79,7 +79,33 @@ so the size of the saving depends on API load. The shape of the fix does not.
 Also fixed: the no-data message hard-coded "EMODnet", so every GMRT and
 SRTM15+ region reported a gap in a source it had never queried.
 
-## 4. The legend took two-thirds of the phone map
+## 4. The coastline cache would have defeated fix 2
+
+Found while working out what a push actually invalidates. Bathymetry is
+cached **by bbox**, so a moved box refetches correctly. Coastline and wrecks
+were cached **by region id alone**:
+
+```
+cache/coastline_costa-blanca.json     <- the OLD box's result
+```
+
+That box had no coastline in it. So in CI — where that file exists from the
+production run — the corrected box would have loaded fresh bathymetry and
+then reapplied the **empty** cached coastline, and Costa Blanca would have
+looked exactly as broken as before. It only worked on my machine because
+this cache had never held that region.
+
+Both are now keyed by id **and** bbox, so a moved box simply misses:
+
+```
+cache/coastline_costa-blanca_-0.62_38.1_-0.15_38.45.json   -> 33 ways
+```
+
+**Cost: every region refetches its coastline once.** Bathymetry — the
+expensive part, ~1 MB and most of the cold time — is untouched and stays
+cached. Expect one run to be somewhat longer, not a rebuild.
+
+## 5. The legend took two-thirds of the phone map
 
 Measured at 375x812: the map is `50vh` = 406 px and the legend was **268 px
 of it**. It now collapses to the score ramp, which is the only part you read
@@ -98,6 +124,16 @@ One correction worth recording: my first cap was `33vh`, which I described
 as "a third of the map". It is a third of the *viewport*, and the map is
 only `50vh` — so it was still 66% of the map and fixed nothing. The comment
 in the CSS now says to halve any `vh` figure to get the number that matters.
+
+## Upload all of these in ONE commit
+
+Each push starts a run, and `cancel-in-progress` means the next push kills
+the last one. Two uploads a minute apart cancel each other; that is what
+happened to run #178. One commit, then leave it alone.
+
+Note also that a commit touching **only** `docs/index.html` takes the
+frontend-only path and does **not** run the model — it republishes the
+cached forecast in about 90 seconds and reports green.
 
 ## Verified
 
