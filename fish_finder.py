@@ -54,6 +54,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import html
 import io
 import json
 import math
@@ -1853,9 +1854,34 @@ def visibility_series(h, cfg, depth_m=None, river=None):
     # shelf and a Cycladic drop-off are not the same water. Override it per
     # region in regions.json.
     # stirring_series already returns 0-1, so it needs no second normalise.
+    # Rain responds on a CONCAVE curve, not a straight line.
+    #
+    # decay_memory normalises so that a *constant* input converges to that
+    # input, which means a short sharp downpour never reaches anything near
+    # the reference: 5 mm in an hour peaked at 0.12 against a 1.2 reference,
+    # so it moved visibility by 0.7 m and a 2 mm shower by 0.3 m. Both are
+    # far too forgiving - runoff and the first flush off the land wreck
+    # inshore water long before the total looks impressive.
+    #
+    # Simply lowering the reference fixes the small events and ruins the big
+    # ones: at every setting that made 5 mm bite, a 20 mm storm and a 60 mm
+    # deluge both pinned to the floor and became indistinguishable. An
+    # exponent below 1 lifts the bottom of the range without spending the
+    # top, which is the actual shape of the problem. Measured, 12 m depth:
+    #
+    #                    before            after
+    #   2 mm in 1 h      0.3 m            1.2 m
+    #   5 mm in 1 h      0.7 m            2.0 m
+    #   20 mm over 6 h   2.5 m            4.1 m
+    #   60 mm over 12 h  6.5 m            6.5 m   (still the full range)
+    #
+    # and 24 h after a 20 mm storm it is still 3.1 m down rather than 1.3 m,
+    # which is nearer to how long a coast actually stays dirty.
+    rain_term = norm(plume, 0.0, c["rain_ref_mm_per_h"]) ** float(
+        c.get("rain_exponent", 1.0))
     turbidity = (float(c.get("baseline", 0.0))
                  + c["wave_weight"] * np.clip(stir, 0.0, 1.0)
-                 + c["rain_weight"] * norm(plume, 0.0, c["rain_ref_mm_per_h"]))
+                 + c["rain_weight"] * rain_term)
     if river is not None:
         turbidity = turbidity + float(c.get("river_weight", 0.35)) * river
     viz = np.clip(1.0 - turbidity, 0.0, 1.0)
@@ -3576,6 +3602,242 @@ def main():
     log(f"wrote {idx_path} ({len(index)} region(s)"
         + (f", {len(failed)} failed" if failed else "")
         + (f", {len(deferred)} deferred" if deferred else "") + ")")
+
+    # Crawlable pages last, from the same entries the catalogue was built
+    # from. Wrapped: this is discoverability, and nothing about it is worth
+    # failing a run that has already produced a good forecast.
+    try:
+        write_static_pages(index, base)
+    except Exception as e:
+        log(f"static pages: skipped ({e.__class__.__name__}: {e}) - "
+            "the forecast itself is unaffected")
+
+
+STATIC_CSS = """
+:root{--abyss:#071A22;--shelf:#0E2E3A;--line:#1E5163;--chart:#C9DDE3;
+--sound:#6E93A0;--buoy:#F2B138;--flag:#E4573D;--kelp:#5FBFA0;
+--sans:"Nunito Sans",ui-rounded,-apple-system,"Segoe UI",Roboto,Arial,sans-serif}
+*{box-sizing:border-box}
+body{margin:0;background:var(--abyss);color:var(--chart);font-family:var(--sans);
+line-height:1.55;-webkit-font-smoothing:antialiased}
+main{max-width:640px;margin:0 auto;padding:28px 18px 56px}
+.eyebrow{font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;
+color:var(--sound);margin:0 0 6px}
+h1{font-size:27px;line-height:1.2;margin:0 0 4px;letter-spacing:-.01em}
+.sub{color:var(--sound);font-size:14px;margin:0 0 22px}
+.verdict{display:inline-block;font-size:19px;font-weight:700;padding:9px 15px;
+border-radius:6px;background:var(--shelf);border:1px solid var(--line);margin:0 0 20px}
+.v-go{border-color:var(--kelp);color:var(--kelp)}
+.v-marginal{border-color:var(--buoy);color:var(--buoy)}
+.v-bad{border-color:var(--flag);color:var(--flag)}
+dl{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:1px;
+background:var(--line);border:1px solid var(--line);border-radius:6px;
+overflow:hidden;margin:0 0 22px}
+dl>div{background:var(--shelf);padding:12px 14px}
+dt{font-size:11.5px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;
+color:var(--sound);margin:0 0 3px}
+dd{margin:0;font-size:19px;font-weight:600;font-variant-numeric:tabular-nums}
+.cta{display:inline-block;background:var(--buoy);color:var(--abyss);font-weight:700;
+font-size:15px;padding:13px 20px;border-radius:6px;text-decoration:none}
+.note{background:var(--shelf);border:1px solid var(--line);border-left:3px solid var(--sound);
+border-radius:4px;padding:11px 14px;margin:16px 0;font-size:13.5px;color:var(--sound)}
+.note.warn{border-left-color:var(--flag);color:var(--chart)}
+.note b{color:var(--chart)}
+footer{margin-top:34px;padding-top:16px;border-top:1px solid var(--line);
+font-size:12.5px;color:var(--sound)}
+a{color:var(--buoy)}
+.cols{columns:2;column-gap:26px;font-size:14px;margin-top:8px}
+.cols a{display:block;padding:3px 0;text-decoration:none;break-inside:avoid}
+.cols a:hover{text-decoration:underline}
+h2{font-size:15px;margin:22px 0 2px;color:var(--sound);
+border-bottom:1px solid var(--line);padding-bottom:5px}
+@media(max-width:520px){.cols{columns:1}}
+"""
+
+
+def _vclass(verdict):
+    v = (verdict or "").lower()
+    if v.startswith("go"):
+        return "v-go"
+    return "v-marginal" if "marginal" in v else "v-bad"
+
+
+def write_static_pages(index, base):
+    """A real, crawlable HTML page per region, plus a sitemap.
+
+    THE APP ITSELF IS ONE URL. Regions are selected through the location
+    hash (`#novigrad`), and a fragment is never sent to a server and is not
+    indexed as a page — so 800 coasts of unique content were, to a search
+    engine, a single document titled "Dive forecast". Nobody searches for a
+    dive forecast app; they search for conditions at the coast in front of
+    them, in their own language, and nothing here could match.
+
+    These pages exist to be found. Each one carries its own title, its own
+    description and the current verdict AS TEXT IN THE MARKUP rather than
+    fetched by script, because a crawler that has to run the app to see the
+    content usually will not. They are regenerated every run, they link into
+    the live map, and they carry Open Graph tags so a link pasted into a
+    forum or a group unfurls with the coast's name and today's conditions
+    instead of a bare URL.
+    """
+    site = (base.get("site_url") or "").rstrip("/")
+    if not site:
+        log("static pages: no site_url in config.json - skipping "
+            "(sitemap entries have to be absolute URLs)")
+        return
+    out = ROOT / "docs" / "r"
+    out.mkdir(parents=True, exist_ok=True)
+    today = dt.datetime.now(dt.timezone.utc).date().isoformat()
+    e = html.escape
+
+    written = 0
+    for r in index:
+        name, country = r.get("name", r["id"]), r.get("country", "")
+        viz = r.get("visibility_m")
+        verdict = r.get("verdict", "")
+        win = r.get("best_window") or {}
+        # best_window carries ISO start/end in LOCAL time, not a label. The
+        # first version of this looked for one and quietly printed "see the
+        # map" on all 800 pages, which is the least useful thing a page
+        # about when to dive could say.
+        wtxt = "see the map"
+        try:
+            a = dt.datetime.fromisoformat(win["start"])
+            b = dt.datetime.fromisoformat(win["end"])
+            wtxt = f"{a:%a} {a:%H:%M} to {b:%H:%M}"
+        except Exception:
+            pass
+        vtxt = f"{viz:.0f} m" if isinstance(viz, (int, float)) else "n/a"
+        sst = win.get("sea_temp_c")
+        sst_cell = (f"<div><dt>Sea temp</dt><dd>{sst:.0f}&deg;C</dd></div>"
+                    if isinstance(sst, (int, float)) else "")
+        title = f"{name}, {country}: spearfishing and freediving conditions".strip(", ")
+        desc = (f"{name}: {verdict}. Visibility about {vtxt}. "
+                f"Sea state, swell, tide and the best window for the next three "
+                f"days. Free, no account needed.")
+        url = f"{site}/r/{r['id']}/"
+
+        notes = []
+        if r.get("spearfishing") == "banned":
+            notes.append('<div class="note warn"><b>Spearfishing is banned here.</b> '
+                         + e(r.get("spearfishing_note") or "No waypoints are published "
+                             "for this coast. The conditions are shown for freediving "
+                             "and snorkelling only.") + "</div>")
+        elif r.get("spearfishing") == "restricted":
+            notes.append('<div class="note warn"><b>Spearfishing is restricted here.</b> '
+                         + e(r.get("spearfishing_note") or "Check the local rules "
+                             "before you get in.") + "</div>")
+        if r.get("relief_meaningful") is False:
+            nat = r.get("bathymetry_native_m")
+            notes.append('<div class="note">The seabed data here is about '
+                         + (f"{nat:.0f} m" if isinstance(nat, (int, float)) else "coarse")
+                         + " per cell, which is too broad to resolve reef-scale "
+                           "structure. Treat the marks as <b>where the shelf does "
+                           "something</b>, not as spots.</div>")
+        notes.append('<div class="note">Closed seasons, minimum sizes and protected '
+                     'areas are <b>your responsibility to check</b>. Protected areas '
+                     'shown in the app come from OpenStreetMap and its marine coverage '
+                     'is incomplete, so no mask is not evidence that there is no '
+                     'reserve.</div>')
+
+        page = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{e(title)}</title>
+<meta name="description" content="{e(desc)}">
+<link rel="canonical" href="{e(url)}">
+<meta property="og:type" content="website">
+<meta property="og:title" content="{e(title)}">
+<meta property="og:description" content="{e(desc)}">
+<meta property="og:url" content="{e(url)}">
+<meta name="twitter:card" content="summary">
+<style>{STATIC_CSS}</style>
+</head>
+<body>
+<main>
+<p class="eyebrow">Dive forecast</p>
+<h1>{e(name)}</h1>
+<p class="sub">{e(country)} &middot; {r['centre'][0]:.3f}, {r['centre'][1]:.3f}</p>
+<p class="verdict {_vclass(verdict)}">{e(verdict)}</p>
+<dl>
+<div><dt>Visibility</dt><dd>{e(vtxt)}</dd></div>
+{sst_cell}
+<div><dt>Wind from</dt><dd>{r.get('wind_from_deg') or 0:.0f}&deg;</dd></div>
+<div><dt>Best window</dt><dd>{e(str(wtxt))}</dd></div>
+</dl>
+<p><a class="cta" href="../../#{e(r['id'])}">Open the live map</a></p>
+{"".join(notes)}
+<footer>
+Updated {e(str(r.get('generated', today))[:16].replace('T', ' '))} UTC and refreshed
+every four hours. <a href="../">All coasts</a> &middot;
+<a href="../../">The map</a>
+</footer>
+</main>
+</body>
+</html>
+"""
+        d = out / r["id"]
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "index.html").write_text(page, encoding="utf-8")
+        written += 1
+
+    # A hub page. The sitemap alone is enough for the big engines, but an
+    # ordinary page of links is what makes the set crawlable by anything
+    # else, and it is genuinely useful as a plain list of every coast.
+    by_country = {}
+    for r in index:
+        by_country.setdefault(r.get("country") or "Elsewhere", []).append(r)
+    blocks = []
+    for c in sorted(by_country):
+        links = "".join(
+            f'<a href="./{e(r["id"])}/">{e(r.get("name", r["id"]))}</a>'
+            for r in sorted(by_country[c], key=lambda x: x.get("name", "")))
+        blocks.append(f"<h2>{e(c)}</h2><div class='cols'>{links}</div>")
+    hub_desc = (f"Spearfishing and freediving conditions for {len(index)} coasts "
+                f"in {len({r.get('country') for r in index})} countries. Visibility, "
+                f"sea state, swell, tide and the daylight window.")
+    (out / "index.html").write_text(f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Every coast: spearfishing and freediving conditions</title>
+<meta name="description" content="{e(hub_desc)}">
+<link rel="canonical" href="{e(site)}/r/">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Every coast: spearfishing and freediving conditions">
+<meta property="og:description" content="{e(hub_desc)}">
+<meta property="og:url" content="{e(site)}/r/">
+<style>{STATIC_CSS}</style>
+</head>
+<body>
+<main>
+<p class="eyebrow">Dive forecast</p>
+<h1>Every coast</h1>
+<p class="sub">{len(index)} coasts, {len({r.get('country') for r in index})} countries.
+Or <a href="../">tap anywhere on the map</a> for a point forecast worldwide.</p>
+{"".join(blocks)}
+<footer>Updated {today}. <a href="../">The map</a></footer>
+</main>
+</body>
+</html>
+""", encoding="utf-8")
+
+    urls = [f"{site}/", f"{site}/r/"] + [f"{site}/r/{r['id']}/" for r in index]
+    sm = ["<?xml version='1.0' encoding='UTF-8'?>",
+          '<urlset xmlns="http://www.sitemap.org/schemas/sitemap/0.9">'.replace(
+              "www.sitemap.org", "www.sitemaps.org")]
+    for u in urls:
+        sm.append(f"<url><loc>{e(u)}</loc><lastmod>{today}</lastmod>"
+                  f"<changefreq>daily</changefreq></url>")
+    sm.append("</urlset>")
+    (ROOT / "docs" / "sitemap.xml").write_text("\n".join(sm), encoding="utf-8")
+    (ROOT / "docs" / "robots.txt").write_text(
+        f"User-agent: *\nAllow: /\nSitemap: {site}/sitemap.xml\n", encoding="utf-8")
+    log(f"static pages: {written} region page(s) + hub, sitemap with "
+        f"{len(urls)} URLs, robots.txt")
 
 
 def write_model(base, regions):

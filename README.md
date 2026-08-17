@@ -532,6 +532,40 @@ Batched 100 at a time, a full 800-region run is **16 calls**, and a day is
 Any location the batch cannot answer for simply falls back to its own single
 request, so one bad point never poisons a batch of a hundred.
 
+### Being findable at all
+
+The app is **one URL**. Regions are selected through the location hash
+(`#novigrad`), and a fragment is never sent to a server and is not indexed
+as a page. So 800 coasts of unique, current content were, to a search
+engine, a single document titled "Dive forecast" — and nobody searches for a
+dive forecast app. They search for the conditions at the coast in front of
+them, in their own language.
+
+Every run therefore also writes a set of ordinary, crawlable pages:
+
+```
+docs/r/<id>/index.html    one page per region
+docs/r/index.html         a hub linking every coast, grouped by country
+docs/sitemap.xml          every page, absolute URLs, with lastmod
+docs/robots.txt           pointing at the sitemap
+```
+
+Each carries its own `<title>`, meta description, canonical link and Open
+Graph tags, and — the part that matters — **the verdict, visibility, sea
+temperature and best window as text in the markup**, not fetched by script.
+A crawler that has to run the app to see the content usually will not. The
+Open Graph tags are why a link pasted into a forum or a group unfurls with
+the coast's name and today's conditions rather than a bare URL.
+
+**Set `site_url` in `config.json`.** It has to match the Pages address
+exactly, including case, or every canonical tag points somewhere that does
+not exist. Leave it empty to skip the pages entirely.
+
+They cost about **3.3 MB and 801 files** at 800 regions, against an artifact
+already carrying 334 MB and 19,200. Generation is wrapped in a try, because
+nothing about discoverability should be able to fail a run that has already
+produced a good forecast.
+
 ### Counting how many people use it
 
 GitHub Pages gives you no server logs, so counting has to happen in the

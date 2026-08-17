@@ -65,11 +65,13 @@
   "visibility": {
     "baseline": 0.35,
     "wave_tau_h": 22.0,
-    "rain_tau_h": 40.0,
+    "rain_tau_h": 46.0,
     "wave_ref_hs": 1.0,
-    "rain_ref_mm_per_h": 1.2,
+    "rain_ref_mm_per_h": 1.0,
     "wave_weight": 0.35,
-    "rain_weight": 0.65,
+    "rain_weight": 0.68,
+    "_note_rain": "rain_exponent is below 1 on purpose: it makes the rain term concave. decay_memory normalises for a CONSTANT input, so a short downpour never approaches the reference and small events barely registered - 2 mm moved visibility 0.3 m and 5 mm moved it 0.7 m. Lowering the reference instead fixed the small events and destroyed the large ones, because every setting that made 5 mm bite also pinned a 20 mm storm and a 60 mm deluge to the same floor. Measured at 12 m: 2 mm now costs 1.2 m, 5 mm costs 2.0 m, 20 mm costs 4.1 m, 60 mm still costs the full 6.5 m, and a coast is still 3.1 m down a day after a 20 mm storm rather than 1.3 m.",
+    "rain_exponent": 0.55,
     "river_weight": 0.35,
     "viz_min_m": 1.0,
     "viz_max_m": 11.0,
@@ -213,6 +215,8 @@
     "min_sea_fraction": 0.5,
     "bathy_min_valid": 0.9
   },
+  "_site_url_note": "The public URL of the site, no trailing slash. Used ONLY to build the per-region pages under docs/r/ and sitemap.xml, which need absolute URLs. It must match the real GitHub Pages address exactly, including case, or search engines will see the canonical tags point somewhere that does not exist. Leave it empty to skip generating the pages entirely.",
+  "site_url": "https://gaberkobal.github.io/Fih",
   "repo_issue_url": "https://github.com/GaberKobal/Fih/issues/new",
   "overlay": {
     "_note": "Defaults reproduce the original appearance. Knobs if you want to change it: supersample 2 halves the block size at 4x the file size; raising alpha_floor_score hides low-scoring water so only candidate spots are painted; land_buffer_m is how far the colour wash is held back from the coastline, in metres, and is cosmetic only - it never changes a score or moves a spot. Raise it if the wash still touches the beach, lower it if it is hiding water you want to see.",

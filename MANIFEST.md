@@ -1,160 +1,106 @@
-# v17 — three bugs the 800-region run exposed, and the phone legend
+# v18 — findable coasts, and rain that actually costs you visibility
 
 ```
-v17/
+v18/
 ├── fish_finder.py
 ├── config.json
-├── regions.json
 ├── README.md
-└── docs/index.html
+└── docs/sw.js
 ```
 
-`.github/workflows/update.yml` current as of **v16**; `docs/structure.js`
-and `docs/sw.js` v10; `docs/add-region.html` v12; `docs/anywhere.js` v8.
+`regions.json` and `docs/index.html` current as of **v17**; the workflow v16;
+`docs/structure.js` v10; `docs/add-region.html` v12; `docs/anywhere.js` v8.
 
-**Do not push while a run is in progress.** `cancel-in-progress: true` plus
-the `push` trigger means a commit kills the running job, and a cancelled job
-does not reliably save the cache.
+**v17 must be uploaded too, if it is not in yet.** And upload in ONE commit:
+each push cancels the run before it.
 
 ---
 
-## 1. CMEMS was dead everywhere outside the Mediterranean
+## 1. Google could see one page
 
-Every global region in the production log:
+Regions are selected through the location hash (`#novigrad`). A fragment is
+never sent to a server and is not indexed as a page, so 800 coasts of unique
+content were, to a search engine, a single document titled "Dive forecast".
+No sitemap, no robots.txt. Nobody searches for a dive forecast app; they
+search for the conditions in front of them, and nothing here could match.
+
+Every run now also writes:
 
 ```
-cmems: unavailable (VariableDoesNotExistInTheDataset: The variable 'thetao'
-is neither a variable or a standard name in the dataset.)
+docs/r/<id>/index.html    one real page per region
+docs/r/index.html         a hub linking every coast, grouped by country
+docs/sitemap.xml          every page, absolute URLs, lastmod
+docs/robots.txt           pointing at the sitemap
 ```
 
-Mediterranean regions were fine, which is exactly what hid it. Copernicus
-splits **both** products into one dataset per variable — which is why the
-Med id already carried `-tem` — but the global id was the bare bundle:
+Each page carries its own `<title>`, meta description, canonical link, Open
+Graph tags, and **the verdict, visibility, sea temperature and best window
+as text in the markup** rather than fetched by script — a crawler that has
+to run the app to see the content usually will not. Open Graph matters for
+the plan you actually have: a link pasted into a forum or a Facebook group
+unfurls with the coast's name and today's conditions instead of a bare URL.
 
-| | id | temperature |
-| --- | --- | --- |
-| Med | `cmems_mod_med_phy**-tem**_anfc_4.2km_P1D-m` | yes |
-| global, before | `cmems_mod_glo_phy_anfc_0.083deg_P1D-m` | **no** |
-| global, now | `cmems_mod_glo_phy**-thetao**_anfc_0.083deg_P1D-m` | yes |
+Set `site_url` in `config.json`. It must match the Pages address exactly,
+including case, or the canonical tags point at nothing. Empty skips the
+whole thing.
 
-Confirmed against the public STAC catalogue rather than reasoned from the
-pattern: `GLOBAL_ANALYSISFORECAST_PHY_001_024` lists both ids, and only the
-`-thetao` one carries temperature. Its version suffix is `_202406`, which is
-the version the production log printed.
+**Cost: ~3.3 MB and 801 files**, against an artifact already carrying 334 MB
+and 19,200. Generation is wrapped, so nothing about discoverability can fail
+a run that has already produced a good forecast.
 
-It fell back to the thermocline estimate every time, so nothing broke — the
-CMEMS credentials were simply buying nothing outside the Med.
+Two things found by testing rather than by reading:
 
-## 2. `costa-blanca` had no coastline in its box
+- `best_window` carries ISO `start`/`end`, not a label. My first version
+  looked for a label and printed **"see the map"** on every page — the least
+  useful thing a page about when to dive could say. Now formatted as
+  `Thu 04:00 to 06:00`, and sea temperature is surfaced alongside it since
+  it was already in the same record and people search for it.
+- `sw.js` served the shell cache-first, which would have handed a repeat
+  visitor a verdict several hours old with nothing saying so. Region pages
+  now get the same network-first treatment as `/data/`.
 
-`lon -0.2 … 0.25` at that latitude is open sea; the coast is near `-0.5`.
-The log agreed: `no OSM coastline in this box`, water 99%, **minimum depth
-70.6 m**, `contours.geojson (0 lines)`.
+## 2. Rain barely touched visibility
 
-Moved to `lon -0.62 … -0.15`, `lat 38.10 … 38.45` — 41 x 39 km, containing
-Santa Pola, Tabarca and Alicante. Verified on the live network:
+Measured before changing anything, at 12 m:
 
 | | before | after |
 | --- | --- | --- |
-| OSM coastline ways | 0 | **33** |
-| shallowest water | 70.6 m | **0.0 m** |
-| spots | unusable | **30** |
-| depth contours | 0 | **13** |
+| 2 mm in 1 h | 0.3 m | **1.2 m** |
+| 5 mm in 1 h | 0.7 m | **2.0 m** |
+| 20 mm over 6 h | 2.5 m | **4.1 m** |
+| 60 mm over 12 h | 6.5 m | 6.5 m |
+| 20 mm storm, 24 h later | 1.3 m | **3.1 m** |
 
-## 3. Ten minutes of every run bought nothing
+The cause is in `decay_memory`: it normalises so a **constant** input
+converges to that input, so a short sharp downpour never approaches the
+reference. 5 mm in an hour peaked at 0.12 against a reference of 1.2.
 
-The batch fetch looped chunks serially. Invisible at 468 regions; at 800 it
-was **16 back-to-back requests taking 10 min 18 s before a single region
-started**, with all six workers idle — and it came out of the 180-minute
-budget on every run.
+Lowering the reference is the obvious fix and it is the wrong one. Every
+setting that made 5 mm bite also pinned a 20 mm storm and a 60 mm deluge to
+the same floor, so the model lost the ability to tell a bad day from an
+unthinkable one. The problem is the shape of the response, not its scale, so
+the rain term is now **concave** — `rain_exponent` 0.55, alongside
+`rain_ref` 1.2 to 1.0, `rain_weight` 0.65 to 0.68 and `rain_tau_h` 40 to 46.
+That lifts the bottom of the range without spending the top: small rain
+costs three to four times what it did, and 60 mm still costs the full range.
 
-The chunks share no state. They now go through a thread pool, and
-`_throttle()` already paces requests per host across threads, so the API
-sees nothing new. Same 16 calls, one chunk's wait instead of eight.
+Setting `rain_exponent` to 1.0 restores the old straight-line behaviour.
 
-Measured on 250 real region centres, 3 chunks: **250/250 in 3 s.** Worth
-saying plainly — the CI run's ~39 s per request did not reproduce locally,
-so the size of the saving depends on API load. The shape of the fix does not.
-
-Also fixed: the no-data message hard-coded "EMODnet", so every GMRT and
-SRTM15+ region reported a gap in a source it had never queried.
-
-## 4. The coastline cache would have defeated fix 2
-
-Found while working out what a push actually invalidates. Bathymetry is
-cached **by bbox**, so a moved box refetches correctly. Coastline and wrecks
-were cached **by region id alone**:
-
-```
-cache/coastline_costa-blanca.json     <- the OLD box's result
-```
-
-That box had no coastline in it. So in CI — where that file exists from the
-production run — the corrected box would have loaded fresh bathymetry and
-then reapplied the **empty** cached coastline, and Costa Blanca would have
-looked exactly as broken as before. It only worked on my machine because
-this cache had never held that region.
-
-Both are now keyed by id **and** bbox, so a moved box simply misses:
-
-```
-cache/coastline_costa-blanca_-0.62_38.1_-0.15_38.45.json   -> 33 ways
-```
-
-**Cost: every region refetches its coastline once.** Bathymetry — the
-expensive part, ~1 MB and most of the cold time — is untouched and stays
-cached. Expect one run to be somewhat longer, not a rebuild.
-
-## 5. The legend took two-thirds of the phone map
-
-Measured at 375x812: the map is `50vh` = 406 px and the legend was **268 px
-of it**. It now collapses to the score ramp, which is the only part you read
-at a glance; everything else is a setting you touch once.
-
-| 375x812 | before | after |
-| --- | --- | --- |
-| default | 268 px, **66%** | **106 px, 26%** |
-| opened | — | 179 px, 44%, then scrolls |
-
-The first attempt collapsed to 64 px behind a bare `+` in the corner, and
-that was wrong: it read as the legend having lost half of itself rather than
-as something you could open. The affordance is now a **full-width labelled
-row** — "Key and controls" with a caret that flips from down to up — in the
-readable text colour, on a 34 px tap target. It costs 42 px against the
-icon, and it is worth all of them.
-
-The choice persists in `localStorage`, because the controls inside are ones
-you set and want to stay set. **Desktop is untouched** — verified at
-1280x860: no toggle, no height cap, and 210 x 332 px with the scan box
-shown, which is exactly what it measured before any of this.
-
-One correction worth recording: my first cap was `33vh`, which I described
-as "a third of the map". It is a third of the *viewport*, and the map is
-only `50vh` — so it was still 66% of the map and fixed nothing. The comment
-in the CSS now says to halve any `vh` figure to get the number that matters.
-
-## Upload all of these in ONE commit
-
-Each push starts a run, and `cancel-in-progress` means the next push kills
-the last one. Two uploads a minute apart cancel each other; that is what
-happened to run #178. One commit, then leave it alone.
-
-Note also that a commit touching **only** `docs/index.html` takes the
-frontend-only path and does **not** run the model — it republishes the
-cached forecast in about 90 seconds and reports green.
+**This is still an uncalibrated guess.** `config.json` continues to record
+that the model checked r=+0.07 against 6 logged dives. Rain now behaves more
+like the coast does; that is not the same as being right, and the fix is
+still `calibrate.py --fit-viz` once there are enough logged dives.
 
 ## Verified
 
-- **10/10 assertions**, plus a 36-region and an 8-region selftest, 0 failures.
-- Costa Blanca **on the live network** — the table above.
-- The batch fetch **on the live API** — 250/250, and per-location timezones
-  still resolving correctly through the thread pool (Novigrad +2, Oahu -10,
-  Rottnest +8, Poor Knights +12).
-- The legend **in a real browser** at 375x812 and 1280x860: first load
-  collapses on the phone and stays open on the desktop, the toggle persists,
-  and `#ctoggle`, `#wtoggle`, `#opac`, `#scanbox`, `#scan`, `#radius` all
-  remain reachable inside the scroll area.
+**12/12 assertions**, plus a 36-region selftest, 0 failures:
 
-Not verified: the rotate-across-breakpoint handler. Its first-load
-equivalent is verified at both sizes; the live `matchMedia` change did not
-fire in my test harness, so that one path is reasoned, not measured.
+- sitemap parses against the sitemaps.org namespace, all URLs absolute and
+  unique; robots.txt points at it
+- a region page has a unique title, description, canonical and Open Graph,
+  all four data cells present as markup, no external hosts, and a working
+  link into the live map
+- the hub links every region
+- rendered in a real browser: the full text is there without scripts
+- `sw.js` parses, and its `/r/` branch precedes the shell rule
+- rain figures in the table above are measured through `visibility_series`
