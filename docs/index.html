@@ -716,7 +716,7 @@ const GATE_KEY = "diveforecast.ack.v1";
 //   ANALYTICS.endpoint = "https://YOURCODE.goatcounter.com/count"
 // Anything that accepts ?p=<path>&t=<title>&r=<referrer> works the same way.
 const ANALYTICS = {
-  endpoint: "",            // e.g. "https://yourcode.goatcounter.com/count"
+  endpoint: "https://fishcounter.goatcounter.com/count",             // e.g. "https://yourcode.goatcounter.com/count"
   countScans: true,        // also count structure scans, as /scan
 };
 
@@ -743,8 +743,13 @@ const track = (() => {
         + "&r=" + encodeURIComponent(
             document.referrer && !document.referrer.startsWith(location.origin)
               ? document.referrer : "");
-      if(navigator.sendBeacon) navigator.sendBeacon(u);
-      else fetch(u, {mode:"no-cors", keepalive:true}).catch(()=>{});
+      // fetch, NOT sendBeacon. sendBeacon always issues a POST, and a
+      // GoatCounter-style /count endpoint answers GET - so this preferred
+      // the one method the endpoint does not accept, and every view it
+      // thought it had counted was very likely discarded at the other end.
+      // keepalive gives the same survives-the-unload behaviour, on a GET.
+      if(window.fetch) fetch(u, {mode:"no-cors", keepalive:true}).catch(()=>{});
+      else { const i = new Image(); i.src = u; }
     }catch(e){ /* counting must never break the app */ }
   };
 })();
