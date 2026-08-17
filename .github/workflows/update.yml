@@ -223,6 +223,14 @@ jobs:
         env:
           CDSE_CLIENT_ID: ${{ secrets.CDSE_CLIENT_ID }}
           CDSE_CLIENT_SECRET: ${{ secrets.CDSE_CLIENT_SECRET }}
+          # How many coasts get looked at per run, least-recently-sampled
+          # first. The reading is RELATIVE, so it does nothing for a region
+          # until that region has s2.min_scenes of its own history - at one
+          # region a week the second coast in the list would never get there.
+          # Be honest about the arithmetic: 8 a week is 416 samples a year,
+          # so this is a feature for a handful of home coasts, not for 800.
+          # Raise it, or drop the Monday-only condition below, to go faster.
+          S2_MAX_REGIONS: ${{ vars.S2_MAX_REGIONS || '8' }}
         run: |
           if [ -z "$CDSE_CLIENT_ID" ]; then
             echo "no CDSE credentials - skipping"
