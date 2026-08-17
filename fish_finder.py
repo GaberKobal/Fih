@@ -59,6 +59,7 @@ import io
 import json
 import math
 import os
+import re
 import sys
 import time
 import threading
@@ -3740,6 +3741,59 @@ border-bottom:1px solid var(--line);padding-bottom:5px}
 """
 
 
+# One short GET, no third-party script, no cookies, no storage. The path is
+# baked in at build time and is always /r/<id>, which is a public region id
+# and carries no location - unlike the app's hash, which can hold the
+# coordinates of somewhere a person is thinking of diving. Do Not Track and
+# Global Privacy Control are honoured, same as the app.
+#
+# The path deliberately MATCHES what the app reports for the same region, so
+# a coast reads as one row rather than two. Search landings are still
+# distinguishable: they arrive with an external referrer and in-app views do
+# not.
+STATIC_BEACON = """
+<script>
+(function(){
+  try{
+    if(navigator.doNotTrack==="1"||window.doNotTrack==="1"
+       ||navigator.msDoNotTrack==="1"||navigator.globalPrivacyControl===true) return;
+    var r=document.referrer&&document.referrer.indexOf(location.origin)!==0
+          ?document.referrer:"";
+    var u="__EP__?p=__PATH__&t="+encodeURIComponent(document.title.slice(0,80))
+         +"&r="+encodeURIComponent(r);
+    // NOT sendBeacon. It always issues a POST, and GoatCounter-style /count
+    // endpoints answer GET - the first version of this sent a POST that the
+    // test server rejected with a 501 and a real one would have ignored.
+    // fetch with keepalive is a GET and still survives the page unloading.
+    if(window.fetch){fetch(u,{mode:"no-cors",keepalive:true}).catch(function(){});}
+    else{var i=new Image();i.src=u;}
+  }catch(e){}
+})();
+</script>"""
+
+
+def _analytics_endpoint(base):
+    """Where to count, and where that setting came from.
+
+    Two files could plausibly hold this and having them disagree silently is
+    worse than either. config.json wins if set; otherwise the endpoint the
+    app is already using is read straight out of docs/index.html, so editing
+    the one line the README documents keeps working and the 800 generated
+    pages never carry a stale copy of it.
+    """
+    ep = ((base.get("analytics") or {}).get("endpoint") or "").strip()
+    if ep:
+        return ep, "config.json"
+    try:
+        src = (ROOT / "docs" / "index.html").read_text(encoding="utf-8")
+        m = re.search(r"""endpoint:\s*["']([^"']*)["']""", src)
+        if m and m.group(1).strip():
+            return m.group(1).strip(), "docs/index.html"
+    except Exception:
+        pass
+    return "", ""
+
+
 def _vclass(verdict):
     v = (verdict or "").lower()
     if v.startswith("go"):
@@ -3774,6 +3828,15 @@ def write_static_pages(index, base):
     out.mkdir(parents=True, exist_ok=True)
     today = dt.datetime.now(dt.timezone.utc).date().isoformat()
     e = html.escape
+
+    endpoint, src_of = _analytics_endpoint(base)
+
+    def beacon(path):
+        """The counting snippet for one page, or nothing at all."""
+        if not endpoint:
+            return ""
+        return (STATIC_BEACON.replace("__EP__", endpoint)
+                             .replace("__PATH__", urllib.parse.quote(path)))
 
     written = 0
     for r in index:
@@ -3859,7 +3922,7 @@ Updated {e(str(r.get('generated', today))[:16].replace('T', ' '))} UTC and refre
 every four hours. <a href="../">All coasts</a> &middot;
 <a href="../../">The map</a>
 </footer>
-</main>
+</main>{beacon("/r/" + r["id"])}
 </body>
 </html>
 """
@@ -3905,7 +3968,7 @@ every four hours. <a href="../">All coasts</a> &middot;
 Or <a href="../">tap anywhere on the map</a> for a point forecast worldwide.</p>
 {"".join(blocks)}
 <footer>Updated {today}. <a href="../">The map</a></footer>
-</main>
+</main>{beacon("/r")}
 </body>
 </html>
 """, encoding="utf-8")
@@ -3923,6 +3986,10 @@ Or <a href="../">tap anywhere on the map</a> for a point forecast worldwide.</p>
         f"User-agent: *\nAllow: /\nSitemap: {site}/sitemap.xml\n", encoding="utf-8")
     log(f"static pages: {written} region page(s) + hub, sitemap with "
         f"{len(urls)} URLs, robots.txt")
+    log("static pages: counting " + (f"to {endpoint} (from {src_of})"
+        if endpoint else "is OFF - set analytics.endpoint in config.json, or "
+        "ANALYTICS.endpoint in docs/index.html, or search traffic landing "
+        "here will be invisible"))
 
 
 def write_model(base, regions):

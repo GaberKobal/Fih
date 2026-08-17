@@ -1,106 +1,105 @@
-# v19 — the dive log scored, and Sentinel-2 plugged in
+# v20 — counting the pages that get the search traffic
 
 ```
-v19/
+v20/
 ├── fish_finder.py
 ├── config.json
-├── s2_turbidity.py
-├── dive_log.csv          <- corrected
 ├── README.md
-└── .github/workflows/update.yml
+└── docs/index.html
 ```
 
-`regions.json` and `docs/index.html` current as of **v17**; `docs/sw.js` v18;
-`docs/structure.js` v10; `docs/add-region.html` v12; `docs/anywhere.js` v8.
+`s2_turbidity.py`, `dive_log.csv` and the workflow current as of **v19**;
+`regions.json` v17; `docs/sw.js` v18; `docs/structure.js` v10;
+`docs/add-region.html` v12; `docs/anywhere.js` v8.
 
-**Upload everything in ONE commit** — each push cancels the run before it.
+**Upload in ONE commit** — each push cancels the run before it.
 
 ---
 
-## 1. The dive log had the wrong dates, all of them
+## The gap
 
-A spreadsheet drag had incremented the year down each dive's species rows:
+The 800 region pages added in v18 contained **no script tag at all**. Good
+for speed, wrong for the purpose: those pages exist to attract search
+traffic, so the visits you most want to see would have been the only ones
+invisible. Views that reached the map would count; views that landed on
+`/r/sardinia-nw/` would not.
+
+They now send the same single GET on the same terms as the app: no
+third-party script, no cookies, no storage, Do Not Track and Global Privacy
+Control honoured, and nothing emitted at all when no endpoint is set.
+
+The path reported is `/r/<id>` — **deliberately identical to what the app
+already reports** for the same coast, so it reads as one row rather than
+splitting in two. Search landings stay distinguishable anyway: they arrive
+with an external referrer and in-app views do not.
+
+The endpoint comes from `analytics.endpoint` in `config.json`; if that is
+empty it is read straight out of `docs/index.html`, so the one line the
+README documents still works and 800 generated files never carry a stale
+copy. The run says which source it used, or warns that counting is off.
+
+## The bug found while testing it
+
+Watching a local server receive the beacon:
 
 ```
-dive 3: Aug 3. 2026, Aug 3. 2027, Aug 3. 2028, Aug 3. 2029
-dive 5: Aug 4. 2026, Aug 4. 2027, Aug 4. 2028, Aug 4. 2029
-dive 2: one row still FILL-ME
+POST /count?p=/r/novigrad&t=... 501     <- before
+GET  /count?p=/r/novigrad&t=... 404     <- after
 ```
 
-Each dive is several rows, one per species, so every row of a dive shares its
-date and the drag only ever incremented. **15 of 15 rows corrected** and
-normalised to ISO, which is what the app already writes.
+`navigator.sendBeacon` **always issues a POST**. A GoatCounter-style
+`/count` endpoint answers **GET**. So the transport was the one method the
+endpoint does not accept.
 
-## 2. What the six dives actually say
+This was not only my new code. **The app's own tracker preferred
+`sendBeacon` too** ([docs/index.html](docs/index.html)), which means that
+for as long as it has existed, every view it believed it counted was very
+likely discarded at the far end — and it would have looked like working
+code, because nothing on the page ever sees the response.
 
-Scored against the conditions that really occurred on those dates:
+Both now use `fetch` with `keepalive`: a GET, and it still survives the page
+being closed. `Image` remains the fallback for anything without `fetch`.
 
-| | bias | mean abs error |
-| --- | --- | --- |
-| the model as it was then | **+4.4 m** | 4.4 m |
-| the model now | **-0.8 m** | 2.1 m |
+If you had ever set an endpoint and seen no numbers, this is why.
 
-The `baseline` fix worked. The second finding matters more:
+## Switched on
 
-| | spread across the six dives |
-| --- | --- |
-| model predicted | 7.2 to 7.4 m, a range of **0.2 m** |
-| actually seen | 5 to 10 m, a range of **5 m** |
+`docs/index.html` now carries the live endpoint:
 
-**The model output a constant.** Swell ran 0.07-0.11 m, wind 7-9 km/h and
-rain was zero all week, so every input was flat while the water moved 5 m -
-twice within 500 m of the same coast on consecutive days.
+```js
+const ANALYTICS = { endpoint: "https://fishcounter.goatcounter.com/count", ... }
+```
 
-I am not quoting a correlation. With n=6 and no variance in the inputs it
-carries no information in either direction.
+**Set in one file, not two.** The app reads its own constant; the page
+generator finds the same value by reading `docs/index.html` when
+`analytics.endpoint` in `config.json` is empty, which it deliberately is.
+One line to change if the account ever moves.
 
-**The rain change from v18 is untestable on this data.** There were 2.2 mm in
-the whole window, five days before the first dive. Old and new differ by
-0.1-0.3 m across all six. It remains defensible physics and unvalidated.
+### Why not GoatCounter's own snippet
 
-## 3. Sentinel-2, which was measuring the missing signal and throwing it away
+Their onboarding suggests:
 
-`s2_turbidity.py` looks at how dirty the water is. Its number went nowhere.
-It now feeds `visibility.baseline`, under constraints taken from the
-measurement rather than invented:
+```html
+<script data-goatcounter="..." async src="//gc.zgo.at/count.js"></script>
+```
 
-- **The reading is RELATIVE.** The script says so itself: Sen2Cor leaves a
-  large atmospheric residual, a dark-pixel offset is subtracted, spatial
-  contrast is reliable and absolute metres are not. So a single scene is
-  meaningless and only its deviation from what that coast normally reads is
-  used. History accumulates in `cache/s2_history_<id>.json`, keyed by scene
-  so re-running the model never double counts, and **nothing at all is
-  applied until 4 scenes exist**.
-- **Bounded at 0.15 of baseline**, about 1.5 m. A bad scene cannot dominate.
-- **Not calibrated.** `baseline_per_fnu` is a timid guess, and calibrating it
-  needs dives logged on days with a clear satellite pass.
-
-Sampling was one region per run, which at 800 regions meant the second coast
-in the list would never reach 4 scenes. Now `S2_MAX_REGIONS` (default 8),
-**least-recently-sampled first** so coverage spreads, and one region failing
-no longer takes the rest down.
-
-**The arithmetic is faced in the README rather than hidden:** 8 a week is 416
-samples a year against 800 regions needing several each. This is a feature
-for a handful of home coasts, not for the catalogue.
+That is a third-party script on every page. The direct GET to `/count` is a
+documented GoatCounter integration, records the same pageview, and keeps
+three properties the snippet would cost: no third-party code, nothing to
+declare in a consent banner, and an offline story where a failed request is
+simply ignored. Adblockers may still block the goatcounter.com host, so
+treat all counts as a floor rather than a total.
 
 ## Verified
 
 **10/10 assertions**, plus a 36-region selftest, 0 failures.
 
-The wiring was tested by feeding synthetic scenes, since CDSE cannot run here:
-
-| fed | result |
+| tested | result |
 | --- | --- |
-| scenes 1 to 3 | `+0.000`, "3 of 4 scenes needed" |
-| 4th scene | active, at this coast's own median |
-| a bloom, 3.50 vs usual 1.10 | **+0.144** baseline, dirtier |
-| clear water, 0.20 | **-0.054**, clearer |
-| the same scene again | history unchanged, not double counted |
-| absurd 99 and -99 FNU | clamped to exactly +0.150 / -0.150 |
-| no file / malformed file | `0.0` with a reason, no exception |
-
-End to end through the real model: a planted bloom moved Novigrad from
-**4 m to 3 m** and logged
-`sentinel-2: baseline 0.35 -> 0.47 (+0.12)`; the control run with no history
-was silent.
+| no endpoint anywhere | no `<script>` in the page at all, and the run says counting is off |
+| endpoint only in `docs/index.html` | picked up, logged as *from docs/index.html* |
+| endpoint in both | `config.json` wins, logged as such |
+| beacon in a real browser | **`GET /count?p=/r/novigrad&t=...`** observed at the server |
+| hub page | reports `/r` |
+| DNT / GPC | checked before anything is sent |
+| third-party scripts | none; no `<script src>` on any page |

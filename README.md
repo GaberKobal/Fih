@@ -635,6 +635,26 @@ const ANALYTICS = {
 };
 ```
 
+**The generated region pages count too.** They are plain HTML with no app
+on them, so without this the traffic the whole `docs/r/` exercise exists to
+attract - people arriving from a search - would have been the one thing you
+could not see. They send the same single GET on the same terms, and they
+report the path as `/r/<id>`, deliberately identical to what the app reports
+for that coast, so it reads as one row rather than two. A search landing is
+still tellable apart: it arrives with an external referrer and an in-app view
+does not. The endpoint comes from `analytics.endpoint` in `config.json`, or
+failing that is read out of `docs/index.html` so there is still only one line
+to edit; the run logs which of the two it used, or warns that counting is off.
+
+**One correction worth knowing about if you ever compare numbers with an
+older run.** Both trackers used to prefer `navigator.sendBeacon`, which
+*always* issues a POST, while a GoatCounter-style `/count` answers GET. So
+the transport was the one method the endpoint does not accept, and views it
+believed it had counted were very likely discarded at the far end. Both now
+use `fetch` with `keepalive`, which is a GET and still survives the page
+being closed. Verified against a local server: the same page produced
+`POST /count` before and `GET /count` after.
+
 [GoatCounter](https://www.goatcounter.com/) is the suggested one: free for
 non-commercial use, open source, cookieless, and it accepts a plain GET so no
 third-party script has to be loaded at all. Anything taking

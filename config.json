@@ -224,6 +224,10 @@
     "max_shift": 0.15,
     "_tuning_note": "baseline_per_fnu converts a deviation in relative FNU into a shift in baseline (0-1, higher is dirtier). 0.06 is a deliberately timid guess and is NOT calibrated: one FNU above this coast's usual costs about 0.6 m of visibility at the current viz_min/viz_max. max_shift caps the whole thing at 0.15, about 1.5 m, so a bad scene or a mis-set offset can never dominate the forecast. Tune both against the viz_m column in dive_log.csv once dives and scenes overlap - which needs dives logged on days with a clear Sentinel-2 pass."
   },
+  "analytics": {
+    "_note": "Where the generated pages under docs/r/ send their one counting GET. Leave it empty and they send nothing at all. If it is empty, the endpoint already set in ANALYTICS.endpoint in docs/index.html is used instead, so there is one line to edit rather than two places to keep in step - the run logs which of the two it took. Same terms as the app: no third-party script, no cookies, no storage, Do Not Track and Global Privacy Control honoured. The path sent is /r/<id>, a public region id carrying no location, and it deliberately matches what the app reports for the same coast so it reads as one row; a search landing is still distinguishable because it arrives with an external referrer.",
+    "endpoint": ""
+  },
   "site_url": "https://gaberkobal.github.io/Fih",
   "repo_issue_url": "https://github.com/GaberKobal/Fih/issues/new",
   "overlay": {
