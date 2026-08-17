@@ -113,12 +113,20 @@ at a glance; everything else is a setting you touch once.
 
 | 375x812 | before | after |
 | --- | --- | --- |
-| default | 268 px, **66%** | **64 px, 16%** |
-| opened by tapping | — | 179 px, 44%, then scrolls |
+| default | 268 px, **66%** | **106 px, 26%** |
+| opened | — | 179 px, 44%, then scrolls |
+
+The first attempt collapsed to 64 px behind a bare `+` in the corner, and
+that was wrong: it read as the legend having lost half of itself rather than
+as something you could open. The affordance is now a **full-width labelled
+row** — "Key and controls" with a caret that flips from down to up — in the
+readable text colour, on a 34 px tap target. It costs 42 px against the
+icon, and it is worth all of them.
 
 The choice persists in `localStorage`, because the controls inside are ones
 you set and want to stay set. **Desktop is untouched** — verified at
-1280x860: no toggle, no height cap, 210 x 332 px exactly as before.
+1280x860: no toggle, no height cap, and 210 x 332 px with the scan box
+shown, which is exactly what it measured before any of this.
 
 One correction worth recording: my first cap was `33vh`, which I described
 as "a third of the map". It is a third of the *viewport*, and the map is
