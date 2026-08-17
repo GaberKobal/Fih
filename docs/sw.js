@@ -119,6 +119,27 @@ self.addEventListener("fetch", e => {
     return;
   }
 
+  // --- region pages: a forecast, so never serve a stale one by choice ---
+  // These carry today's verdict and visibility as text. Under the app-shell
+  // rule below they are cache-first, which would hand a repeat visitor a
+  // verdict several hours old with nothing saying so. Same treatment as
+  // /data/: current if the network answers, last known if it does not.
+  if (url.pathname.includes("/r/")) {
+    e.respondWith((async () => {
+      const c = await caches.open(DATA);
+      try {
+        const res = await fetch(req);
+        if (res.ok) c.put(req, res.clone());
+        return res;
+      } catch (err) {
+        const hit = await c.match(req);
+        if (hit) return hit;
+        throw err;
+      }
+    })());
+    return;
+  }
+
   // --- app shell: cache-first, updated quietly in the background ---
   e.respondWith((async () => {
     const c = await caches.open(SHELL);
