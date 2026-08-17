@@ -216,6 +216,14 @@
     "bathy_min_valid": 0.9
   },
   "_site_url_note": "The public URL of the site, no trailing slash. Used ONLY to build the per-region pages under docs/r/ and sitemap.xml, which need absolute URLs. It must match the real GitHub Pages address exactly, including case, or search engines will see the canonical tags point somewhere that does not exist. Leave it empty to skip generating the pages entirely.",
+  "s2": {
+    "_note": "Sentinel-2 turbidity, folded into visibility.baseline. s2_turbidity.py measures how dirty the water actually LOOKS, which is the only signal here that can see a plankton bloom or a river plume - the six logged dives went from 10 m to 5 m in the same 500 m of coast while swell, wind and rain stayed flat, so no weather-driven term could ever have caught it. The reading is RELATIVE: Sen2Cor leaves a large atmospheric residual over water, the script subtracts a dark-pixel offset, and it says outright that spatial contrast is reliable and absolute metres are not. So a single scene means nothing and only its deviation from what this coast normally reads is used. Nothing is applied until min_scenes have accumulated in cache/s2_history_<id>.json.",
+    "enabled": true,
+    "min_scenes": 4,
+    "baseline_per_fnu": 0.06,
+    "max_shift": 0.15,
+    "_tuning_note": "baseline_per_fnu converts a deviation in relative FNU into a shift in baseline (0-1, higher is dirtier). 0.06 is a deliberately timid guess and is NOT calibrated: one FNU above this coast's usual costs about 0.6 m of visibility at the current viz_min/viz_max. max_shift caps the whole thing at 0.15, about 1.5 m, so a bad scene or a mis-set offset can never dominate the forecast. Tune both against the viz_m column in dive_log.csv once dives and scenes overlap - which needs dives logged on days with a clear Sentinel-2 pass."
+  },
   "site_url": "https://gaberkobal.github.io/Fih",
   "repo_issue_url": "https://github.com/GaberKobal/Fih/issues/new",
   "overlay": {

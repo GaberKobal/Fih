@@ -532,6 +532,62 @@ Batched 100 at a time, a full 800-region run is **16 calls**, and a day is
 Any location the batch cannot answer for simply falls back to its own single
 request, so one bad point never poisons a batch of a hundred.
 
+### What the dive log actually showed
+
+Six dives off Novigrad, 31 July to 4 August 2026, scored against the
+conditions that really occurred:
+
+| | bias | mean abs error |
+| --- | --- | --- |
+| the model as it was then | **+4.4 m** | 4.4 m |
+| the model now | **-0.8 m** | 2.1 m |
+
+Fixing `baseline` worked. But the more useful finding is the second one:
+
+| | spread across those six dives |
+| --- | --- |
+| model predicted | 7.2 to 7.4 m, a range of **0.2 m** |
+| actually seen | 5 to 10 m, a range of **5 m** |
+
+**The model output a constant.** Over that week swell ran 0.07-0.11 m, wind
+7-9 km/h and rain was zero, so every input it has was flat while the water
+moved 5 m - twice within 500 m of the same coast on consecutive days. In
+settled summer weather the thing that moves clarity here is not weather. It
+is a bloom or a plume, and no term driven by a forecast can see one.
+
+That is what the Sentinel-2 wiring below is for, and it is also why the
+correlation figure is not worth quoting: with n=6 and no variance in the
+inputs, r carries no information either way.
+
+### Sentinel-2 turbidity, and its honest limits
+
+`s2_turbidity.py` measures how dirty the water actually looks. Its output
+used to go nowhere. It now feeds `visibility.baseline`, under three
+constraints that come from the measurement itself:
+
+- **The reading is relative.** Sen2Cor leaves a large atmospheric residual
+  over water, so the script subtracts a dark-pixel offset and states plainly
+  that spatial contrast is reliable and absolute metres are not. A single
+  scene therefore means nothing; only its deviation from what that coast
+  normally reads does. A per-region history lives in
+  `cache/s2_history_<id>.json` and nothing is applied until `s2.min_scenes`
+  of it exist.
+- **It is bounded.** `max_shift` caps the adjustment at 0.15 of baseline,
+  about 1.5 m, so a bad scene can never dominate a forecast.
+- **It is not calibrated.** `baseline_per_fnu` is a timid guess. Calibrating
+  it needs dives logged on days with a clear satellite pass, which is a thing
+  to go and do rather than a thing to compute.
+
+The scan runs after the model, so a scene feeds the *next* run. That is fine
+for a quantity that moves over days.
+
+**The arithmetic is worth facing.** At `S2_MAX_REGIONS` of 8 a week that is
+416 samples a year against 800 regions each needing several before they mean
+anything. This is a feature for a handful of home coasts, not for the
+catalogue. Regions are sampled least-recently-first so coverage spreads
+rather than repeating, and raising the variable or dropping the Monday-only
+condition in the workflow is the lever.
+
 ### Being findable at all
 
 The app is **one URL**. Regions are selected through the location hash

@@ -278,6 +278,16 @@ def main():
     ap.add_argument("--regions", default=str(ROOT / "regions.json"))
     ap.add_argument("--region", default=None,
                     help="region id from regions.json; default is the first enabled one")
+    ap.add_argument("--max-regions", type=int,
+                    default=int(os.environ.get("S2_MAX_REGIONS", "1") or 1),
+                    help="how many regions to sample in one run (default 1). "
+                         "The turbidity reading is RELATIVE, so it is worth "
+                         "nothing until a region has several scenes to compare "
+                         "against - and at one region a week a catalogue of 800 "
+                         "would never reach that for anything but the first. "
+                         "Regions are taken LEAST-RECENTLY-SAMPLED first, so "
+                         "raising this spreads coverage instead of resampling "
+                         "the same coast. Also read from S2_MAX_REGIONS.")
     ap.add_argument("--days", type=int, default=14)
     ap.add_argument("--max-cloud", type=float, default=20.0)
     ap.add_argument("--k", type=float, default=15.0)
@@ -304,14 +314,46 @@ def main():
     if not picked:
         log("no matching region in regions.json - skipping")
         return
-    region = picked[0]
+    # Least-recently-sampled first. The reading is relative, so it is worth
+    # nothing to a region until that region has several scenes to compare
+    # against; resampling the same coast every week while 799 others have
+    # none is the one ordering guaranteed not to get there.
+    def last_scene(r):
+        try:
+            h = json.loads((ROOT / "cache" / f"s2_history_{r['id']}.json")
+                           .read_text(encoding="utf-8"))
+            return h[-1]["scene"] if h else ""
+        except Exception:
+            return ""
+
+    if not args.region:
+        picked = sorted(picked, key=last_scene)
+    picked = picked[:max(1, args.max_regions)]
+    log(f"sampling {len(picked)} region(s): "
+        + ", ".join(r["id"] for r in picked))
+
+    token = get_token(cid, secret)
+    failed = 0
+    for region in picked:
+        try:
+            sample_region(region, cfg, args, token)
+        except Exception as e:
+            failed += 1
+            log(f"{region['id']}: failed ({e.__class__.__name__}: {e}) "
+                "- continuing with the rest")
+    if failed:
+        log(f"{failed} of {len(picked)} region(s) failed")
+
+
+def sample_region(region, base_cfg, args, token):
+    """One region, one scene. Raises nothing the caller cannot survive."""
+    cfg = dict(base_cfg)
     cfg["bbox"] = region["bbox"]
     cfg["region_id"] = region["id"]
     out_dir = ROOT / "docs" / "data" / region["id"]
     log(f"region {region['id']}: {region['name']}")
     bbox = cfg["bbox"]
 
-    token = get_token(cid, secret)
     scene = find_scene(token, bbox, args.days, args.max_cloud)
     if not scene:
         log(f"no scene under {args.max_cloud}% cloud in the last {args.days} days")

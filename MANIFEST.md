@@ -1,106 +1,106 @@
-# v18 — findable coasts, and rain that actually costs you visibility
+# v19 — the dive log scored, and Sentinel-2 plugged in
 
 ```
-v18/
+v19/
 ├── fish_finder.py
 ├── config.json
+├── s2_turbidity.py
+├── dive_log.csv          <- corrected
 ├── README.md
-└── docs/sw.js
+└── .github/workflows/update.yml
 ```
 
-`regions.json` and `docs/index.html` current as of **v17**; the workflow v16;
+`regions.json` and `docs/index.html` current as of **v17**; `docs/sw.js` v18;
 `docs/structure.js` v10; `docs/add-region.html` v12; `docs/anywhere.js` v8.
 
-**v17 must be uploaded too, if it is not in yet.** And upload in ONE commit:
-each push cancels the run before it.
+**Upload everything in ONE commit** — each push cancels the run before it.
 
 ---
 
-## 1. Google could see one page
+## 1. The dive log had the wrong dates, all of them
 
-Regions are selected through the location hash (`#novigrad`). A fragment is
-never sent to a server and is not indexed as a page, so 800 coasts of unique
-content were, to a search engine, a single document titled "Dive forecast".
-No sitemap, no robots.txt. Nobody searches for a dive forecast app; they
-search for the conditions in front of them, and nothing here could match.
-
-Every run now also writes:
+A spreadsheet drag had incremented the year down each dive's species rows:
 
 ```
-docs/r/<id>/index.html    one real page per region
-docs/r/index.html         a hub linking every coast, grouped by country
-docs/sitemap.xml          every page, absolute URLs, lastmod
-docs/robots.txt           pointing at the sitemap
+dive 3: Aug 3. 2026, Aug 3. 2027, Aug 3. 2028, Aug 3. 2029
+dive 5: Aug 4. 2026, Aug 4. 2027, Aug 4. 2028, Aug 4. 2029
+dive 2: one row still FILL-ME
 ```
 
-Each page carries its own `<title>`, meta description, canonical link, Open
-Graph tags, and **the verdict, visibility, sea temperature and best window
-as text in the markup** rather than fetched by script — a crawler that has
-to run the app to see the content usually will not. Open Graph matters for
-the plan you actually have: a link pasted into a forum or a Facebook group
-unfurls with the coast's name and today's conditions instead of a bare URL.
+Each dive is several rows, one per species, so every row of a dive shares its
+date and the drag only ever incremented. **15 of 15 rows corrected** and
+normalised to ISO, which is what the app already writes.
 
-Set `site_url` in `config.json`. It must match the Pages address exactly,
-including case, or the canonical tags point at nothing. Empty skips the
-whole thing.
+## 2. What the six dives actually say
 
-**Cost: ~3.3 MB and 801 files**, against an artifact already carrying 334 MB
-and 19,200. Generation is wrapped, so nothing about discoverability can fail
-a run that has already produced a good forecast.
+Scored against the conditions that really occurred on those dates:
 
-Two things found by testing rather than by reading:
-
-- `best_window` carries ISO `start`/`end`, not a label. My first version
-  looked for a label and printed **"see the map"** on every page — the least
-  useful thing a page about when to dive could say. Now formatted as
-  `Thu 04:00 to 06:00`, and sea temperature is surfaced alongside it since
-  it was already in the same record and people search for it.
-- `sw.js` served the shell cache-first, which would have handed a repeat
-  visitor a verdict several hours old with nothing saying so. Region pages
-  now get the same network-first treatment as `/data/`.
-
-## 2. Rain barely touched visibility
-
-Measured before changing anything, at 12 m:
-
-| | before | after |
+| | bias | mean abs error |
 | --- | --- | --- |
-| 2 mm in 1 h | 0.3 m | **1.2 m** |
-| 5 mm in 1 h | 0.7 m | **2.0 m** |
-| 20 mm over 6 h | 2.5 m | **4.1 m** |
-| 60 mm over 12 h | 6.5 m | 6.5 m |
-| 20 mm storm, 24 h later | 1.3 m | **3.1 m** |
+| the model as it was then | **+4.4 m** | 4.4 m |
+| the model now | **-0.8 m** | 2.1 m |
 
-The cause is in `decay_memory`: it normalises so a **constant** input
-converges to that input, so a short sharp downpour never approaches the
-reference. 5 mm in an hour peaked at 0.12 against a reference of 1.2.
+The `baseline` fix worked. The second finding matters more:
 
-Lowering the reference is the obvious fix and it is the wrong one. Every
-setting that made 5 mm bite also pinned a 20 mm storm and a 60 mm deluge to
-the same floor, so the model lost the ability to tell a bad day from an
-unthinkable one. The problem is the shape of the response, not its scale, so
-the rain term is now **concave** — `rain_exponent` 0.55, alongside
-`rain_ref` 1.2 to 1.0, `rain_weight` 0.65 to 0.68 and `rain_tau_h` 40 to 46.
-That lifts the bottom of the range without spending the top: small rain
-costs three to four times what it did, and 60 mm still costs the full range.
+| | spread across the six dives |
+| --- | --- |
+| model predicted | 7.2 to 7.4 m, a range of **0.2 m** |
+| actually seen | 5 to 10 m, a range of **5 m** |
 
-Setting `rain_exponent` to 1.0 restores the old straight-line behaviour.
+**The model output a constant.** Swell ran 0.07-0.11 m, wind 7-9 km/h and
+rain was zero all week, so every input was flat while the water moved 5 m -
+twice within 500 m of the same coast on consecutive days.
 
-**This is still an uncalibrated guess.** `config.json` continues to record
-that the model checked r=+0.07 against 6 logged dives. Rain now behaves more
-like the coast does; that is not the same as being right, and the fix is
-still `calibrate.py --fit-viz` once there are enough logged dives.
+I am not quoting a correlation. With n=6 and no variance in the inputs it
+carries no information in either direction.
+
+**The rain change from v18 is untestable on this data.** There were 2.2 mm in
+the whole window, five days before the first dive. Old and new differ by
+0.1-0.3 m across all six. It remains defensible physics and unvalidated.
+
+## 3. Sentinel-2, which was measuring the missing signal and throwing it away
+
+`s2_turbidity.py` looks at how dirty the water is. Its number went nowhere.
+It now feeds `visibility.baseline`, under constraints taken from the
+measurement rather than invented:
+
+- **The reading is RELATIVE.** The script says so itself: Sen2Cor leaves a
+  large atmospheric residual, a dark-pixel offset is subtracted, spatial
+  contrast is reliable and absolute metres are not. So a single scene is
+  meaningless and only its deviation from what that coast normally reads is
+  used. History accumulates in `cache/s2_history_<id>.json`, keyed by scene
+  so re-running the model never double counts, and **nothing at all is
+  applied until 4 scenes exist**.
+- **Bounded at 0.15 of baseline**, about 1.5 m. A bad scene cannot dominate.
+- **Not calibrated.** `baseline_per_fnu` is a timid guess, and calibrating it
+  needs dives logged on days with a clear satellite pass.
+
+Sampling was one region per run, which at 800 regions meant the second coast
+in the list would never reach 4 scenes. Now `S2_MAX_REGIONS` (default 8),
+**least-recently-sampled first** so coverage spreads, and one region failing
+no longer takes the rest down.
+
+**The arithmetic is faced in the README rather than hidden:** 8 a week is 416
+samples a year against 800 regions needing several each. This is a feature
+for a handful of home coasts, not for the catalogue.
 
 ## Verified
 
-**12/12 assertions**, plus a 36-region selftest, 0 failures:
+**10/10 assertions**, plus a 36-region selftest, 0 failures.
 
-- sitemap parses against the sitemaps.org namespace, all URLs absolute and
-  unique; robots.txt points at it
-- a region page has a unique title, description, canonical and Open Graph,
-  all four data cells present as markup, no external hosts, and a working
-  link into the live map
-- the hub links every region
-- rendered in a real browser: the full text is there without scripts
-- `sw.js` parses, and its `/r/` branch precedes the shell rule
-- rain figures in the table above are measured through `visibility_series`
+The wiring was tested by feeding synthetic scenes, since CDSE cannot run here:
+
+| fed | result |
+| --- | --- |
+| scenes 1 to 3 | `+0.000`, "3 of 4 scenes needed" |
+| 4th scene | active, at this coast's own median |
+| a bloom, 3.50 vs usual 1.10 | **+0.144** baseline, dirtier |
+| clear water, 0.20 | **-0.054**, clearer |
+| the same scene again | history unchanged, not double counted |
+| absurd 99 and -99 FNU | clamped to exactly +0.150 / -0.150 |
+| no file / malformed file | `0.0` with a reason, no exception |
+
+End to end through the real model: a planted bloom moved Novigrad from
+**4 m to 3 m** and logged
+`sentinel-2: baseline 0.35 -> 0.47 (+0.12)`; the control run with no history
+was silent.

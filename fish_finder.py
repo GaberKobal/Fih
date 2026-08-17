@@ -328,6 +328,23 @@ def region_config(base, region):
     # are tropical, so between them that is most of the catalogue.
     #
     # Only applied where a region has NOT supplied its own numbers.
+    # Satellite-observed turbidity, applied AFTER any per-region override so
+    # a hand-set baseline is still the starting point rather than being
+    # replaced by it.
+    vis = cfg.get("visibility")
+    if isinstance(vis, dict):
+        try:
+            shift, why = s2_baseline_shift(region["id"], cfg)
+        except Exception as e:
+            shift, why = 0.0, f"skipped ({e.__class__.__name__})"
+        if shift:
+            was = float(vis.get("baseline", 0.0))
+            vis["baseline"] = max(0.0, min(0.95, was + shift))
+            log(f"sentinel-2: baseline {was:.2f} -> {vis['baseline']:.2f} "
+                f"({shift:+.2f}); {why}")
+        elif why not in ("disabled in config", "no Sentinel-2 observation yet"):
+            log(f"sentinel-2: no adjustment - {why}")
+
     tc = cfg.get("thermocline")
     if tc and "thermocline" not in region and tc.get("monthly_drop_c"):
         lat0 = 0.5 * (region["bbox"]["lat_min"] + region["bbox"]["lat_max"])
@@ -1810,6 +1827,74 @@ def decay_memory(x, tau_h):
         acc = acc * k + v
         out[i] = acc
     return out * (1.0 - k)       # normalised so a constant input -> that value
+
+
+def s2_baseline_shift(region_id, cfg):
+    """Fold a Sentinel-2 turbidity observation into the visibility baseline.
+
+    The six logged dives showed why this is needed. Over that week swell ran
+    0.07-0.11 m, wind 7-9 km/h and rain was zero, so every input the model
+    has was flat - and it duly predicted 7.2 to 7.4 m on all six dives while
+    the water actually went from 10 m to 5 m, twice in the same 500 m of
+    coast. In settled summer weather the thing that moves Adriatic clarity
+    is not weather at all. It is a bloom, or a plume, and only something
+    that LOOKS at the water can see it.
+
+    s2_turbidity.py already measures exactly that and its number went
+    nowhere. It is written after the model runs, so an observation feeds the
+    NEXT run, which is fine for a quantity that moves over days.
+
+    The hard constraint is that the value is RELATIVE. Sen2Cor leaves a
+    large atmospheric residual over water, so the script subtracts a dark
+    pixel offset and says plainly that spatial contrast is reliable and
+    absolute metres are not. A single reading therefore means nothing on its
+    own; only its deviation from what this region normally reads does. So a
+    history is kept per region, and until there are min_scenes of it this
+    returns zero and says why.
+
+    Returns (shift, reason). shift is added to visibility.baseline: positive
+    is dirtier water, so lower visibility.
+    """
+    c = (cfg.get("s2") or {})
+    if not c.get("enabled", True):
+        return 0.0, "disabled in config"
+    obs = ROOT / "docs" / "data" / region_id / "s2_turbidity.json"
+    hist_f = CACHE / f"s2_history_{region_id}.json"
+    hist = []
+    if hist_f.exists():
+        try:
+            hist = json.loads(hist_f.read_text(encoding="utf-8"))
+        except Exception:
+            hist = []
+    if obs.exists():
+        try:
+            d = json.loads(obs.read_text(encoding="utf-8"))
+            med = float(d["turbidity_relative_fnu"]["median"])
+            when = str(d.get("scene_datetime") or "")
+            # Keyed by scene, so re-running the model does not re-count the
+            # same satellite pass and drag the reference toward it.
+            if when and not any(e.get("scene") == when for e in hist):
+                hist.append({"scene": when, "median": med})
+                hist = sorted(hist, key=lambda e: e["scene"])[-40:]
+                CACHE.mkdir(parents=True, exist_ok=True)
+                hist_f.write_text(json.dumps(hist, indent=1), encoding="utf-8")
+        except Exception as e:
+            return 0.0, f"observation unreadable ({e.__class__.__name__})"
+    if not hist:
+        return 0.0, "no Sentinel-2 observation yet"
+    need = int(c.get("min_scenes", 4))
+    if len(hist) < need:
+        return 0.0, (f"{len(hist)} of {need} scenes needed before a relative "
+                     "reading means anything")
+
+    meds = sorted(e["median"] for e in hist)
+    ref = meds[len(meds) // 2]                       # this region's own normal
+    latest = hist[-1]["median"]
+    lim = float(c.get("max_shift", 0.15))
+    raw = (latest - ref) * float(c.get("baseline_per_fnu", 0.06))
+    shift = max(-lim, min(lim, raw))
+    return shift, (f"latest {latest:.2f} vs this coast's usual {ref:.2f} FNU "
+                   f"over {len(hist)} scenes")
 
 
 def visibility_series(h, cfg, depth_m=None, river=None):
