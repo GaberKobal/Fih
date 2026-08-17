@@ -262,18 +262,19 @@
     background:rgba(7,26,34,.88); border:1px solid var(--line); border-radius:3px;
     padding:9px 11px; font-family:var(--sans); max-width:210px;
   }
-  #maptools .mthead{display:flex; align-items:center; justify-content:space-between;
-    gap:10px; margin-bottom:5px}
-  #maptools .mthead .eyebrow{margin:0}
+  #maptools .eyebrow{margin-bottom:5px}
   /* Hidden on desktop: there the panel is a small corner box and collapsing
      it would only add a click. It appears at the phone breakpoint below. */
-  #mtoggle{display:none; flex:0 0 auto; width:26px; height:26px; margin:-5px -5px -3px 0;
-    background:none; border:1px solid var(--line); border-radius:3px;
-    color:var(--sound); cursor:pointer; font:600 15px/1 var(--sans)}
-  #mtoggle::before{content:"\2212"}            /* minus */
-  #maptools.collapsed #mtoggle::before{content:"+"}
+  #mtoggle{display:none; width:100%; align-items:center; justify-content:space-between;
+    gap:8px; margin-top:8px; padding:9px 0 2px; min-height:34px;
+    background:none; border:0; border-top:1px solid var(--line);
+    color:var(--chart); cursor:pointer; text-align:left;
+    font:600 12.5px/1.2 var(--sans); letter-spacing:.005em}
+  /* The caret is the affordance. It must say "there is more below" while
+     collapsed and "this closes" while open. */
+  #mtoggle::after{content:"\25B4"; font-size:13px; color:var(--buoy)}   /* up */
+  #maptools.collapsed #mtoggle::after{content:"\25BE"}                  /* down */
   #maptools.collapsed #mtbody{display:none}
-  #maptools.collapsed #ramplab{margin-bottom:0}
   #ramp{height:9px; border-radius:2px; margin-bottom:3px;
     background:linear-gradient(90deg,#440154,#3b528b,#21918c,#5ec962,#fde725)}
   #ramplab{display:flex; justify-content:space-between;
@@ -441,7 +442,7 @@
        figure that matters: 22vh is 179 px, about 44% of the map, and only
        while the reader has deliberately opened it. Past that it scrolls
        rather than growing. */
-    #mtoggle{display:block}
+    #mtoggle{display:flex}
     /* min-width matters once it collapses: the box shrink-wraps its content,
        and with only the header left that was 84 px, squashing the ramp the
        panel exists to show. */
@@ -618,13 +619,16 @@
          the score ramp, two key rows, three controls and the scan box. It
          collapses to just the ramp there, which is the only part you read
          at a glance; everything else is a setting you touch once. -->
-    <div class="mthead">
-      <div class="eyebrow">Score</div>
-      <button type="button" id="mtoggle" aria-expanded="true"
-              aria-controls="mtbody" aria-label="Show or hide map controls"></button>
-    </div>
+    <div class="eyebrow">Score</div>
     <div id="ramp"></div>
     <div id="ramplab"><span>low</span><span>high</span></div>
+    <!-- A labelled full-width row, not an icon in the corner. Collapsed, the
+         panel is just a colour ramp, and a bare "+" was not enough to say
+         that the key and the controls were still there - it read as the
+         legend having lost half of itself. -->
+    <button type="button" id="mtoggle" aria-expanded="true" aria-controls="mtbody">
+      <span>Key and controls</span>
+    </button>
    <div id="mtbody">
     <!-- Key. The wreck symbol was on the map with nothing anywhere saying
          what it meant, so it read as either a hazard or another model
