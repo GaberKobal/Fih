@@ -1,113 +1,105 @@
-# v23 — found it. The service worker was serving one forecast to the world.
+# v24 — what the audit found after v23
 
 ```
-v23/
-└── docs/sw.js        <- supersedes v22
+v24/
+└── docs/
+    ├── sw.js          <- supersedes v23
+    └── index.html     <- supersedes v22
 ```
 
-Nothing else changes. `docs/index.html`, the manifest and icons stay at v22;
-`fish_finder.py`, `config.json`, `README.md` at v20; `s2_turbidity.py`,
-`dive_log.csv`, the workflow at v19; `regions.json` v17.
+Everything else unchanged: manifest and icons v22; `fish_finder.py`,
+`config.json`, `README.md` v20; `s2_turbidity.py`, `dive_log.csv`, workflow
+v19; `regions.json` v17.
 
-**This one is worth uploading on its own, immediately.**
+**v23 already fixes Venice.** This corrects things the audit turned up
+afterwards, including one bug that is arguably worse.
 
 ---
 
-## Proven, in your live browser
+## GMRT was poisoned too, and that damage outlived the request
+
+Open-Meteo was not the only victim. `structure.js`:
 
 ```js
-fetch('...open-meteo.../marine?latitude=45.44&longitude=12.33')  // Venice
-fetch('...open-meteo.../marine?latitude=-33.90&longitude=151.30') // Sydney
-
-requestedSydney -> { lat: 45.375, lon: 12.29 }
-SYDNEY_GOT_VENICE: true
+const GMRT = "https://www.gmrt.org/services/GridServer";
+const url  = `${GMRT}?${q}`;      // the whole bbox lives in the query
+res = await fetch(url);           // bare cross-origin GET, fixed path
 ```
 
-A request for Sydney came back with Venice's data. Not a race, not the home
-screen, not the app's JavaScript at all.
+Same shape, same poisoning. But then:
 
-## The mechanism
-
-`sw.js` routed fonts, then map tiles, then `/data/`, then `/r/`, then fell
-through to an app-shell branch which is **cache-first** and matched with
-**`{ ignoreSearch: true }`**.
-
-There was **no cross-origin bail-out**. So every Open-Meteo call landed in
-that final branch. And Open-Meteo point forecasts differ *only* in the query
-string:
-
-```
-https://marine-api.open-meteo.com/v1/marine?latitude=45.44&longitude=12.33
-https://marine-api.open-meteo.com/v1/marine?latitude=-33.90&longitude=151.30
-                                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-                                            ignoreSearch throws all of this away
+```js
+// Static data: once fetched for an area, never fetch it again.
+if(cache) cache.put(url, new Response(text));
 ```
 
-Identical after `ignoreSearch`. The first point forecast fetched was cached
-under the bare path, and **every subsequent point on Earth matched it**. It
-lived in the shell cache, so it survived reloads, which is precisely why it
-looked like a location that had been "saved". The same applied to the flood
-API and to Overpass.
+The wrong grid was written into `bathy-v1` **under the correct key**, and
+that cache is never revalidated. So "Scan structure" on a new coast returned
+the first coast's seabed, and it stayed wrong.
 
-## Why my three earlier answers were wrong
+**Already handled, by luck rather than design.** `activate` deletes every
+cache except SHELL/DATA/TILES/FONTS, so the v23 version bump purges
+`bathy-v1` on each device. I have written a warning above that filter,
+because it looks exactly like something to optimise later - and a keep-list
+without a one-shot `caches.delete("bathy-v1")` would preserve wrong seabed
+data forever.
 
-Worth recording, because each was confidently argued:
+## My v23 comment named the wrong hosts
 
-- **the region race (v21)** — real, and fixed, but intermittent and about
-  regions; it could never make every point on Earth resolve to one place
-- **the unguarded `forecastPoint` await (v22)** — a real hole, now closed,
-  but I could not make it misbehave on the live build and said so
-- **the missing manifest (v22)** — real, and worth having, but it only
-  explains the *launch* URL, not tapping a new point and getting Venice
+It said "Open-Meteo, the flood API and Overpass". Checked:
 
-The detail that broke it open was yours: *"pointing anywhere in the world"*.
-A race cannot do that. Only a cache key that ignores the coordinates can.
+- **Overpass is not affected** - `structure.js` sends it as a **POST**, and
+  the handler exits at `if (req.method !== "GET") return;`
+- **There is no browser-side flood API** - `grep -rn "flood-api" docs/`
+  returns nothing; it is server-side Python only
+- **GMRT was affected** and I had not mentioned it
 
-## The fix
+Corrected, because that comment is the record of a real incident and it was
+wrong in both directions.
 
-Three changes, all in `sw.js`:
+## The offline map never worked
 
-1. **Bail out on cross-origin requests.** Anything not same-origin, and not
-   already handled by the fonts or tiles branches, is an API call. Returning
-   without `respondWith` hands it to the browser untouched — the only correct
-   answer for a request whose whole meaning is in its query string.
-2. **`ignoreSearch` only for navigations.** `/?utm=x` is still the shell;
-   `structure.js?v=2` is not `structure.js?v=1`.
-3. **`VERSION` to v23**, which purges the already-poisoned `shell-v22` cache
-   on every device. Without this the bad entry would simply persist.
+`sw.js` has a tile cache with a 900-tile cap and a header promising the app
+"opens in a car park with one bar of signal". Neither `L.tileLayer` call
+passed `crossOrigin`, so Leaflet's `<img>` requests were **no-cors**, the
+responses came back **opaque**, `res.ok` is false for an opaque response, and
 
-## A regression I introduced and caught
+```js
+if (res.ok) { c.put(req, res.clone()); trimTiles(); }
+```
 
-The bail-out would have broken the app **offline**: Leaflet's CSS and JS come
-from unpkg, are cross-origin, and are deliberately precached in
-`SHELL_URLS` — the bail-out would have stopped them ever being served from
-cache, so an offline launch would have had no map at all. Added a
-`PRECACHED_REMOTE` branch above the bail-out that serves exactly those two
-URLs cache-first, matched exactly.
+never ran. **Not one tile was ever cached.** `TILE_CAP` described nothing.
+Both CDNs answer `Access-Control-Allow-Origin: *` - verified with curl before
+changing anything, since adding `crossOrigin` to a host that refused it would
+have broken the map outright - so both layers now request with CORS and the
+cache is real.
 
 ## Verified
 
-The service worker will not register in my test browser, so I ran the **real
-`sw.js`** in a sandbox with stubbed globals and recorded the route every
-request takes:
+Routing of the **real sw.js**, run in a sandbox:
 
-| request | intercepted | cache | ignoreSearch |
-| --- | --- | --- | --- |
-| marine-api.open-meteo (Sydney) | **no** | — | — |
-| api.open-meteo | **no** | — | — |
-| overpass-api.de | **no** | — | — |
-| unpkg Leaflet | yes | shell-v23 | **false** |
-| cartocdn tile | yes | tiles | false |
-| `/data/novigrad/latest.json` | yes | data-v23 | — |
-| `/r/novigrad/` | yes | data-v23 | — |
-| navigation `/` | yes | shell-v23 | **true** |
-| `structure.js?v=2` | yes | shell-v23 | **false** |
+```
+NOT INTERCEPTED           <-  marine-api.open-meteo.com/v1/marine?latitude=-33.9
+NOT INTERCEPTED           <-  gmrt.org/services/GridServer?north=1&south=0
+NOT INTERCEPTED           <-  overpass-api.de/api/interpreter
+shell-v24                 <-  unpkg.com/leaflet@1.9.4/dist/leaflet.js
+tiles                     <-  basemaps.cartocdn.com/.../5/1/2.png
+shell-v24 (ignoreSearch)  <-  /                      (navigation)
+shell-v24                 <-  /structure.js?v=2      (exact)
+```
 
-Plus 9/9 assertions on the file and a 36-region selftest, 0 failures.
+10/10 assertions, 36-region selftest, 0 failures.
 
-## After you upload
+## Still open, not changed here
 
-The poisoned entry is on your phone until the new worker activates. If it
-still misbehaves for a moment, close every tab of the site and reopen it, or
-clear site data. `VERSION` v23 handles it on its own once the new worker
-takes over.
+Real findings I have deliberately not rushed into this deploy:
+
+1. **No timeout on the `/data/` network-first fetch.** On one bar a connect
+   can hang for a minute before the cache is consulted. Wants a ~3 s race.
+2. **`if (res.ok)` trusts any 2xx.** A captive-portal login page returns 200
+   and would overwrite the last good `latest.json`.
+3. **Install is non-atomic and activate is destructive.** A flaky update can
+   leave a partial shell with the previous one already deleted.
+
+Each is a behaviour change to offline handling and deserves its own testing
+rather than riding along with a fix you need now.
