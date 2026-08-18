@@ -8,7 +8,10 @@
 //   tiles   cache-first with a cap - map tiles never change and are the
 //           slowest thing on a bad connection
 
-const VERSION = "v21";
+// Bump this whenever ANY file in SHELL_URLS changes. The shell is served
+// cache-first, so a stale entry is what a returning phone sees; a new
+// VERSION forces a fresh install, a fresh precache and a cache purge.
+const VERSION = "v22";
 const SHELL = `shell-${VERSION}`;
 const DATA = `data-${VERSION}`;
 const TILES = "tiles";
@@ -22,6 +25,8 @@ const SHELL_URLS = [
   "./structure.js",
   "./region-species.json",
   "./add-region.html",
+  "./manifest.webmanifest",
+  "./icon-192.png",
   "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css",
   "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js",
 ];

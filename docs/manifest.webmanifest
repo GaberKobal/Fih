@@ -1,0 +1,17 @@
+{
+  "name": "Dive forecast",
+  "short_name": "Dive",
+  "description": "Spearfishing and freediving conditions for any coast on Earth.",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#071A22",
+  "theme_color": "#071A22",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icon-maskable-512.png", "sizes": "512x512", "type": "image/png",
+      "purpose": "maskable" }
+  ]
+}
