@@ -11,7 +11,7 @@
 // Bump this whenever ANY file in SHELL_URLS changes. The shell is served
 // cache-first, so a stale entry is what a returning phone sees; a new
 // VERSION forces a fresh install, a fresh precache and a cache purge.
-const VERSION = "v23";
+const VERSION = "v24";
 const SHELL = `shell-${VERSION}`;
 const DATA = `data-${VERSION}`;
 const TILES = "tiles";
@@ -49,6 +49,15 @@ self.addEventListener("install", e => {
   );
 });
 
+// NOTE BEFORE YOU TIDY THIS. The filter keeps only the four caches named
+// here, which means it also deletes structure.js's bathy-v1 and osm-v1 on
+// every version bump. That is wasteful - they are static, and refetching
+// them hammers the volunteer Overpass mirrors - so it looks like something
+// to fix with a keep-list. It is, BUT NOT YET: that deletion is currently
+// the only thing clearing the GMRT grids poisoned by the bug described in
+// the fetch handler below. A keep-list must ship in the same change as a
+// one-shot `caches.delete("bathy-v1")`, or it will preserve wrong seabed
+// data on every device that ever ran a scan.
 self.addEventListener("activate", e => {
   e.waitUntil(
     caches.keys()
@@ -134,8 +143,9 @@ self.addEventListener("fetch", e => {
 
   // --- ANYTHING ELSE CROSS-ORIGIN: do not touch it ---
   //
-  // THE VENICE BUG. Open-Meteo, the flood API and Overpass are all
-  // cross-origin and all differ ONLY in their query string. With no bail-out
+  // THE VENICE BUG. Open-Meteo (marine and forecast) and GMRT's GridServer
+  // are cross-origin GETs to a FIXED path whose coordinates live entirely in
+  // the query string. With no bail-out
   // here they fell through to the app-shell branch at the bottom, which is
   // cache-first and matched with { ignoreSearch: true } - and ignoreSearch
   // throws the query away. So the first point forecast anyone fetched was
@@ -145,6 +155,15 @@ self.addEventListener("fetch", e => {
   // (-33.90, 151.30) came back with latitude 45.375, longitude 12.29. Venice.
   // It survived reloads because it lived in the shell cache, which is exactly
   // why it looked like a location that had been "saved".
+  //
+  // GMRT was the worse victim, because the damage outlived the request.
+  // structure.js writes what it gets back into its own bathy-v1 cache under
+  // the CORRECT key and never refetches ("Static data: once fetched for an
+  // area, never fetch it again"), so a poisoned scan wrote one coast's seabed
+  // in under every other coast's name, permanently.
+  //
+  // Overpass is NOT affected: it is a POST and exits at the method check
+  // above. There is no browser-side flood API - that is server-side Python.
   //
   // Fonts and tiles are cross-origin too, which is why this sits after them:
   // they are immutable, they are matched exactly, and they have their own
