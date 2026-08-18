@@ -1,96 +1,113 @@
-# v22 — the home-screen icon was the culprit
+# v23 — found it. The service worker was serving one forecast to the world.
 
 ```
-v22/
-└── docs/
-    ├── index.html              <- supersedes v21
-    ├── sw.js                   <- supersedes v18, VERSION bumped
-    ├── manifest.webmanifest    <- new
-    ├── icon-192.png            <- new
-    ├── icon-512.png            <- new
-    └── icon-maskable-512.png   <- new
+v23/
+└── docs/sw.js        <- supersedes v22
 ```
 
-Everything else unchanged: `fish_finder.py`, `config.json`, `README.md` at
-v20; `s2_turbidity.py`, `dive_log.csv`, workflow at v19; `regions.json` v17.
+Nothing else changes. `docs/index.html`, the manifest and icons stay at v22;
+`fish_finder.py`, `config.json`, `README.md` at v20; `s2_turbidity.py`,
+`dive_log.csv`, the workflow at v19; `regions.json` v17.
+
+**This one is worth uploading on its own, immediately.**
 
 ---
 
-## Start here: I could not reproduce a code fault
+## Proven, in your live browser
 
-The v21 race fix **is** deployed and correct — I checked the live file. So I
-tested the live build against your exact gesture: sit on a point, then choose
-a coast, with a real Open-Meteo call in flight.
+```js
+fetch('...open-meteo.../marine?latitude=45.44&longitude=12.33')  // Venice
+fetch('...open-meteo.../marine?latitude=-33.90&longitude=151.30') // Sydney
 
-```
-renderOrder: ["POINT@10ms", "cascais@2172ms"]     -> ended on Cascais, correct
-```
-
-It did not revert. Two of my earlier test rigs were also broken in ways that
-produced confident nonsense: the first used a single-threaded server, so the
-artificial delay serialised every request and destroyed the concurrency the
-race needs; the second had a stale `REGION`, so switching "to" a coast the
-app was already on was a no-op. **My "a point forecast reliably finishes
-last" explanation was wrong**, and I am flagging it rather than leaving it in
-the record as if it had been established.
-
-## What actually fits "always" and "from a while ago"
-
-The app had **no web app manifest**, no `apple-mobile-web-app-capable` and no
-apple-touch-icon. Without a manifest, "Add to Home Screen" saves **the exact
-URL on screen at that moment, hash included**. Add the icon while looking at
-a tapped point and that point is the shortcut, permanently. iOS then
-relaunches a standalone web app from its saved URL every time the system
-evicts it from memory, which is constantly.
-
-That needs no bug at all, and it explains what a race cannot: why it is
-*always* Venice, and why Venice is a coast you chose *a while ago*.
-
-Demonstrated:
-
-```
-URL when you would have added the icon:  .../index.html#@45.4400,12.3300
-where start_url now launches:            .../            (no hash)
-hash leaks into launch:                  false
+requestedSydney -> { lat: 45.375, lon: 12.29 }
+SYDNEY_GOT_VENICE: true
 ```
 
-## The fix, and the bit you have to do yourself
+A request for Sydney came back with Venice's data. Not a race, not the home
+screen, not the app's JavaScript at all.
 
-`manifest.webmanifest` pins `start_url` and `scope` to the app root, so a
-launch always begins with no hash. Plus proper icons, standalone display and
-the iOS meta tags.
+## The mechanism
 
-**A manifest cannot retroactively fix an icon that already exists.** The
-shortcut on your phone still carries the Venice URL baked into it. **Delete
-the icon and add it again** and it will launch clean from then on.
+`sw.js` routed fonts, then map tiles, then `/data/`, then `/r/`, then fell
+through to an app-shell branch which is **cache-first** and matched with
+**`{ ignoreSearch: true }`**.
 
-To confirm the diagnosis in ten seconds first: open
-`https://gaberkobal.github.io/Fih/` typed fresh in the browser, with no hash.
-If that opens on Novigrad while the icon still opens on Venice, this is it.
+There was **no cross-origin bail-out**. So every Open-Meteo call landed in
+that final branch. And Open-Meteo point forecasts differ *only* in the query
+string:
 
-## Two real things fixed alongside
+```
+https://marine-api.open-meteo.com/v1/marine?latitude=45.44&longitude=12.33
+https://marine-api.open-meteo.com/v1/marine?latitude=-33.90&longitude=151.30
+                                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                                            ignoreSearch throws all of this away
+```
 
-**`loadPoint` had an unguarded await before rendering.** v21 guarded the
-model fetch and the dynamic import and missed `await forecastPoint(...)`,
-which is the only slow one — it goes to Open-Meteo. I could not get it to
-misbehave on the live build, so I am not claiming it was your symptom, but an
-unguarded await before a render is a hole and it is now closed. Its `catch`
-is guarded too, so a stale point that fails cannot post "Could not get a
-forecast here" over a coast that has since loaded fine.
+Identical after `ignoreSearch`. The first point forecast fetched was cached
+under the bare path, and **every subsequent point on Earth matched it**. It
+lived in the shell cache, so it survived reloads, which is precisely why it
+looked like a location that had been "saved". The same applied to the flood
+API and to Overpass.
 
-**The service worker version was never bumped when the shell changed.** The
-shell is served cache-first, so a returning phone sees its cached
-`index.html` first and only picks up a new one on a later load. v20 and v21
-both changed `index.html` without touching `VERSION`, which slowed the fix
-reaching your phone. Now `v22`, with a comment saying to bump it whenever a
-shell file changes.
+## Why my three earlier answers were wrong
+
+Worth recording, because each was confidently argued:
+
+- **the region race (v21)** — real, and fixed, but intermittent and about
+  regions; it could never make every point on Earth resolve to one place
+- **the unguarded `forecastPoint` await (v22)** — a real hole, now closed,
+  but I could not make it misbehave on the live build and said so
+- **the missing manifest (v22)** — real, and worth having, but it only
+  explains the *launch* URL, not tapping a new point and getting Venice
+
+The detail that broke it open was yours: *"pointing anywhere in the world"*.
+A race cannot do that. Only a cache key that ignores the coordinates can.
+
+## The fix
+
+Three changes, all in `sw.js`:
+
+1. **Bail out on cross-origin requests.** Anything not same-origin, and not
+   already handled by the fonts or tiles branches, is an API call. Returning
+   without `respondWith` hands it to the browser untouched — the only correct
+   answer for a request whose whole meaning is in its query string.
+2. **`ignoreSearch` only for navigations.** `/?utm=x` is still the shell;
+   `structure.js?v=2` is not `structure.js?v=1`.
+3. **`VERSION` to v23**, which purges the already-poisoned `shell-v22` cache
+   on every device. Without this the bad entry would simply persist.
+
+## A regression I introduced and caught
+
+The bail-out would have broken the app **offline**: Leaflet's CSS and JS come
+from unpkg, are cross-origin, and are deliberately precached in
+`SHELL_URLS` — the bail-out would have stopped them ever being served from
+cache, so an offline launch would have had no map at all. Added a
+`PRECACHED_REMOTE` branch above the bail-out that serves exactly those two
+URLs cache-first, matched exactly.
 
 ## Verified
 
-**12/12 assertions**, plus a 36-region selftest, 0 failures.
+The service worker will not register in my test browser, so I ran the **real
+`sw.js`** in a sandbox with stubbed globals and recorded the route every
+request takes:
 
-- `start_url` resolves to the app root and is unaffected by the current hash
-- manifest, all three icons and `sw.js` all serve with correct content types
-- manifest linked, apple meta present, app still loads and renders
-- 13 stale-guards in `index.html`, `forecastPoint` among them
-- the GoatCounter endpoint and the static pages survive the edits
+| request | intercepted | cache | ignoreSearch |
+| --- | --- | --- | --- |
+| marine-api.open-meteo (Sydney) | **no** | — | — |
+| api.open-meteo | **no** | — | — |
+| overpass-api.de | **no** | — | — |
+| unpkg Leaflet | yes | shell-v23 | **false** |
+| cartocdn tile | yes | tiles | false |
+| `/data/novigrad/latest.json` | yes | data-v23 | — |
+| `/r/novigrad/` | yes | data-v23 | — |
+| navigation `/` | yes | shell-v23 | **true** |
+| `structure.js?v=2` | yes | shell-v23 | **false** |
+
+Plus 9/9 assertions on the file and a 36-region selftest, 0 failures.
+
+## After you upload
+
+The poisoned entry is on your phone until the new worker activates. If it
+still misbehaves for a moment, close every tab of the site and reopen it, or
+clear site data. `VERSION` v23 handles it on its own once the new worker
+takes over.
