@@ -11,7 +11,7 @@
 // Bump this whenever ANY file in SHELL_URLS changes. The shell is served
 // cache-first, so a stale entry is what a returning phone sees; a new
 // VERSION forces a fresh install, a fresh precache and a cache purge.
-const VERSION = "v22";
+const VERSION = "v23";
 const SHELL = `shell-${VERSION}`;
 const DATA = `data-${VERSION}`;
 const TILES = "tiles";
@@ -30,6 +30,14 @@ const SHELL_URLS = [
   "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css",
   "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js",
 ];
+
+// The cross-origin entries of SHELL_URLS - Leaflet from unpkg. They are
+// precached on install, so they MUST still be served from cache when the
+// network is gone, which means they need a branch of their own above the
+// cross-origin bail-out below. Without one the bail-out would hand them
+// straight to the browser and the app would not render offline at all:
+// no Leaflet, no map.
+const PRECACHED_REMOTE = new Set(SHELL_URLS.filter(u => /^https?:/i.test(u)));
 
 self.addEventListener("install", e => {
   e.waitUntil(
@@ -107,6 +115,44 @@ self.addEventListener("fetch", e => {
     return;
   }
 
+  // --- precached remote assets (Leaflet): cache-first, matched EXACTLY ---
+  if (PRECACHED_REMOTE.has(url.href)) {
+    e.respondWith((async () => {
+      const c = await caches.open(SHELL);
+      const hit = await c.match(req);      // exact: these carry a version in the path
+      if (hit) return hit;
+      try {
+        const res = await fetch(req);
+        if (res.ok) c.put(req, res.clone());
+        return res;
+      } catch (err) {
+        return Response.error();
+      }
+    })());
+    return;
+  }
+
+  // --- ANYTHING ELSE CROSS-ORIGIN: do not touch it ---
+  //
+  // THE VENICE BUG. Open-Meteo, the flood API and Overpass are all
+  // cross-origin and all differ ONLY in their query string. With no bail-out
+  // here they fell through to the app-shell branch at the bottom, which is
+  // cache-first and matched with { ignoreSearch: true } - and ignoreSearch
+  // throws the query away. So the first point forecast anyone fetched was
+  // cached under the bare path, and every later point on Earth matched it.
+  //
+  // Reproduced in a browser against the live site: a request for Sydney
+  // (-33.90, 151.30) came back with latitude 45.375, longitude 12.29. Venice.
+  // It survived reloads because it lived in the shell cache, which is exactly
+  // why it looked like a location that had been "saved".
+  //
+  // Fonts and tiles are cross-origin too, which is why this sits after them:
+  // they are immutable, they are matched exactly, and they have their own
+  // branches above. Everything else cross-origin is an API call. Returning
+  // without calling respondWith hands it to the browser untouched, which is
+  // the only correct answer for a request whose meaning is in its query.
+  if (url.origin !== self.location.origin) return;
+
   // --- forecast data: fresh if we can, yesterday's if we cannot ---
   if (url.pathname.includes("/data/")) {
     e.respondWith((async () => {
@@ -148,7 +194,11 @@ self.addEventListener("fetch", e => {
   // --- app shell: cache-first, updated quietly in the background ---
   e.respondWith((async () => {
     const c = await caches.open(SHELL);
-    const hit = await c.match(req, { ignoreSearch: true });
+    // ignoreSearch ONLY for navigations. A page opened as "/?utm=..." is
+    // still the shell, but "structure.js?v=2" is not "structure.js?v=1", and
+    // treating them as interchangeable is the same mistake that cached one
+    // point forecast for the whole planet.
+    const hit = await c.match(req, { ignoreSearch: req.mode === "navigate" });
     const net = fetch(req).then(res => {
       if (res.ok) c.put(req, res.clone());
       return res;
