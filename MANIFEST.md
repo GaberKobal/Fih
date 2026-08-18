@@ -1,105 +1,84 @@
-# v20 — counting the pages that get the search traffic
+# v21 — switching coast could put you back on the previous one
 
 ```
-v20/
-├── fish_finder.py
-├── config.json
-├── README.md
+v21/
 └── docs/index.html
 ```
 
-`s2_turbidity.py`, `dive_log.csv` and the workflow current as of **v19**;
-`regions.json` v17; `docs/sw.js` v18; `docs/structure.js` v10;
-`docs/add-region.html` v12; `docs/anywhere.js` v8.
-
-**Upload in ONE commit** — each push cancels the run before it.
+**Supersedes the `docs/index.html` in v20** and includes everything that was
+in it, the GoatCounter endpoint included. Every other file is unchanged:
+`fish_finder.py`, `config.json`, `README.md` at v20; `s2_turbidity.py`,
+`dive_log.csv`, the workflow at v19; `regions.json` v17; `docs/sw.js` v18.
 
 ---
 
-## The gap
+## What was happening
 
-The 800 region pages added in v18 contained **no script tag at all**. Good
-for speed, wrong for the purpose: those pages exist to attract search
-traffic, so the visits you most want to see would have been the only ones
-invisible. Views that reached the map would count; views that landed on
-`/r/sardinia-nw/` would not.
+Every loader is async and read the **global** `REGION`, including
+`dataUrl`. Pick coast A, then pick B before A's `latest.json` has arrived,
+and both loads are in flight. Whichever resolves LAST wins.
 
-They now send the same single GET on the same terms as the app: no
-third-party script, no cookies, no storage, Do Not Track and Global Privacy
-Control honoured, and nothing emitted at all when no endpoint is set.
-
-The path reported is `/r/<id>` — **deliberately identical to what the app
-already reports** for the same coast, so it reads as one row rather than
-splitting in two. Search landings stay distinguishable anyway: they arrive
-with an external referrer and in-app views do not.
-
-The endpoint comes from `analytics.endpoint` in `config.json`; if that is
-empty it is read straight out of `docs/index.html`, so the one line the
-README documents still works and 800 generated files never carry a stale
-copy. The run says which source it used, or warns that counting is off.
-
-## The bug found while testing it
-
-Watching a local server receive the beacon:
+Reproduced against a server that delays one region by 2.5 s while serving
+everything else normally:
 
 ```
-POST /count?p=/r/novigrad&t=... 501     <- before
-GET  /count?p=/r/novigrad&t=... 404     <- after
+renderOrder: ["split", "novigrad"]    <- the older load finished last and won
+hash:        #split
+heading:     "Split and Brač channel"
+verdict:     "Novigrad, Istria"       <- the coast you had just left
 ```
 
-`navigator.sendBeacon` **always issues a POST**. A GoatCounter-style
-`/count` endpoint answers **GET**. So the transport was the one method the
-endpoint does not accept.
+The page ends up split-brain: the URL and the heading say one coast, the
+forecast you are reading is the previous one. That is the "puts me back to a
+previous location" you saw.
 
-This was not only my new code. **The app's own tracker preferred
-`sendBeacon` too** ([docs/index.html](docs/index.html)), which means that
-for as long as it has existed, every view it believed it counted was very
-likely discarded at the far end — and it would have looked like working
-code, because nothing on the page ever sees the response.
+It is a race, so it is intermittent, and it is far worse on a phone where
+the network is slower and more variable. That is exactly where you noticed
+it and why the laptop seemed fine.
 
-Both now use `fetch` with `keepalive`: a GET, and it still survives the page
-being closed. `Image` remains the fallback for anything without `fetch`.
+Contours, wrecks and the turbidity band had the same flaw and could paint
+the previous coast's shapes and numbers onto the new map.
 
-If you had ever set an endpoint and seen no numbers, this is why.
+## The fix
 
-## Switched on
+Every navigation takes a ticket. After each await, a loader holding a stale
+ticket returns instead of rendering. Region ids are captured into a local
+rather than read back off the global once the response arrives.
 
-`docs/index.html` now carries the live endpoint:
+Same test on the fixed build:
 
-```js
-const ANALYTICS = { endpoint: "https://fishcounter.goatcounter.com/count", ... }
+```
+renderOrder: ["split"]                <- novigrad's stale load never rendered
 ```
 
-**Set in one file, not two.** The app reads its own constant; the page
-generator finds the same value by reading `docs/index.html` when
-`analytics.endpoint` in `config.json` is empty, which it deliberately is.
-One line to change if the account ever moves.
+## A second bug found in the same code
 
-### Why not GoatCounter's own snippet
+The region picker did `overlay=null` **without removing the layer**. That
+orphaned the previous coast's score raster on the map, and `renderAll`'s own
+`if(overlay) map.removeLayer(overlay)` then had nothing to remove, so the old
+image stayed painted under the new one. The hashchange handler had always
+done this correctly, which is why it only happened when switching from the
+picker. Now it removes the layer.
 
-Their onboarding suggests:
+Verified: after switching coast, exactly **1** `L.ImageOverlay` on the map.
 
-```html
-<script data-goatcounter="..." async src="//gc.zgo.at/count.js"></script>
-```
+## A note on how this was tested
 
-That is a third-party script on every page. The direct GET to `/count` is a
-documented GoatCounter integration, records the same pageview, and keeps
-three properties the snippet would cost: no third-party code, nothing to
-declare in a consent banner, and an offline story where a failed request is
-simply ignored. Adblockers may still block the goatcounter.com host, so
-treat all counts as a floor rather than a total.
+The first harness did not reproduce the bug and appeared to exonerate the
+old code. It was wrong: `socketserver.TCPServer` is single-threaded, so the
+artificial delay blocked every request and serialised them, destroying the
+very concurrency the race needs. The give-away was in the timings - the two
+renders landed 15 ms apart, in order.
+
+Rebuilt on `ThreadingHTTPServer` and confirmed genuinely concurrent (the
+fast request returned in 228 ms while the slow one was still in flight), the
+bug reproduced immediately.
 
 ## Verified
 
-**10/10 assertions**, plus a 36-region selftest, 0 failures.
-
-| tested | result |
-| --- | --- |
-| no endpoint anywhere | no `<script>` in the page at all, and the run says counting is off |
-| endpoint only in `docs/index.html` | picked up, logged as *from docs/index.html* |
-| endpoint in both | `config.json` wins, logged as such |
-| beacon in a real browser | **`GET /count?p=/r/novigrad&t=...`** observed at the server |
-| hub page | reports `/r` |
-| DNT / GPC | checked before anything is sent |
-| third-party scripts | none; no `<script src>` on any page |
+- **10/10 static checks** on the patched file
+- the race, before and after, on a concurrent server
+- ordinary sequential navigation still correct: hash, `REGION`, heading and
+  verdict all agree on Cascais, and one image overlay on the map
+- 36-region selftest, 0 failures, static pages and sitemap still generated
+- the GoatCounter endpoint survives the edit
