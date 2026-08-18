@@ -1,84 +1,96 @@
-# v21 — switching coast could put you back on the previous one
+# v22 — the home-screen icon was the culprit
 
 ```
-v21/
-└── docs/index.html
+v22/
+└── docs/
+    ├── index.html              <- supersedes v21
+    ├── sw.js                   <- supersedes v18, VERSION bumped
+    ├── manifest.webmanifest    <- new
+    ├── icon-192.png            <- new
+    ├── icon-512.png            <- new
+    └── icon-maskable-512.png   <- new
 ```
 
-**Supersedes the `docs/index.html` in v20** and includes everything that was
-in it, the GoatCounter endpoint included. Every other file is unchanged:
-`fish_finder.py`, `config.json`, `README.md` at v20; `s2_turbidity.py`,
-`dive_log.csv`, the workflow at v19; `regions.json` v17; `docs/sw.js` v18.
+Everything else unchanged: `fish_finder.py`, `config.json`, `README.md` at
+v20; `s2_turbidity.py`, `dive_log.csv`, workflow at v19; `regions.json` v17.
 
 ---
 
-## What was happening
+## Start here: I could not reproduce a code fault
 
-Every loader is async and read the **global** `REGION`, including
-`dataUrl`. Pick coast A, then pick B before A's `latest.json` has arrived,
-and both loads are in flight. Whichever resolves LAST wins.
-
-Reproduced against a server that delays one region by 2.5 s while serving
-everything else normally:
+The v21 race fix **is** deployed and correct — I checked the live file. So I
+tested the live build against your exact gesture: sit on a point, then choose
+a coast, with a real Open-Meteo call in flight.
 
 ```
-renderOrder: ["split", "novigrad"]    <- the older load finished last and won
-hash:        #split
-heading:     "Split and Brač channel"
-verdict:     "Novigrad, Istria"       <- the coast you had just left
+renderOrder: ["POINT@10ms", "cascais@2172ms"]     -> ended on Cascais, correct
 ```
 
-The page ends up split-brain: the URL and the heading say one coast, the
-forecast you are reading is the previous one. That is the "puts me back to a
-previous location" you saw.
+It did not revert. Two of my earlier test rigs were also broken in ways that
+produced confident nonsense: the first used a single-threaded server, so the
+artificial delay serialised every request and destroyed the concurrency the
+race needs; the second had a stale `REGION`, so switching "to" a coast the
+app was already on was a no-op. **My "a point forecast reliably finishes
+last" explanation was wrong**, and I am flagging it rather than leaving it in
+the record as if it had been established.
 
-It is a race, so it is intermittent, and it is far worse on a phone where
-the network is slower and more variable. That is exactly where you noticed
-it and why the laptop seemed fine.
+## What actually fits "always" and "from a while ago"
 
-Contours, wrecks and the turbidity band had the same flaw and could paint
-the previous coast's shapes and numbers onto the new map.
+The app had **no web app manifest**, no `apple-mobile-web-app-capable` and no
+apple-touch-icon. Without a manifest, "Add to Home Screen" saves **the exact
+URL on screen at that moment, hash included**. Add the icon while looking at
+a tapped point and that point is the shortcut, permanently. iOS then
+relaunches a standalone web app from its saved URL every time the system
+evicts it from memory, which is constantly.
 
-## The fix
+That needs no bug at all, and it explains what a race cannot: why it is
+*always* Venice, and why Venice is a coast you chose *a while ago*.
 
-Every navigation takes a ticket. After each await, a loader holding a stale
-ticket returns instead of rendering. Region ids are captured into a local
-rather than read back off the global once the response arrives.
-
-Same test on the fixed build:
+Demonstrated:
 
 ```
-renderOrder: ["split"]                <- novigrad's stale load never rendered
+URL when you would have added the icon:  .../index.html#@45.4400,12.3300
+where start_url now launches:            .../            (no hash)
+hash leaks into launch:                  false
 ```
 
-## A second bug found in the same code
+## The fix, and the bit you have to do yourself
 
-The region picker did `overlay=null` **without removing the layer**. That
-orphaned the previous coast's score raster on the map, and `renderAll`'s own
-`if(overlay) map.removeLayer(overlay)` then had nothing to remove, so the old
-image stayed painted under the new one. The hashchange handler had always
-done this correctly, which is why it only happened when switching from the
-picker. Now it removes the layer.
+`manifest.webmanifest` pins `start_url` and `scope` to the app root, so a
+launch always begins with no hash. Plus proper icons, standalone display and
+the iOS meta tags.
 
-Verified: after switching coast, exactly **1** `L.ImageOverlay` on the map.
+**A manifest cannot retroactively fix an icon that already exists.** The
+shortcut on your phone still carries the Venice URL baked into it. **Delete
+the icon and add it again** and it will launch clean from then on.
 
-## A note on how this was tested
+To confirm the diagnosis in ten seconds first: open
+`https://gaberkobal.github.io/Fih/` typed fresh in the browser, with no hash.
+If that opens on Novigrad while the icon still opens on Venice, this is it.
 
-The first harness did not reproduce the bug and appeared to exonerate the
-old code. It was wrong: `socketserver.TCPServer` is single-threaded, so the
-artificial delay blocked every request and serialised them, destroying the
-very concurrency the race needs. The give-away was in the timings - the two
-renders landed 15 ms apart, in order.
+## Two real things fixed alongside
 
-Rebuilt on `ThreadingHTTPServer` and confirmed genuinely concurrent (the
-fast request returned in 228 ms while the slow one was still in flight), the
-bug reproduced immediately.
+**`loadPoint` had an unguarded await before rendering.** v21 guarded the
+model fetch and the dynamic import and missed `await forecastPoint(...)`,
+which is the only slow one — it goes to Open-Meteo. I could not get it to
+misbehave on the live build, so I am not claiming it was your symptom, but an
+unguarded await before a render is a hole and it is now closed. Its `catch`
+is guarded too, so a stale point that fails cannot post "Could not get a
+forecast here" over a coast that has since loaded fine.
+
+**The service worker version was never bumped when the shell changed.** The
+shell is served cache-first, so a returning phone sees its cached
+`index.html` first and only picks up a new one on a later load. v20 and v21
+both changed `index.html` without touching `VERSION`, which slowed the fix
+reaching your phone. Now `v22`, with a comment saying to bump it whenever a
+shell file changes.
 
 ## Verified
 
-- **10/10 static checks** on the patched file
-- the race, before and after, on a concurrent server
-- ordinary sequential navigation still correct: hash, `REGION`, heading and
-  verdict all agree on Cascais, and one image overlay on the map
-- 36-region selftest, 0 failures, static pages and sitemap still generated
-- the GoatCounter endpoint survives the edit
+**12/12 assertions**, plus a 36-region selftest, 0 failures.
+
+- `start_url` resolves to the app root and is unaffected by the current hash
+- manifest, all three icons and `sw.js` all serve with correct content types
+- manifest linked, apple meta present, app still loads and renders
+- 13 stale-guards in `index.html`, `forecastPoint` among them
+- the GoatCounter endpoint and the static pages survive the edits
