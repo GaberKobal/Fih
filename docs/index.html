@@ -4,6 +4,21 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#071A22">
+<!-- PINS THE LAUNCH URL.
+     Without a manifest, "Add to Home Screen" saves whatever URL happened to
+     be on screen at that moment - INCLUDING THE HASH. Add the icon while
+     looking at a tapped point and the shortcut is that point forever, and
+     iOS relaunches a standalone app from its saved URL every time it is
+     evicted from memory, which is often. That is how a coast chosen once
+     becomes the coast the app always opens on.
+     start_url "." is the app root, so a launch always begins with no hash
+     and lands on the default view. An icon ALREADY on a home screen keeps
+     the URL it was created with; it has to be removed and re-added. -->
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Dive">
 <title>Dive forecast</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -1026,6 +1041,14 @@ async function loadPoint(lat, lonRaw){
                ? MODEL.legal[host.jurisdiction] : null;
     if(!host) cfg.wind_regimes = null;       // named winds are regional
     const d = await forecastPoint(lat, lon, cfg, pack);
+    // THE ONE THAT MATTERED. v21 guarded the model fetch and the dynamic
+    // import above and missed this, which is the only await here that is
+    // actually slow: it goes to Open-Meteo. A point forecast therefore
+    // finished RELIABLY LAST - a live API call cannot beat a local
+    // latest.json - so leaving a point for a region deterministically
+    // snapped back to the point a second or two later. Not intermittent
+    // like the region-to-region race: every single time.
+    if(nav !== NAV) return;
     // Point forecasts inherit a guide only inside a configured region.
     d.region_id = host?.id || null;
     d.species_source = speciesSource;
@@ -1040,6 +1063,7 @@ async function loadPoint(lat, lonRaw){
     DATA = d; sel = null;
     renderAll(d, host);
   }catch(e){
+    if(nav !== NAV) return;
     $("#err").style.color = "var(--flag)";
     // Only blame inland water when that is actually what happened. The
     // blanket suffix was attached to every failure, so a range error, a
