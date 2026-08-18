@@ -857,6 +857,23 @@ let MODEL=null, POINT=null, ptMarker=null, REGION_SPECIES=null; // POINT set = "
 let STRUCT=null, TERRAIN=null, scanBox=null, WRECKS=null;    // client-side structure model
 let overlayOpacity=0.75;
 
+// WHICH NAVIGATION IS CURRENT.
+//
+// Every loader here is async and reads the GLOBAL REGION, including
+// dataUrl below. Pick coast A, then pick coast B before A's latest.json
+// has arrived, and both loads are in flight; whichever resolves LAST wins
+// and paints its data over the other. A resolving second put you back on
+// the coast you had just left, with the URL still saying B.
+//
+// It is a race, so it is intermittent, and it is far worse on a phone
+// where the network is slower and more variable - which is exactly where
+// it was noticed. Contours, wrecks and the turbidity band had the same
+// problem and could paint the previous coast's shapes onto the new map.
+//
+// Every navigation takes a ticket. After each await, a loader holding a
+// stale ticket returns instead of rendering.
+let NAV = 0;
+
 // Every data file now lives under its region's folder.
 const dataUrl = f => `data/${REGION}/${f}`;
 
@@ -962,6 +979,7 @@ const wrapLon = l =>
   (l >= -180 && l <= 180) ? l : ((((l + 180) % 360) + 360) % 360) - 180;
 
 async function loadPoint(lat, lonRaw){
+  const nav = ++NAV;
   const lon = wrapLon(lonRaw);
   lat = Math.max(-89.9, Math.min(89.9, lat));
   POINT = {lat, lon, lonRaw};
@@ -980,7 +998,9 @@ async function loadPoint(lat, lonRaw){
 
   try{
     if(!MODEL) MODEL = await (await fetch("data/model.json",{cache:"no-store"})).json();
+    if(nav !== NAV) return;
     const { forecastPoint } = await import("./anywhere.js");
+    if(nav !== NAV) return;
     const host = regionContaining(lat, lon);
     const cfg = {...MODEL};
 
@@ -1545,13 +1565,15 @@ function styleWrecks(gj){
 }
 
 async function loadContours(){
+  const nav = NAV, rid = REGION;
   if(contours){ map.removeLayer(contours); contours=null; }
   let gj;
   try{
-    const r=await fetch(dataUrl("contours.geojson"),{cache:"no-store"});
-    if(!r.ok) return;
+    const r=await fetch(`data/${rid}/contours.geojson`,{cache:"no-store"});
+    if(nav !== NAV || !r.ok) return;
     gj=await r.json();
   }catch(e){ return; }
+  if(nav !== NAV) return;
   contours=styleContours(gj);
   if($("#ctoggle").checked) contours.addTo(map);
 }
@@ -1559,13 +1581,15 @@ async function loadContours(){
 // Charted wrecks. The one structure signal that does not care what the
 // bathymetry resolution is.
 async function loadWrecks(){
+  const nav = NAV, rid = REGION;
   if(wreckLayer){ map.removeLayer(wreckLayer); wreckLayer=null; }
   let gj;
   try{
-    const r=await fetch(dataUrl("wrecks.geojson"),{cache:"no-store"});
-    if(!r.ok) return;
+    const r=await fetch(`data/${rid}/wrecks.geojson`,{cache:"no-store"});
+    if(nav !== NAV || !r.ok) return;
     gj=await r.json();
   }catch(e){ return; }
+  if(nav !== NAV) return;
   if(!gj.features || !gj.features.length) return;
   wreckLayer=styleWrecks(gj);
   if($("#wtoggle").checked) wreckLayer.addTo(map);
@@ -1682,8 +1706,15 @@ function renderRegions(){
         POINT=null; if(ptMarker){map.removeLayer(ptMarker); ptMarker=null;}
         $("#regionpanel").classList.remove("open");
         $("#regionbar").setAttribute("aria-expanded","false");
+        // overlay must be REMOVED, not just forgotten. Nulling the
+        // reference orphaned the previous coast's score raster on the map:
+        // renderAll's own `if(overlay) map.removeLayer(overlay)` then had
+        // nothing to remove, so the old image stayed painted under the new
+        // one. The hashchange handler below always got this right, which is
+        // why it only happened when switching from the picker.
         if(r.id!==REGION){ REGION=r.id; location.hash=r.id; sel=null;
-                           overlay=null; load(); }
+                           if(overlay){ map.removeLayer(overlay); overlay=null; }
+                           load(); }
       });
       host.appendChild(b);
     });
@@ -1699,12 +1730,14 @@ $("#regionbar").addEventListener("keydown",e=>{
   if(e.key==="Enter"||e.key===" "){e.preventDefault();toggleRegions();}});
 
 async function load(){
+  const nav = ++NAV;
   // Region catalogue first: it decides which folder everything else lives in.
   if(!INDEX){
     try{
       const ri=await fetch("data/index.json",{cache:"no-store"});
       if(!ri.ok) throw new Error("HTTP "+ri.status);
       INDEX=await ri.json();
+      if(nav !== NAV) return;
     }catch(e){
       $("#err").style.display="block";
       $("#err").textContent="No region index yet. Run the Update dive forecast workflow, then reload.";
@@ -1733,14 +1766,20 @@ async function load(){
                            + `(${INDEX.regions.length} available)`;
   renderRegions();
 
+  // Captured, not read from the global after the await: by the time this
+  // resolves REGION may already be a different coast.
+  const rid = REGION;
   let d;
   try{
-    const r=await fetch(dataUrl("latest.json"),{cache:"no-store"});
+    const r=await fetch(`data/${rid}/latest.json`,{cache:"no-store"});
+    if(nav !== NAV) return;
     if(!r.ok) throw new Error("HTTP "+r.status);
     d=await r.json();
+    if(nav !== NAV) return;
   }catch(e){
+    if(nav !== NAV) return;
     $("#err").style.display="block";
-    $("#err").textContent=`No forecast for ${REGION} yet. Run the Update dive forecast workflow, then reload.`;
+    $("#err").textContent=`No forecast for ${rid} yet. Run the Update dive forecast workflow, then reload.`;
     return;
   }
 
@@ -1996,10 +2035,11 @@ function renderAll(d, meta){
   // than firing a doomed request on every tap.
   const oldS2 = document.getElementById("s2band");
   if(oldS2) oldS2.remove();
-  if(!d.point && REGION) fetch(dataUrl("s2_turbidity.json"),{cache:"no-store"})
+  const s2nav = NAV, s2rid = REGION;
+  if(!d.point && REGION) fetch(`data/${s2rid}/s2_turbidity.json`,{cache:"no-store"})
     .then(r => r.ok ? r.json() : null)
     .then(s2 => {
-      if(!s2 || (d.region_id || REGION) !== REGION) return;
+      if(!s2 || s2nav !== NAV || s2rid !== REGION) return;
       const T = s2.turbidity_relative_fnu || {};
       const age = Math.round((Date.now() - new Date(s2.scene_datetime)) / 86400000);
       const when = age <= 0 ? "today" : age + " day" + (age === 1 ? "" : "s") + " ago";
