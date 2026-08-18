@@ -821,12 +821,19 @@ const TILES = {
     + 'rel="noopener">CARTO</a>',
   subdomains: "abcd",
 };
+// crossOrigin is what makes the tile cache in sw.js real rather than
+// decorative. Without it Leaflet's <img> requests are no-cors, the responses
+// come back OPAQUE, and the service worker's `if (res.ok)` is false for an
+// opaque response - so not one tile was ever stored, trimTiles() never ran,
+// and TILE_CAP was a number describing nothing. The whole "opens in a car
+// park with one bar" promise rested on a cache that was always empty.
+// Both CDNs answer with Access-Control-Allow-Origin: *, checked.
 L.tileLayer(TILES.url, {
-  maxZoom:18, noWrap:true, bounds:WORLD,
+  maxZoom:18, noWrap:true, bounds:WORLD, crossOrigin:"",
   subdomains:TILES.subdomains, attribution:TILES.attribution
 }).addTo(map);
 L.tileLayer("https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png", {
-  maxZoom:18, noWrap:true, bounds:WORLD, opacity:.9,
+  maxZoom:18, noWrap:true, bounds:WORLD, opacity:.9, crossOrigin:"",
   attribution:'OpenSeaMap · coastline, wrecks and reserves &copy; '
     + '<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors (ODbL)'
     + ' · forecast <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>'
