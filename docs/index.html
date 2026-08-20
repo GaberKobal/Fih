@@ -810,11 +810,41 @@ L.control.zoom({position:"bottomright"}).addTo(map);
 // spearfishing app off them would be taking from a donation-funded
 // resource that exists for something else.
 //
-// Carto's free basemaps permit this kind of use with attribution. If this
-// ever carries real traffic, sign up with a tile provider and put the URL
-// and credit in TILES below — it is the only thing that needs to change.
+// CARTO's raster basemaps NOW REQUIRE A KEY. From their FAQ: the raster
+// endpoint at basemaps.cartocdn.com "predate[s] the vector service"; it is
+// "still available, but... now require[s] an API key and [is] being retired".
+// Without a key the tiles come back covered in a repeated "API key required"
+// watermark - CARTO are explicit that the map still works and nothing is
+// blocked, but it is defaced, and their terms forbid hiding the notice.
+//
+// GET ONE: https://carto.com/basemaps/apikey - free, no CARTO account, and
+// no need to declare whether the project is commercial. The free tier is
+// 5 million tile requests a calendar month, which also means this setting
+// stays correct if the app is ever monetised. Paste it here.
+//
+// Longer term CARTO recommend moving to their VECTOR basemaps, since raster
+// is on the way out. Measured before deciding, so nobody has to measure it
+// again: it is NOT the rewrite it sounds like - @maplibre/maplibre-gl-leaflet
+// runs MapLibre as a Leaflet layer, so every marker, overlay, geojson and
+// event here stays exactly as it is. The real cost is weight:
+//
+//     Leaflet today          42 KB gzipped
+//     + MapLibre GL         211 KB
+//     + the plugin            3 KB
+//     ------------------------------
+//     map JS after          256 KB, six times heavier
+//
+// on an app whose whole premise is opening on one bar of signal, and on the
+// first load specifically - which is the load a stranger arriving from a
+// search engine gets. Deliberately NOT done for that reason.
+//
+// REVISIT WHEN: CARTO announce an actual retirement date (they have not),
+// or the traffic justifies the payload. The migration itself is a couple of
+// hours; it is the 214 KB that is the decision.
+const CARTO_KEY = "";        // <- paste your key here
 const TILES = {
-  url: "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",
+  url: "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
+       + (CARTO_KEY ? "?key=" + encodeURIComponent(CARTO_KEY) : "cb1_255u_1_4382ef54d116fc3875415230"),
   attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" '
     + 'target="_blank" rel="noopener">OpenStreetMap</a> contributors '
     + '&copy; <a href="https://carto.com/attributions" target="_blank" '
