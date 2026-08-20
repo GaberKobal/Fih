@@ -2265,23 +2265,62 @@ function buildRow(){
 ["f_date","f_lat","f_lon","f_depth","f_viz","f_wind","f_species","f_notes"]
   .forEach(id=>$("#"+id).addEventListener("input",buildRow));
 
-// Submit by opening a prefilled GitHub issue. A workflow picks it up and
-// appends the row to dive_log.csv - so no write token is ever needed here.
-$("#f_submit").addEventListener("click",()=>{
-  const row = buildRow();
+// Submit straight to the private log, through the relay.
+//
+// This used to open a prefilled GitHub ISSUE, which meant every dive - the
+// coordinates of someone's spot, what they took, when - was published on a
+// public repository. Editing the issue afterwards did not help: GitHub's own
+// docs say "anyone with read access to a repository can view a comment's
+// edit history", so the original body stayed one click away forever.
+//
+// A write token cannot live here instead, because this page is downloaded by
+// every visitor and anything in it is public. So the token lives in a
+// Cloudflare Worker and the browser POSTs to that. See worker/dive-relay.js.
+//
+// Fields go as JSON, not as a CSV line: the Worker builds the row, so the
+// column order lives in one place and no untrusted CSV is ever parsed.
+$("#f_submit").addEventListener("click", async () => {
+  buildRow();                                   // keeps the preview in sync
   if(!$("#f_date").value || !$("#f_lat").value || !$("#f_viz").value){
     $("#rowout").textContent = "Need at least a date, coordinates and visibility.";
     return;
   }
-  const base = (DATA && DATA.repo_issue_url) || "";
-  if(!base){ $("#rowout").textContent = "No repo_issue_url set in config.json."; return; }
-  const title = `Dive ${$("#f_date").value}` +
-                ($("#f_species").value ? ` - ${$("#f_species").value}` : "");
-  const body  = "Logged from the map.\n\n```csv\n" + row + "\n```\n";
-  const url = base + "?labels=dive-log"
-            + "&title=" + encodeURIComponent(title)
-            + "&body="  + encodeURIComponent(body);
-  window.open(url, "_blank", "noopener");
+  const relay = (DATA && DATA.dive_relay_url) || "";
+  if(!relay){
+    $("#rowout").textContent =
+      "No dive_relay_url set in config.json, so there is nowhere private to "
+      + "send this. Use Copy row instead.";
+    return;
+  }
+  const v = id => ($("#"+id).value || "").trim();
+  const btn = $("#f_submit"), was = btn.textContent;
+  btn.textContent = "Sending…"; btn.disabled = true;
+  try{
+    const res = await fetch(relay, {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({
+        date: v("f_date"), lat: v("f_lat"), lon: v("f_lon"),
+        depth_m: v("f_depth"), viz_m: v("f_viz"),
+        model_viz_m: DATA ? Math.round(DATA.now.visibility_m) : "",
+        wind_from_deg: v("f_wind"), species: v("f_species"),
+        result: String(logResult), notes: v("f_notes"),
+      }),
+    });
+    if(res.ok){
+      $("#rowout").textContent = "Logged. Thank you - dives are what calibrate this.";
+      btn.textContent = "Logged";
+      setTimeout(()=>{ btn.textContent = was; btn.disabled = false; }, 2500);
+      return;
+    }
+    const why = (await res.text()).slice(0,120);
+    $("#rowout").textContent = `Could not log that: ${why || res.status}. `
+      + "Copy row still works.";
+  }catch(e){
+    $("#rowout").textContent = "Could not reach the log. You are probably "
+      + "offline - Copy row keeps it so you can send it later.";
+  }
+  btn.textContent = was; btn.disabled = false;
 });
 
 $("#f_copy").addEventListener("click",async()=>{
