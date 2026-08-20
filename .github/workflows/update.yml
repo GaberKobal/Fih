@@ -2,16 +2,24 @@ name: Update dive forecast
 
 on:
   schedule:
-    # Every 4 hours, six runs a day. Offset off the hour because scheduled
+    # Every 6 hours, FOUR runs a day. Offset off the hour because scheduled
     # workflows queue behind everyone else's on the hour and get delayed.
     #
-    # Worth knowing what this does and does not buy. The app re-anchors "now"
+    # Four, not six, because of how Open-Meteo actually counts calls. Batching
+    # 100 locations into one HTTP request does not make it one billable call:
+    # their pricing page counts LOCATIONS, and bills fractionally above 10
+    # variables. MARINE_VARS is 13, so a run of 800 regions costs
+    # 800 x 1.3 (marine) + 800 x 1.0 (weather) = about 1,840 calls, not 16.
+    # Six runs a day was ~11,000 against a 10,000/day free ceiling - over it.
+    # Four runs is ~7,400, comfortably inside.
+    #
+    # It costs almost nothing in freshness. The app re-anchors "now"
     # to the real clock from the hourly series in the file it already has
     # (reanchorNow() in docs/index.html), so a several-hour-old file still
     # reports the CURRENT hour correctly — staleness was never the problem
     # this solves. What a fresh run actually buys is a newer upstream model
     # run and a forecast horizon that reaches further out.
-    - cron: "40 3,7,11,15,19,23 * * *"
+    - cron: "40 1,7,13,19 * * *"
   workflow_dispatch:
     inputs:
       regions:
@@ -214,7 +222,7 @@ jobs:
                  - dt.datetime.fromisoformat(d["generated"])).total_seconds() / 3600
           print(f"  publishing {len(d['regions'])} region(s) from a forecast "
                 f"{age:.1f} h old")
-          print( "  the next scheduled run refreshes it (every 4 h)")
+          print( "  the next scheduled run refreshes it (every 6 h)")
           PY
 
       - name: Sentinel-2 turbidity check (weekly, optional)
