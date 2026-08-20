@@ -11,7 +11,7 @@
 // Bump this whenever ANY file in SHELL_URLS changes. The shell is served
 // cache-first, so a stale entry is what a returning phone sees; a new
 // VERSION forces a fresh install, a fresh precache and a cache purge.
-const VERSION = "v24";
+const VERSION = "v25";
 const SHELL = `shell-${VERSION}`;
 const DATA = `data-${VERSION}`;
 const TILES = "tiles";
