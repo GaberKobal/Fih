@@ -64,11 +64,22 @@ So there is no licence problem. There **is** a live cosmetic one:
 30 seconds - at **https://carto.com/basemaps/apikey**, then paste it into
 `docs/index.html`:
 
+**TWO files, one key.** `docs/index.html` and `docs/add-region.html` each
+draw a map from the same endpoint, so both take it:
+
 ```js
 const CARTO_KEY = "";        // <- paste your key here
 ```
 
-The URL builds itself from there; empty leaves today's behaviour untouched.
+Paste the key into that line ONLY. Do not edit the URL below it - it appends
+`?key=...` on its own, and editing both would put the key in twice. Empty
+leaves today's behaviour exactly as it is, so the files are safe to upload
+before the key arrives.
+
+They cross-reference each other in comments, because add-region.html is
+opened once in a while rather than every day: it is precisely the page that
+would sit there watermarked for months after the main map was fixed.
+`sw.js` is bumped to v25 so returning phones re-precache both.
 CARTO's terms forbid hiding the watermark, and a key is free, so this is the
 only correct fix.
 
