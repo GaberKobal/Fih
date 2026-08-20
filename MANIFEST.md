@@ -77,6 +77,34 @@ order of effort: accept it (they are your own spots, and two weeks stale), or
 rewrite history with a force-push, which breaks any clone. Your call - the
 important thing is that it stops here rather than growing with every dive.
 
+## A data-loss bug the test found
+
+The first version of the private-push step did this:
+
+```bash
+git clone --depth 1 ...
+[ -f dive_log.csv ] || head -1 "$GITHUB_WORKSPACE/dive_log.csv" > dive_log.csv
+```
+
+Run against a real bare repo, **the second dive deleted the first**. A shallow
+clone that lands on a different default branch comes back with no
+`dive_log.csv`, so the step invented one from a bare header and pushed it over
+everything already stored.
+
+Worth saying plainly: my first attempt at a guard was a row-count check, and
+it would **not** have caught this - a freshly invented header plus one row
+satisfies `before + 1` perfectly well. The guard that works compares against
+the remote:
+
+```
+healthy   ok: remote 4, local 4 - safe to push
+the bug   REFUSED: remote has 4 rows, this clone sees 1
+```
+
+Full clone on the real default branch, unborn HEAD handled for a genuinely
+empty repo, explicit `push -u origin HEAD`, and it refuses rather than
+overwrites. Three consecutive dives verified accumulating.
+
 ## Verified
 
 **12/12 assertions.** The real parser was extracted from the workflow and run
