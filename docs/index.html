@@ -10,7 +10,7 @@
      looking at a tapped point and the shortcut is that point forever, and
      iOS relaunches a standalone app from its saved URL every time it is
      evicted from memory, which is often. That is how a coast chosen once
-     becomes the coast the app always opens on.
+     becomes the coast the app always opens on.A
      start_url "." is the app root, so a launch always begins with no hash
      and lands on the default view. An icon ALREADY on a home screen keeps
      the URL it was created with; it has to be removed and re-added. -->
@@ -565,7 +565,12 @@
             <button type="button" id="f_r1" aria-pressed="false">fish</button>
           </span>
         </label>
-        <label class="wide">Notes<textarea id="f_notes" rows="2"></textarea></label>
+        <label class="wide">Notes<textarea id="f_notes" rows="2"
+            placeholder="Conditions, what you saw. Public - do not name the spot."></textarea></label>
+        <!-- Coordinates are rounded to about a kilometre before anything is
+             published, but this box is free text and goes into the public log
+             verbatim. Saying so in the placeholder is the only thing that
+             stops someone typing the name of their reef into it. -->
         <div id="rowout"></div>
         <span class="wide" style="display:flex;gap:8px;flex-wrap:wrap">
           <button type="button" class="sp" id="f_here" style="min-width:0">Use my location</button>
@@ -841,7 +846,7 @@ L.control.zoom({position:"bottomright"}).addTo(map);
 // REVISIT WHEN: CARTO announce an actual retirement date (they have not),
 // or the traffic justifies the payload. The migration itself is a couple of
 // hours; it is the 214 KB that is the decision.
-const CARTO_KEY = "cb1_255u_1_4382ef54d116fc3875415230";        // <- paste your key here
+const CARTO_KEY = "";        // <- paste your key here
 // The SAME key also has to go in docs/add-region.html, which draws its
 // own map from the same endpoint. Two files, one key.
 const TILES = {
