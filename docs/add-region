@@ -95,8 +95,16 @@ const $ = s => document.querySelector(s);
 const map = L.map("map").setView([30, 0], 2);
 // Same provider as the main map: the OSMF tile policy excludes
 // third-party apps. See the note in index.html.
-L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",
-  {maxZoom:18, subdomains:"abcd",
+//
+// KEEP THIS IN SYNC WITH CARTO_KEY IN index.html. Two files, one key. CARTO
+// now watermark raster tiles requested without one, and this page would go
+// on being defaced long after the main map was fixed - which is exactly the
+// kind of thing nobody notices, because this page is opened once in a while
+// rather than every day. Get a key at https://carto.com/basemaps/apikey.
+const CARTO_KEY = "cb1_255u_1_4382ef54d116fc3875415230";        // <- paste the SAME key as in index.html
+L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
+    + (CARTO_KEY ? "?key=" + encodeURIComponent(CARTO_KEY) : ""),
+  {maxZoom:18, subdomains:"abcd", crossOrigin:"",
    attribution:'&copy; <a href="https://www.openstreetmap.org/copyright" '
      + 'target="_blank" rel="noopener">OpenStreetMap</a> contributors '
      + '&copy; <a href="https://carto.com/attributions" target="_blank" '
