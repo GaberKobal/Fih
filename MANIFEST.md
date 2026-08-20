@@ -1,110 +1,92 @@
-# v25 — back inside every free tier, and a correction
+# v26 — your dive spots were public
 
 ```
-v25/
-├── fish_finder.py                    (one string: "every six hours")
-├── README.md
-├── docs/index.html                   <- supersedes v24
-└── .github/workflows/update.yml      <- supersedes v16
+v26/
+├── dive_log.csv                        <- coordinates rounded
+├── .gitignore                          <- ignores the private copy
+├── docs/index.html                     <- supersedes v25
+└── .github/workflows/dive-log.yml      <- supersedes v19
 ```
 
-`docs/sw.js`, manifest and icons stay at v24; `config.json` v20;
-`s2_turbidity.py`, `dive_log.csv` v19; `regions.json` v17.
+Everything else unchanged. `docs/sw.js`, `add-region.html` v25;
+`fish_finder.py`, `README.md`, `update.yml` v25; `regions.json` v17.
 
 ---
 
-## 1. The schedule is now 6-hourly, because my API maths was wrong
+## What was exposed
 
-I told you across several versions: *"16 calls a run, 96 a day, about 1% of
-the free tier."* That was wrong. Open-Meteo's pricing page:
-
-> "Requests for data covering **more than 10 weather variables**... are
-> considered multiple API calls... fractional counts are used"
-
-and their calculator carries a **Locations** field. Batching 100 locations
-into one HTTP request does not make it one billable call.
-
-| | |
-| --- | --- |
-| `MARINE_VARS` | 13 variables, so x1.3 |
-| per run | 800 x (1.3 + 1.0) = **~1,840 calls** |
-| at 6 runs a day | ~11,040 - **110% of the 10,000/day free ceiling** |
-| at 4 runs a day | **~7,360 - inside it** |
-
-Cron is now `40 1,7,13,19 * * *`.
-
-The batching was still worth doing - it cut HTTP requests 1,518 to 16, which
-is what fixed the 600/minute rate limit and the ten-minute serial prologue.
-It simply never touched the billable count, and I said otherwise.
-
-Freshness barely moves: the app re-anchors "now" to the real clock from the
-hourly series it already holds, so the two dropped runs were only buying a
-slightly newer upstream model.
-
-## 2. CARTO needs a key - and I was wrong about that too
-
-An hour ago I passed on a claim that CARTO basemaps were "available
-exclusively with an Enterprise license". I had not checked it. Their current
-FAQ says the opposite:
-
-> "**There is a free tier, and it is generous.** Anyone can request an API
-> key and use CARTO basemaps free of charge up to a fair use limit of
-> **5 million tile requests per calendar month**. You do not need a CARTO
-> account, and you do not need to tell us in advance whether your project is
-> commercial."
-
-So there is no licence problem. There **is** a live cosmetic one:
-
-> "These are still available, but they **now require an API key and are being
-> retired**"... "If the tiles in your map are covered by a repeated **'API
-> key required'** watermark, they are being requested from our raster basemap
-> endpoint without an API key."
-
-**Your map is probably watermarked right now.** Get a key - free, no account,
-30 seconds - at **https://carto.com/basemaps/apikey**, then paste it into
-`docs/index.html`:
-
-**TWO files, one key.** `docs/index.html` and `docs/add-region.html` each
-draw a map from the same endpoint, so both take it:
-
-```js
-const CARTO_KEY = "";        // <- paste your key here
+```
+2026-08-02,45.3397638,13.5380641,10,10,12,273,dentex,1
 ```
 
-Paste the key into that line ONLY. Do not edit the URL below it - it appends
-`?key=...` on its own, and editing both would put the key in twice. Empty
-leaves today's behaviour exactly as it is, so the files are safe to upload
-before the key arrives.
+Seven decimals is centimetre precision. Anyone could read your exact spot off
+Novigrad, what you took there, and on what date. And your "log a dive" button
+would have done the same to every stranger who used it.
 
-They cross-reference each other in comments, because add-region.html is
-opened once in a while rather than every day: it is precisely the page that
-would sit there watermarked for months after the main map was fixed.
-`sw.js` is bumped to v25 so returning phones re-precache both.
-CARTO's terms forbid hiding the watermark, and a key is free, so this is the
-only correct fix.
+Reading the workflow properly, it leaked through **four** channels, not one:
 
-Worth planning, not rushing: raster is being retired and CARTO recommend
-vector, which needs MapLibre instead of Leaflet - a real migration.
+| channel | how |
+| --- | --- |
+| `dive_log.csv` | the row, verbatim |
+| the **commit message** | `git commit -m "dive log: ${{ steps.append.outputs.row }}"` - into public history, permanently |
+| the **workflow log** | `print(f"appended: {row}")` - Actions logs on a public repo are public |
+| the **issue body** | and closed issues stay readable |
 
-## 3. Is there a free replacement for Open-Meteo?
+## What it does now
 
-Yes, several, and none is a drop-in. Verified from primary sources:
+**Precision is split.** The precise row is written to `/tmp` and pushed to a
+**private repo**; only a copy rounded to ~1 km reaches the public CSV, the
+commit messages and the logs. Nothing derived from the precise values is ever
+printed or committed.
 
-| option | free? | commercial? | catch |
-| --- | --- | --- | --- |
-| **Self-host Open-Meteo** | yes | yes | server is **AGPL-3.0** with a Dockerfile. Same data, same API, no licence fee - you pay in servers and ops |
-| **ECMWF open data** | yes | **yes** - CC-BY-4.0, *"may be redistributed and used commercially, subject to appropriate attribution"* | raw GRIB; you build the interpolation layer |
-| **NOAA GFS + WaveWatch III** | yes | yes, US public domain | raw GRIB, same work |
-| **met.no** | yes | yes, CC-BY 4.0 | land weather, not a wave model |
+**With no private repo configured the precise row is DISCARDED.** The safe
+default is losing precision, never publishing it. To keep it:
 
-The honest conclusion: **EUR 29/month is cheaper than all of them** once the
-engineering is counted, and none of it is needed while the app stays
-non-commercial. Open-Meteo's real value is the part you would be rebuilding -
-model selection, interpolation, per-location timezones, one clean JSON API.
+```
+secret  DIVELOG_TOKEN    fine-grained, ONE repo, contents:write, nothing else
+var     DIVELOG_REPO     e.g. GaberKobal/Fih-divelog
+```
+
+**The issue is redacted immediately** after parsing, before any step that can
+fail - so a later error costs a row, not a spot.
+
+Rounding costs the calibration nothing that matters: Open-Meteo's marine grid
+is ~8 km, so two decimals is already far finer than the data the visibility
+model is fitted against. `DIVELOG_PUBLIC_DP` changes it if you disagree.
+
+## Two more things testing turned up
+
+**The notes field is free text and goes to the public log verbatim.** No
+amount of coordinate rounding helps if someone types "the reef north of the
+marina". The box now says so: *"Public - do not name the spot."*
+
+**The workflow double-filed every dive.** An issue created *with* a label
+fires both `opened` and `labeled`, so it ran twice and appended the row twice.
+Now serialised per issue, and the second run finds it closed and stops. That
+explains any duplicate rows you may have seen.
+
+## Your six existing dives
+
+`dive_log.csv` is rounded to 2 dp here, and the precise original is kept as
+**`dive_log.full.csv`**, which `.gitignore` now excludes. Keep that file - it
+is your only full-precision copy.
+
+**Git history still holds the originals.** Rounding the file does not remove
+what is already in past commits, and they are on GitHub now. Options, in
+order of effort: accept it (they are your own spots, and two weeks stale), or
+rewrite history with a force-push, which breaks any clone. Your call - the
+important thing is that it stops here rather than growing with every dive.
 
 ## Verified
 
-10/10 assertions, 36-region selftest, 0 failures. Tile URL checked both ways
-in a browser: empty key gives today's URL exactly, a key appends
-`?key=...`, CARTO attribution retained, and every earlier fix still in place
-(13 nav guards, manifest, `crossOrigin` on both tile layers).
+**12/12 assertions.** The real parser was extracted from the workflow and run
+against a genuine submission:
+
+```
+public CSV   2026-08-20,45.34,13.54,10,9,7,215,dentex,1,...
+step output  total=16  summary=2026-08-20 - approx 45.34, 13.54 - dentex
+private file 2026-08-20,45.3397638,13.5380641,10,9,7,215,dentex,1,...
+```
+
+Rounded everywhere it is published, precise only in the file that never gets
+printed. Plus YAML valid, 36-region selftest, 0 failures.
