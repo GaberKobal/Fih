@@ -229,6 +229,8 @@
     "endpoint": ""
   },
   "site_url": "https://gaberkobal.github.io/Fih",
+  "_dive_relay_note": "Where the Log a dive form POSTs. A Cloudflare Worker (worker/dive-relay.js) holds a GitHub token in ITS secrets and appends the row to a private repository, so no dive is ever public and no token is ever in the browser. Empty disables the Submit button and leaves Copy row, which is the safe default: better to collect nothing than to publish someone's spot. Deploy the worker, then paste its https://...workers.dev URL here.",
+  "dive_relay_url": "",
   "repo_issue_url": "https://github.com/GaberKobal/Fih/issues/new",
   "overlay": {
     "_note": "Defaults reproduce the original appearance. Knobs if you want to change it: supersample 2 halves the block size at 4x the file size; raising alpha_floor_score hides low-scoring water so only candidate spots are painted; land_buffer_m is how far the colour wash is held back from the coastline, in metres, and is cosmetic only - it never changes a score or moves a spot. Raise it if the wash still touches the beach, lower it if it is hiding water you want to see.",

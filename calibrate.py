@@ -125,7 +125,11 @@ def fit_visibility(rows, cfg):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", default=str(ROOT / "config.json"))
-    ap.add_argument("--log", default=str(ROOT / "dive_log.csv"))
+    # The log is no longer in this repository. Dives go straight into a
+    # PRIVATE repo through the Cloudflare relay, so nothing about anyone's
+    # spot is ever public. Clone that repo and point --log at it, or at the
+    # local dive_log.full.csv for your own dives.
+    ap.add_argument("--log", default=str(ROOT / "dive_log.full.csv"))
     ap.add_argument("--l2", type=float, default=1.0)
     ap.add_argument("--species", default=None,
                     help="fit one species only, using its id from species.json")

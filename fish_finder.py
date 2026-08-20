@@ -3352,6 +3352,7 @@ def run(cfg, selftest=False, out_dir=None, conditions=None):
         "entry_points": cfg.get("entry_points", []),
         "repo_edit_url": cfg.get("repo_edit_url"),
         "repo_issue_url": cfg.get("repo_issue_url"),
+        "dive_relay_url": cfg.get("dive_relay_url"),
         "series": {
             "time": h["time"][keep],
             "visibility_m": [round(float(v), 1) for v in viz_m[keep]],

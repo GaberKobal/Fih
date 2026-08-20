@@ -1,120 +1,101 @@
-# v26 — your dive spots were public
+# v27 — the dive log is now entirely private
 
 ```
-v26/
-├── dive_log.csv                        <- coordinates rounded
-├── .gitignore                          <- ignores the private copy
-├── docs/index.html                     <- supersedes v25
-└── .github/workflows/dive-log.yml      <- supersedes v19
-```
+v27/
+├── worker/dive-relay.js       <- new, the Cloudflare Worker
+├── worker/wrangler.toml       <- new
+├── docs/index.html            <- supersedes v26
+├── config.json                <- dive_relay_url
+├── fish_finder.py             <- publishes it to the app
+├── calibrate.py               <- --log now defaults to the private copy
+└── .gitignore                 <- both logs
 
-Everything else unchanged. `docs/sw.js`, `add-region.html` v25;
-`fish_finder.py`, `README.md`, `update.yml` v25; `regions.json` v17.
+DELETE from the repo:
+  dive_log.csv
+  .github/workflows/dive-log.yml
+```
 
 ---
 
-## What was exposed
+## Why a relay, and not just a token
 
-```
-2026-08-02,45.3397638,13.5380641,10,10,12,273,dentex,1
-```
+Writing to a GitHub repo needs a token with write access, and **anything the
+browser holds is public** - the page is downloaded by every visitor. Worse, a
+fine-grained `contents:write` token also grants read, so publishing one would
+hand a stranger the entire private log. The token has to live somewhere the
+browser cannot see. Twenty lines of Worker is the smallest thing that
+qualifies, and no third party ends up holding the data.
 
-Seven decimals is centimetre precision. Anyone could read your exact spot off
-Novigrad, what you took there, and on what date. And your "log a dive" button
-would have done the same to every stranger who used it.
+The browser POSTs **JSON**, not a CSV line. The Worker builds the row, so the
+column order lives in one place and no untrusted CSV is ever parsed on the
+write side.
 
-Reading the workflow properly, it leaked through **four** channels, not one:
+## What is gone
 
-| channel | how |
+| removed | why |
 | --- | --- |
-| `dive_log.csv` | the row, verbatim |
-| the **commit message** | `git commit -m "dive log: ${{ steps.append.outputs.row }}"` - into public history, permanently |
-| the **workflow log** | `print(f"appended: {row}")` - Actions logs on a public repo are public |
-| the **issue body** | and closed issues stay readable |
+| `dive_log.csv` from the repo | it was public: dates, depths, species, results, notes |
+| `.github/workflows/dive-log.yml` | it existed only to service the public-issue path |
+| the GitHub issue submission | public by construction, and GitHub's docs say **"anyone with read access to a repository can view a comment's edit history"** - so redacting never removed anything |
 
-## What it does now
+Nothing about a dive is public now: no issue, no file, no commit message, no
+log line. Full precision goes straight into your private repo.
 
-**Precision is split.** The precise row is written to `/tmp` and pushed to a
-**private repo**; only a copy rounded to ~1 km reaches the public CSV, the
-commit messages and the logs. Nothing derived from the precise values is ever
-printed or committed.
+`.gitignore` covers `dive_log.csv` and `dive_log.full.csv`, so neither can be
+committed by accident. `calibrate.py --log` now defaults to
+`dive_log.full.csv`; point it at a clone of the private repo when you want
+everyone's dives.
 
-**With no private repo configured the precise row is DISCARDED.** The safe
-default is losing precision, never publishing it. To keep it:
-
-```
-secret  DIVELOG_TOKEN    fine-grained, ONE repo, contents:write, nothing else
-var     DIVELOG_REPO     e.g. GaberKobal/Fih-divelog
-```
-
-**The issue is redacted immediately** after parsing, before any step that can
-fail - so a later error costs a row, not a spot.
-
-Rounding costs the calibration nothing that matters: Open-Meteo's marine grid
-is ~8 km, so two decimals is already far finer than the data the visibility
-model is fitted against. `DIVELOG_PUBLIC_DP` changes it if you disagree.
-
-## Two more things testing turned up
-
-**The notes field is free text and goes to the public log verbatim.** No
-amount of coordinate rounding helps if someone types "the reef north of the
-marina". The box now says so: *"Public - do not name the spot."*
-
-**The workflow double-filed every dive.** An issue created *with* a label
-fires both `opened` and `labeled`, so it ran twice and appended the row twice.
-Now serialised per issue, and the second run finds it closed and stops. That
-explains any duplicate rows you may have seen.
-
-## Your six existing dives
-
-`dive_log.csv` is rounded to 2 dp here, and the precise original is kept as
-**`dive_log.full.csv`**, which `.gitignore` now excludes. Keep that file - it
-is your only full-precision copy.
-
-**Git history still holds the originals.** Rounding the file does not remove
-what is already in past commits, and they are on GitHub now. Options, in
-order of effort: accept it (they are your own spots, and two weeks stale), or
-rewrite history with a force-push, which breaks any clone. Your call - the
-important thing is that it stops here rather than growing with every dive.
-
-## A data-loss bug the test found
-
-The first version of the private-push step did this:
-
-```bash
-git clone --depth 1 ...
-[ -f dive_log.csv ] || head -1 "$GITHUB_WORKSPACE/dive_log.csv" > dive_log.csv
-```
-
-Run against a real bare repo, **the second dive deleted the first**. A shallow
-clone that lands on a different default branch comes back with no
-`dive_log.csv`, so the step invented one from a bare header and pushed it over
-everything already stored.
-
-Worth saying plainly: my first attempt at a guard was a row-count check, and
-it would **not** have caught this - a freshly invented header plus one row
-satisfies `before + 1` perfectly well. The guard that works compares against
-the remote:
+## Deploying it
 
 ```
-healthy   ok: remote 4, local 4 - safe to push
-the bug   REFUSED: remote has 4 rows, this clone sees 1
+npm create cloudflare@latest -- dive-relay
+# copy worker/dive-relay.js over src/index.js, and wrangler.toml alongside
+npx wrangler secret put GITHUB_TOKEN     # fine-grained, ONE repo, contents rw
+npx wrangler deploy
 ```
 
-Full clone on the real default branch, unborn HEAD handled for a genuinely
-empty repo, explicit `push -u origin HEAD`, and it refuses rather than
-overwrites. Three consecutive dives verified accumulating.
+Then put the `https://...workers.dev` URL into `config.json` as
+`dive_relay_url` and re-run the model so it reaches the app.
+
+**Empty is the safe default.** With no URL the Submit button refuses and
+points at Copy row, rather than falling back to anything public.
 
 ## Verified
 
-**12/12 assertions.** The real parser was extracted from the workflow and run
-against a genuine submission:
+**13/13 assertions**, plus the real Worker module run against a stubbed
+GitHub API:
+
+| | |
+| --- | --- |
+| valid dive | 200, full precision stored, header created on first write |
+| second dive | 200, appended |
+| bad date / lat 999 / lat missing / result 7 / year 1200 | **400**, each with its reason |
+| non-allowlisted origin | **403** |
+| commit messages ever used | only `dive log entry` |
+
+And the one that matters, a CSV injection through the notes field:
 
 ```
-public CSV   2026-08-20,45.34,13.54,10,9,7,215,dentex,1,...
-step output  total=16  summary=2026-08-20 - approx 45.34, 13.54 - dentex
-private file 2026-08-20,45.3397638,13.5380641,10,9,7,215,dentex,1,...
+sent    x", "y\n2026-01-01,0,0,0,0,0,0,evil,1,injected
+stored  ...,"x"", ""y 2026-01-01,0,0,0,0,0,0,evil,1,injected"
+lines   3 -> 4        one row added, not two
 ```
 
-Rounded everywhere it is published, precise only in the file that never gets
-printed. Plus YAML valid, 36-region selftest, 0 failures.
+Newline stripped, quotes doubled, the whole payload trapped in one field.
+
+In the app itself: with no relay configured Submit refuses and says so; with
+one configured it POSTs exactly the ten expected fields and nothing else, and
+no GitHub issue URL is constructed anywhere.
+
+## Honest limits
+
+The Origin allowlist stops another site's page posting from a visitor's
+browser. It is **not** a security boundary - anything can be sent outside a
+browser. The real defences are the strict field validation and a token scoped
+to one repository with no other permission. If the endpoint is ever abused,
+the damage is junk rows in a private CSV, which you can delete.
+
+There is no rate limiting. Cloudflare's free tier absorbs far more than this
+will ever see, but if you are ever targeted, a KV-backed counter is the
+addition to make.
