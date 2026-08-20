@@ -1,8 +1,31 @@
 name: Append dive log
 
 # The site cannot write to the repo, so the "Log a dive" form opens a
-# prefilled issue instead. This picks it up, appends the row to
-# dive_log.csv, and closes the issue. No token ever touches the browser.
+# prefilled issue instead. This picks it up and files the dive. No token ever
+# touches the browser.
+#
+# PRECISION IS SPLIT, ON PURPOSE.
+#
+# A dive row carries the coordinates of a spot to seven decimal places -
+# centimetres - plus what was taken there and when. That is the one thing
+# spearfishers guard, and this repository is public. It used to leak through
+# FOUR separate channels: the CSV, the commit message, the workflow log, and
+# the issue body. All four are closed below.
+#
+#   full precision  -> a PRIVATE repo, if one is configured. Nowhere else.
+#   rounded to ~1km -> the public dive_log.csv, commit messages, the logs
+#
+# Rounding costs the calibration nothing that matters. Open-Meteo's marine
+# grid is about 8 km, so two decimals is already far finer than the data the
+# visibility model is fitted against.
+#
+# WITH NO PRIVATE REPO CONFIGURED THE PRECISE ROW IS DISCARDED. That is
+# deliberate: the safe default is losing precision, never publishing it.
+#
+# To keep it, create a private repo and a FINE-GRAINED token scoped to that
+# one repo with contents:write and nothing else, then set
+#   secret  DIVELOG_TOKEN
+#   var     DIVELOG_REPO     e.g. GaberKobal/Fih-divelog
 
 on:
   issues:
@@ -12,6 +35,13 @@ permissions:
   contents: write
   issues: write
 
+# An issue created WITH a label fires both `opened` and `labeled`, so this
+# ran twice for one dive and appended the row twice. Serialise per issue; the
+# second run then finds it already closed and stops.
+concurrency:
+  group: divelog-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
 jobs:
   append:
     if: contains(github.event.issue.labels.*.name, 'dive-log')
@@ -19,13 +49,29 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Append row to dive_log.csv
-        id: append
+      - name: Skip if this dive was already filed
+        id: guard
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          state=$(gh issue view ${{ github.event.issue.number }} \
+                    --repo ${{ github.repository }} --json state -q .state)
+          if [ "$state" = "CLOSED" ]; then
+            echo "already filed and closed - nothing to do"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Parse the row and split it by precision
+        if: steps.guard.outputs.skip == 'false'
+        id: parse
         env:
           BODY: ${{ github.event.issue.body }}
+          DP: ${{ vars.DIVELOG_PUBLIC_DP || '2' }}
         run: |
-          python3 <<'PY'
-          import csv, os, pathlib, re, sys
+          python3 - <<'PY'
+          import csv, io, os, pathlib, re, sys
 
           body = os.environ.get("BODY") or ""
           m = re.search(r"```(?:csv)?\s*\n(.*?)\n```", body, re.S)
@@ -35,7 +81,7 @@ jobs:
           row = m.group(1).strip().splitlines()[0].strip()
 
           path = pathlib.Path("dive_log.csv")
-          header = path.read_text().splitlines()[0].split(",")
+          header = path.read_text(encoding="utf-8").splitlines()[0].split(",")
           fields = next(csv.reader([row]))
           if len(fields) != len(header):
               print(f"::error::row has {len(fields)} fields, header has {len(header)}")
@@ -44,33 +90,114 @@ jobs:
               print("::error::the date field is empty")
               sys.exit(1)
 
-          with path.open("a", newline="") as f:
-              csv.writer(f).writerow(fields)
-          n = sum(1 for _ in open(path)) - 1
-          print(f"appended: {row}")
-          with open(os.environ["GITHUB_OUTPUT"], "a") as out:
-              out.write(f"row={row}\ntotal={n}\n")
+          def col(name):
+              return header.index(name) if name in header else None
+
+          # Blur a copy. NOTHING derived from the precise values is printed,
+          # committed, or written to an output: workflow logs and commit
+          # messages on a public repository are both public.
+          dp = int(os.environ.get("DP") or 2)
+          blurred, approx = list(fields), []
+          for name in ("lat", "lon"):
+              i = col(name)
+              if i is None or not fields[i].strip():
+                  continue
+              try:
+                  blurred[i] = f"{round(float(fields[i]), dp):.{dp}f}"
+                  approx.append(blurred[i])
+              except ValueError:
+                  pass
+
+          def line(vals):
+              b = io.StringIO()
+              csv.writer(b, lineterminator="").writerow(vals)
+              return b.getvalue()
+
+          # The precise row goes to a file only, never to stdout.
+          pathlib.Path("/tmp/dive_full.csv").write_text(line(fields) + "\n",
+                                                        encoding="utf-8")
+
+          with path.open("a", newline="", encoding="utf-8") as f:
+              csv.writer(f).writerow(blurred)
+          n = sum(1 for _ in path.open(encoding="utf-8")) - 1
+
+          sp = col("species")
+          summary = " - ".join(x for x in [
+              fields[0].strip(),
+              ("approx " + ", ".join(approx)) if approx else None,
+              (fields[sp].strip() or None) if sp is not None else None,
+          ] if x)
+          print(f"filed, rounded to {dp} dp: {line(blurred)}")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
+              out.write(f"total={n}\nsummary={summary}\n")
           PY
 
-      - name: Commit
+      # Straight after parsing, before anything that can fail. Privacy first:
+      # if a later step breaks the worst case is a lost row, not a published
+      # spot. Closed issues stay readable, so leaving it was never an option.
+      - name: Redact the issue
+        if: steps.guard.outputs.skip == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SUMMARY: ${{ steps.parse.outputs.summary }}
+        run: |
+          {
+            echo "Logged from the map."
+            echo
+            echo "Precise coordinates removed. ${SUMMARY}"
+          } > /tmp/redacted.md
+          gh issue edit ${{ github.event.issue.number }} \
+            --repo ${{ github.repository }} --body-file /tmp/redacted.md
+
+      - name: Keep the precise row in a private repo
+        if: steps.guard.outputs.skip == 'false'
+        env:
+          DIVELOG_TOKEN: ${{ secrets.DIVELOG_TOKEN }}
+          DIVELOG_REPO: ${{ vars.DIVELOG_REPO }}
+        run: |
+          if [ -z "$DIVELOG_TOKEN" ] || [ -z "$DIVELOG_REPO" ]; then
+            echo "::warning::No DIVELOG_TOKEN / DIVELOG_REPO set, so the precise row was DISCARDED and only the rounded one kept. See the header of this workflow."
+            exit 0
+          fi
+          git clone --depth 1 \
+            "https://x-access-token:${DIVELOG_TOKEN}@github.com/${DIVELOG_REPO}.git" \
+            /tmp/priv >/dev/null 2>&1 \
+            || { echo "::error::could not clone the private log repo"; exit 1; }
+          cd /tmp/priv
+          [ -f dive_log.csv ] || head -1 "$GITHUB_WORKSPACE/dive_log.csv" > dive_log.csv
+          cat /tmp/dive_full.csv >> dive_log.csv
+          git config user.name  "fish-finder"
+          git config user.email "actions@users.noreply.github.com"
+          git add dive_log.csv
+          git commit -q -m "dive log entry" || exit 0
+          git push -q >/dev/null 2>&1 \
+            || { echo "::error::could not push to the private log repo"; exit 1; }
+          echo "precise row stored privately"
+
+      - name: Commit the rounded row
+        if: steps.guard.outputs.skip == 'false'
         run: |
           git config user.name  "fish-finder"
           git config user.email "actions@users.noreply.github.com"
           git add dive_log.csv
           git diff --staged --quiet && exit 0
-          git commit -q -m "dive log: ${{ steps.append.outputs.row }}"
+          # Generic message on purpose. The old one interpolated the row, which
+          # wrote precise coordinates into public history permanently.
           for i in 1 2 3; do
+            git commit -q -m "dive log entry" 2>/dev/null || true
             git push && exit 0
-            git fetch -q origin main && git reset -q --soft origin/main && git add dive_log.csv
+            git fetch -q origin ${{ github.event.repository.default_branch }} \
+              && git reset -q --soft FETCH_HEAD && git add dive_log.csv
             git diff --staged --quiet && exit 0
-            git commit -q -m "dive log entry"
           done
           exit 1
 
       - name: Close the issue
+        if: steps.guard.outputs.skip == 'false'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh issue comment ${{ github.event.issue.number }} \
-            --body "Logged. dive_log.csv now has ${{ steps.append.outputs.total }} rows."
-          gh issue close ${{ github.event.issue.number }}
+            --repo ${{ github.repository }} \
+            --body "Logged. dive_log.csv now has ${{ steps.parse.outputs.total }} rows. Coordinates are rounded in the public log; the precise ones are kept privately if that is configured."
+          gh issue close ${{ github.event.issue.number }} --repo ${{ github.repository }}
