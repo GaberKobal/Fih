@@ -1,0 +1,23 @@
+# Cloudflare Worker config for the dive log relay.
+#
+#   npx wrangler secret put GITHUB_TOKEN
+#   npx wrangler deploy
+#
+# GITHUB_TOKEN is a SECRET, never a var - vars are visible in the dashboard.
+# Make it fine-grained, scoped to the ONE private log repository, with
+# Contents: Read and write and nothing else.
+
+name = "dive-relay"
+main = "src/index.js"          # put dive-relay.js here
+compatibility_date = "2026-01-01"
+
+[vars]
+# The private repository the dive rows are appended to.
+DIVELOG_REPO = "GaberKobal/Fih-divelog"
+
+# Comma-separated origins allowed to POST. Leave empty to allow any origin.
+# This stops a page on another site posting from a visitor's browser; it is
+# not a security boundary, since anything can be sent outside a browser.
+# The real defences are the strict field validation in the Worker and a token
+# scoped to a single repository.
+ALLOWED_ORIGIN = "https://gaberkobal.github.io"
