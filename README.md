@@ -618,8 +618,12 @@ API key and [is] being retired"*; without one the tiles arrive covered in an
 "API key required" watermark. A key is free at
 https://carto.com/basemaps/apikey - no account, no need to declare commercial
 use, 5 million tiles a month. Paste it into `CARTO_KEY` in `docs/index.html`.
-Longer term CARTO recommend their vector basemaps, which would mean MapLibre
-instead of Leaflet: a migration to plan, not an emergency.
+Longer term CARTO recommend their vector basemaps. That is **not** the
+rewrite it sounds like - `@maplibre/maplibre-gl-leaflet` runs MapLibre as a
+Leaflet layer, so every marker and overlay stays put. It was measured and
+declined on weight: map JS goes from **42 KB gzipped to 256 KB**, on an app
+whose premise is opening on one bar of signal. Revisit when CARTO announce a
+retirement date, or when traffic justifies the payload.
 
 **The rest is clear for commercial use with attribution:** OpenStreetMap
 (ODbL - share-alike only bites if you distribute the derived *database*;
