@@ -841,10 +841,10 @@ L.control.zoom({position:"bottomright"}).addTo(map);
 // REVISIT WHEN: CARTO announce an actual retirement date (they have not),
 // or the traffic justifies the payload. The migration itself is a couple of
 // hours; it is the 214 KB that is the decision.
-const CARTO_KEY = "";        // <- paste your key here
+const CARTO_KEY = "cb1_255u_1_4382ef54d116fc3875415230";       
 const TILES = {
   url: "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
-       + (CARTO_KEY ? "?key=" + encodeURIComponent(CARTO_KEY) : "cb1_255u_1_4382ef54d116fc3875415230"),
+       + (CARTO_KEY ? "?key=" + encodeURIComponent(CARTO_KEY) : ""),
   attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" '
     + 'target="_blank" rel="noopener">OpenStreetMap</a> contributors '
     + '&copy; <a href="https://carto.com/attributions" target="_blank" '
