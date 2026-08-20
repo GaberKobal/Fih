@@ -3919,7 +3919,7 @@ def write_static_pages(index, base):
 {"".join(notes)}
 <footer>
 Updated {e(str(r.get('generated', today))[:16].replace('T', ' '))} UTC and refreshed
-every four hours. <a href="../">All coasts</a> &middot;
+every six hours. <a href="../">All coasts</a> &middot;
 <a href="../../">The map</a>
 </footer>
 </main>{beacon("/r/" + r["id"])}

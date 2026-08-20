@@ -9,7 +9,7 @@ Covers any coast in the world, at two very different levels of usefulness:
 point forecast anywhere else you tap.
 
 ```
-GitHub Actions (cron, every 4 hours)
+GitHub Actions (cron, every 6 hours)
         │  fetches EMODnet bathymetry (once, then cached)
         │  fetches Open-Meteo waves / wind / rain / tide / SST
         │  scores the grid, extracts the top spots
@@ -178,7 +178,7 @@ a fair mix of easy and hard — small Mediterranean boxes alone come in nearer
 0.9 s each, Lofoten and its 2,965 coastline ways very much do not.
 
 So the steady state is **about 20 minutes of compute plus CI overhead, six
-times a day** on the 4-hourly schedule with everything enabled. The binding
+times a day** on the 6-hourly schedule with everything enabled. The binding
 limits, in the order you will hit them:
 
 1. **The first run.** Cold bathymetry dominates everything else by a factor
@@ -249,7 +249,7 @@ run starts with it already warm. Run again to continue.
 The next run walks the same list in `regions.json` order, gets through those
 127 in about five minutes because their bathymetry is cached, and spends the
 rest of its budget going deeper. **A cold 800 converges in about seven runs,
-roughly a day on the 4-hourly schedule, with nothing recomputed and nothing
+roughly a day on the 6-hourly schedule, with nothing recomputed and nothing
 lost:**
 
 | run | re-walking warm | new cold | total |
@@ -518,7 +518,7 @@ a volunteer-funded service.
 
 ### Why the API quota stopped mattering
 
-Conditions used to be two requests per region. At 800 regions on a 4-hourly
+Conditions used to be two requests per region. At 800 regions on a 6-hourly
 schedule that is 9,600 calls a day against a 10,000 free allowance — at the
 ceiling, with nothing left for a retry.
 
@@ -587,6 +587,59 @@ anything. This is a feature for a handful of home coasts, not for the
 catalogue. Regions are sampled least-recently-first so coverage spreads
 rather than repeating, and raising the variable or dropping the Monday-only
 condition in the workflow is the lever.
+
+### What this costs to run, and under whose terms
+
+**Open-Meteo counts LOCATIONS, not HTTP requests.** This was got wrong here
+for several versions. From their pricing page: *"Requests for data covering
+more than 10 weather variables... are considered multiple API calls...
+fractional counts are used"*, and the calculator carries a Locations field.
+Batching 100 locations into one request does not make it one billable call.
+
+| | |
+| --- | --- |
+| `MARINE_VARS` | 13 variables, so x1.3 |
+| per run | 800 x (1.3 marine + 1.0 weather) = **~1,840 calls** |
+| at 6 runs a day | ~11,040 - **over the 10,000/day free ceiling** |
+| at 4 runs a day | **~7,360 - inside it** |
+
+That is why the cron is 6-hourly and not 4-hourly. Batching was still worth
+doing: it cut HTTP requests from 1,518 to 16, which is what fixed the
+600/minute rate limit and a ten-minute serial prologue. It just never touched
+the billable count.
+
+**The free API is non-commercial.** Open-Meteo's terms name the exact case:
+*"Operating websites or apps that have subscriptions or display
+advertisements."* Ads or a paid ad-removal tier need the Standard plan,
+EUR 29/month for what this uses. Attribution stays required either way.
+
+**CARTO basemaps now need a key.** Their raster endpoint *"now require[s] an
+API key and [is] being retired"*; without one the tiles arrive covered in an
+"API key required" watermark. A key is free at
+https://carto.com/basemaps/apikey - no account, no need to declare commercial
+use, 5 million tiles a month. Paste it into `CARTO_KEY` in `docs/index.html`.
+Longer term CARTO recommend their vector basemaps, which would mean MapLibre
+instead of Leaflet: a migration to plan, not an emergency.
+
+**The rest is clear for commercial use with attribution:** OpenStreetMap
+(ODbL - share-alike only bites if you distribute the derived *database*;
+rendered maps and contours are Produced Works), EMODnet, GMRT, Copernicus
+Marine, Sentinel-2, and GoatCounter, whose terms permit commercial use
+outright. The one to watch is **SRTM15+ via NOAA ERDDAP**, the third
+bathymetry fallback, which is marked non-commercial.
+
+**If you ever need to leave Open-Meteo**, the options are real but none is a
+drop-in:
+
+- **Self-host Open-Meteo.** The server is AGPL-3.0 with a Dockerfile. Same
+  data, same API, no licence fee - you pay in servers and operations instead,
+  which is not obviously cheaper than EUR 29.
+- **ECMWF open data** - CC-BY-4.0, *"may be redistributed and used
+  commercially, subject to appropriate attribution"*, global, free. Raw GRIB,
+  so you would be building the interpolation layer Open-Meteo already is.
+- **NOAA GFS and WaveWatch III** - US government work, public domain, global
+  waves. Same caveat: raw GRIB.
+- **met.no** - CC-BY 4.0, free, but land weather rather than a wave model.
 
 ### Being findable at all
 

@@ -1,105 +1,99 @@
-# v24 — what the audit found after v23
+# v25 — back inside every free tier, and a correction
 
 ```
-v24/
-└── docs/
-    ├── sw.js          <- supersedes v23
-    └── index.html     <- supersedes v22
+v25/
+├── fish_finder.py                    (one string: "every six hours")
+├── README.md
+├── docs/index.html                   <- supersedes v24
+└── .github/workflows/update.yml      <- supersedes v16
 ```
 
-Everything else unchanged: manifest and icons v22; `fish_finder.py`,
-`config.json`, `README.md` v20; `s2_turbidity.py`, `dive_log.csv`, workflow
-v19; `regions.json` v17.
-
-**v23 already fixes Venice.** This corrects things the audit turned up
-afterwards, including one bug that is arguably worse.
+`docs/sw.js`, manifest and icons stay at v24; `config.json` v20;
+`s2_turbidity.py`, `dive_log.csv` v19; `regions.json` v17.
 
 ---
 
-## GMRT was poisoned too, and that damage outlived the request
+## 1. The schedule is now 6-hourly, because my API maths was wrong
 
-Open-Meteo was not the only victim. `structure.js`:
+I told you across several versions: *"16 calls a run, 96 a day, about 1% of
+the free tier."* That was wrong. Open-Meteo's pricing page:
+
+> "Requests for data covering **more than 10 weather variables**... are
+> considered multiple API calls... fractional counts are used"
+
+and their calculator carries a **Locations** field. Batching 100 locations
+into one HTTP request does not make it one billable call.
+
+| | |
+| --- | --- |
+| `MARINE_VARS` | 13 variables, so x1.3 |
+| per run | 800 x (1.3 + 1.0) = **~1,840 calls** |
+| at 6 runs a day | ~11,040 - **110% of the 10,000/day free ceiling** |
+| at 4 runs a day | **~7,360 - inside it** |
+
+Cron is now `40 1,7,13,19 * * *`.
+
+The batching was still worth doing - it cut HTTP requests 1,518 to 16, which
+is what fixed the 600/minute rate limit and the ten-minute serial prologue.
+It simply never touched the billable count, and I said otherwise.
+
+Freshness barely moves: the app re-anchors "now" to the real clock from the
+hourly series it already holds, so the two dropped runs were only buying a
+slightly newer upstream model.
+
+## 2. CARTO needs a key - and I was wrong about that too
+
+An hour ago I passed on a claim that CARTO basemaps were "available
+exclusively with an Enterprise license". I had not checked it. Their current
+FAQ says the opposite:
+
+> "**There is a free tier, and it is generous.** Anyone can request an API
+> key and use CARTO basemaps free of charge up to a fair use limit of
+> **5 million tile requests per calendar month**. You do not need a CARTO
+> account, and you do not need to tell us in advance whether your project is
+> commercial."
+
+So there is no licence problem. There **is** a live cosmetic one:
+
+> "These are still available, but they **now require an API key and are being
+> retired**"... "If the tiles in your map are covered by a repeated **'API
+> key required'** watermark, they are being requested from our raster basemap
+> endpoint without an API key."
+
+**Your map is probably watermarked right now.** Get a key - free, no account,
+30 seconds - at **https://carto.com/basemaps/apikey**, then paste it into
+`docs/index.html`:
 
 ```js
-const GMRT = "https://www.gmrt.org/services/GridServer";
-const url  = `${GMRT}?${q}`;      // the whole bbox lives in the query
-res = await fetch(url);           // bare cross-origin GET, fixed path
+const CARTO_KEY = "";        // <- paste your key here
 ```
 
-Same shape, same poisoning. But then:
+The URL builds itself from there; empty leaves today's behaviour untouched.
+CARTO's terms forbid hiding the watermark, and a key is free, so this is the
+only correct fix.
 
-```js
-// Static data: once fetched for an area, never fetch it again.
-if(cache) cache.put(url, new Response(text));
-```
+Worth planning, not rushing: raster is being retired and CARTO recommend
+vector, which needs MapLibre instead of Leaflet - a real migration.
 
-The wrong grid was written into `bathy-v1` **under the correct key**, and
-that cache is never revalidated. So "Scan structure" on a new coast returned
-the first coast's seabed, and it stayed wrong.
+## 3. Is there a free replacement for Open-Meteo?
 
-**Already handled, by luck rather than design.** `activate` deletes every
-cache except SHELL/DATA/TILES/FONTS, so the v23 version bump purges
-`bathy-v1` on each device. I have written a warning above that filter,
-because it looks exactly like something to optimise later - and a keep-list
-without a one-shot `caches.delete("bathy-v1")` would preserve wrong seabed
-data forever.
+Yes, several, and none is a drop-in. Verified from primary sources:
 
-## My v23 comment named the wrong hosts
+| option | free? | commercial? | catch |
+| --- | --- | --- | --- |
+| **Self-host Open-Meteo** | yes | yes | server is **AGPL-3.0** with a Dockerfile. Same data, same API, no licence fee - you pay in servers and ops |
+| **ECMWF open data** | yes | **yes** - CC-BY-4.0, *"may be redistributed and used commercially, subject to appropriate attribution"* | raw GRIB; you build the interpolation layer |
+| **NOAA GFS + WaveWatch III** | yes | yes, US public domain | raw GRIB, same work |
+| **met.no** | yes | yes, CC-BY 4.0 | land weather, not a wave model |
 
-It said "Open-Meteo, the flood API and Overpass". Checked:
-
-- **Overpass is not affected** - `structure.js` sends it as a **POST**, and
-  the handler exits at `if (req.method !== "GET") return;`
-- **There is no browser-side flood API** - `grep -rn "flood-api" docs/`
-  returns nothing; it is server-side Python only
-- **GMRT was affected** and I had not mentioned it
-
-Corrected, because that comment is the record of a real incident and it was
-wrong in both directions.
-
-## The offline map never worked
-
-`sw.js` has a tile cache with a 900-tile cap and a header promising the app
-"opens in a car park with one bar of signal". Neither `L.tileLayer` call
-passed `crossOrigin`, so Leaflet's `<img>` requests were **no-cors**, the
-responses came back **opaque**, `res.ok` is false for an opaque response, and
-
-```js
-if (res.ok) { c.put(req, res.clone()); trimTiles(); }
-```
-
-never ran. **Not one tile was ever cached.** `TILE_CAP` described nothing.
-Both CDNs answer `Access-Control-Allow-Origin: *` - verified with curl before
-changing anything, since adding `crossOrigin` to a host that refused it would
-have broken the map outright - so both layers now request with CORS and the
-cache is real.
+The honest conclusion: **EUR 29/month is cheaper than all of them** once the
+engineering is counted, and none of it is needed while the app stays
+non-commercial. Open-Meteo's real value is the part you would be rebuilding -
+model selection, interpolation, per-location timezones, one clean JSON API.
 
 ## Verified
 
-Routing of the **real sw.js**, run in a sandbox:
-
-```
-NOT INTERCEPTED           <-  marine-api.open-meteo.com/v1/marine?latitude=-33.9
-NOT INTERCEPTED           <-  gmrt.org/services/GridServer?north=1&south=0
-NOT INTERCEPTED           <-  overpass-api.de/api/interpreter
-shell-v24                 <-  unpkg.com/leaflet@1.9.4/dist/leaflet.js
-tiles                     <-  basemaps.cartocdn.com/.../5/1/2.png
-shell-v24 (ignoreSearch)  <-  /                      (navigation)
-shell-v24                 <-  /structure.js?v=2      (exact)
-```
-
-10/10 assertions, 36-region selftest, 0 failures.
-
-## Still open, not changed here
-
-Real findings I have deliberately not rushed into this deploy:
-
-1. **No timeout on the `/data/` network-first fetch.** On one bar a connect
-   can hang for a minute before the cache is consulted. Wants a ~3 s race.
-2. **`if (res.ok)` trusts any 2xx.** A captive-portal login page returns 200
-   and would overwrite the last good `latest.json`.
-3. **Install is non-atomic and activate is destructive.** A flaky update can
-   leave a partial shell with the previous one already deleted.
-
-Each is a behaviour change to offline handling and deserves its own testing
-rather than riding along with a fix you need now.
+10/10 assertions, 36-region selftest, 0 failures. Tile URL checked both ways
+in a browser: empty key gives today's URL exactly, a key appends
+`?key=...`, CARTO attribution retained, and every earlier fix still in place
+(13 nav guards, manifest, `crossOrigin` on both tile layers).
