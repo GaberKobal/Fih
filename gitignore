@@ -2,3 +2,6 @@ cache/
 __pycache__/
 *.pyc
 docs/data/
+# local full-precision dive log - NEVER commit this
+dive_log.csv
+dive_log.full.csv
