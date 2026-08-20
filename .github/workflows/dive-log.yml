@@ -159,18 +159,48 @@ jobs:
             echo "::warning::No DIVELOG_TOKEN / DIVELOG_REPO set, so the precise row was DISCARDED and only the rounded one kept. See the header of this workflow."
             exit 0
           fi
-          git clone --depth 1 \
+          # NOT --depth 1, and NOT a forced branch. A shallow clone that lands
+          # on a different default branch comes back WITHOUT dive_log.csv, and
+          # the old logic then recreated it from a bare header and pushed -
+          # silently destroying every row already stored. Caught in testing:
+          # the second dive wiped the first.
+          git clone \
             "https://x-access-token:${DIVELOG_TOKEN}@github.com/${DIVELOG_REPO}.git" \
             /tmp/priv >/dev/null 2>&1 \
             || { echo "::error::could not clone the private log repo"; exit 1; }
           cd /tmp/priv
-          [ -f dive_log.csv ] || head -1 "$GITHUB_WORKSPACE/dive_log.csv" > dive_log.csv
+          # A repository with no commits at all has an unborn HEAD; that is
+          # the only case where starting the file from scratch is correct.
+          git rev-parse HEAD >/dev/null 2>&1 || git checkout -q -b main
+          if [ ! -f dive_log.csv ]; then
+            head -1 "$GITHUB_WORKSPACE/dive_log.csv" > dive_log.csv
+          fi
+          before=$(wc -l < dive_log.csv)
+          # THE CHECK THAT ACTUALLY MATTERS. A row count of before+1 is
+          # satisfied just as happily by a freshly invented header plus one
+          # row, which is exactly the shape of the bug this replaced. So
+          # compare against what the REMOTE already holds: if it has more
+          # rows than the working copy, this clone is not the tip and
+          # pushing would delete dives.
+          branch=$(git rev-parse --abbrev-ref HEAD)
+          remote_rows=$(git show "origin/$branch:dive_log.csv" 2>/dev/null | wc -l || echo 0)
+          if [ "$remote_rows" -gt "$before" ]; then
+            echo "::error::the private log has $remote_rows rows but this clone sees $before - refusing to push and lose dives"
+            exit 1
+          fi
           cat /tmp/dive_full.csv >> dive_log.csv
+          after=$(wc -l < dive_log.csv)
+          # One row in, one row more. Anything else means the file was not
+          # the one already in the repo, so refuse rather than overwrite it.
+          if [ "$after" -ne "$((before + 1))" ]; then
+            echo "::error::row count went $before -> $after, refusing to push"
+            exit 1
+          fi
           git config user.name  "fish-finder"
           git config user.email "actions@users.noreply.github.com"
           git add dive_log.csv
           git commit -q -m "dive log entry" || exit 0
-          git push -q >/dev/null 2>&1 \
+          git push -q -u origin HEAD >/dev/null 2>&1 \
             || { echo "::error::could not push to the private log repo"; exit 1; }
           echo "precise row stored privately"
 
