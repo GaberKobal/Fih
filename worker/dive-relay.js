@@ -126,7 +126,11 @@ function reconcileHeader(content) {
   const want = COLUMNS.join(",");
   const lines = content.split("\n");
   const have = (lines[0] || "").trim();
-  if (have === want) return { content };
+  // NOT an early return any more. Even when the header is already right,
+  // the line endings may not be, and this is the only place that fixes
+  // them.
+  const rebuilt = () => lines.join(chr10());
+  if (have === want) return { content: lines.join(NL) };
   if (!have) return { content: want + "\n" };
 
   const old = have.split(",");
