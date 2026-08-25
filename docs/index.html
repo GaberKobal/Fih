@@ -553,6 +553,13 @@
       <summary>Log a dive</summary>
       <div class="form">
         <label>Date<input type="date" id="f_date"></label>
+        <!-- TIME IS THE FIELD THAT MAKES THE LOG WORTH KEEPING. Without it
+             a dive can only be compared against a whole day of conditions,
+             and a day contains both 8 m of morning calm and 2 m of afternoon
+             chop. Every scoring run against the first six dives had to
+             average across daylight hours, which is most of why they could
+             not tell the model anything. -->
+        <label>Time in<input type="time" id="f_time"></label>
         <label>Species<select id="f_species"></select></label>
         <label>Lat<input id="f_lat" inputmode="decimal" placeholder="45.32187"></label>
         <label>Lon<input id="f_lon" inputmode="decimal" placeholder="13.55732"></label>
@@ -2254,9 +2261,29 @@ function setResult(v){
 $("#f_r0").addEventListener("click",()=>setResult(0));
 $("#f_r1").addEventListener("click",()=>setResult(1));
 
+// What the model said FOR THE HOUR OF THE DIVE, not for whenever the form
+// happened to be open. Logging an evening dive at breakfast used to record
+// breakfast's visibility as the prediction, which then went into the
+// calibration as if it were a forecast of the dive - comparing the model
+// against a number it never produced for that moment.
+//
+// Returns the matching hour object from days[].hours[], or null.
+function forecastHourFor(dateStr, timeStr){
+  if(!DATA || !DATA.days || !dateStr) return null;
+  const hh = (timeStr || "").slice(0,2);
+  if(!/^\d{2}$/.test(hh)) return null;
+  const want = `${dateStr}T${hh}:00`;
+  for(const day of DATA.days)
+    for(const h of (day.hours || []))
+      if(h.t === want) return h;
+  return null;
+}
+
 function buildRow(){
   const v=id=>($("#"+id).value||"").trim().replace(/,/g," ");
-  const modelViz = DATA ? Math.round(DATA.now.visibility_m) : "";
+  const hr = forecastHourFor(v("f_date"), ($("#f_time").value||"").trim());
+  const modelViz = hr ? Math.round(hr.viz_m)
+                      : (DATA && DATA.now ? Math.round(DATA.now.visibility_m) : "");
   const row=[v("f_date"),v("f_lat"),v("f_lon"),v("f_depth"),v("f_viz"),
              modelViz,v("f_wind"),v("f_species"),logResult,v("f_notes")].join(",");
   $("#rowout").textContent=row;
@@ -2307,7 +2334,12 @@ $("#f_submit").addEventListener("click", async () => {
       body: JSON.stringify({
         date: v("f_date"), lat: v("f_lat"), lon: v("f_lon"),
         depth_m: v("f_depth"), viz_m: v("f_viz"),
-        model_viz_m: DATA ? Math.round(DATA.now.visibility_m) : "",
+        time: v("f_time"),
+        model_viz_m: (() => {
+          const h = forecastHourFor(v("f_date"), v("f_time"));
+          return h ? Math.round(h.viz_m)
+                   : (DATA && DATA.now ? Math.round(DATA.now.visibility_m) : "");
+        })(),
         wind_from_deg: v("f_wind"), species: v("f_species"),
         result: String(logResult), notes: v("f_notes"),
       }),
@@ -2353,6 +2385,9 @@ function initLog(d){
   const n=new Date();
   $("#f_date").value=`${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,"0")}`
                    + `-${String(n.getDate()).padStart(2,"0")}`;
+  // Local wall clock, same reasoning as the date above.
+  $("#f_time").value = `${String(n.getHours()).padStart(2,"0")}:`
+                     + `${String(n.getMinutes()).padStart(2,"0")}`;
   $("#f_viz").value=Math.round(d.now.visibility_m);
   $("#f_wind").value=d.now.wind_from_deg;
   $("#f_species").innerHTML=((d.days&&d.days[0]&&d.days[0].species)||d.species||[])
