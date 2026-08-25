@@ -2285,7 +2285,12 @@ $("#f_submit").addEventListener("click", async () => {
     $("#rowout").textContent = "Need at least a date, coordinates and visibility.";
     return;
   }
-  const relay = (DATA && DATA.dive_relay_url) || "";
+  // DATA is a region's latest.json in region mode, but in POINT mode it is
+  // built client-side by forecastPoint() and carries none of the config. Fall
+  // back to model.json, which point mode always loads.
+  const relay = (DATA && DATA.dive_relay_url)
+             || (typeof MODEL !== "undefined" && MODEL && MODEL.dive_relay_url)
+             || "";
   if(!relay){
     $("#rowout").textContent =
       "No dive_relay_url set in config.json, so there is nowhere private to "
