@@ -4012,6 +4012,14 @@ def write_model(base, regions):
                   "depth", "weights")
     model = {k: base.get(k) for k in model_keys}
 
+    # POINT MODE NEEDS THESE TOO. They used to live only in a region's
+    # latest.json, so the Log a dive button worked on a region and silently
+    # refused everywhere else - and point mode is the DEFAULT view, so for
+    # most visitors it never worked at all. model.json is the one file point
+    # mode always loads, so they belong here.
+    model["dive_relay_url"] = base.get("dive_relay_url")
+    model["repo_issue_url"] = base.get("repo_issue_url")
+
     # Every species pack in the repository, not just the ones a region
     # happens to declare. The ocean-basin fallback in biomeSpeciesFile()
     # (docs/index.html) can name a pack no enabled region uses, and a pack
