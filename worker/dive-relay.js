@@ -33,6 +33,12 @@ const FILE = "dive_log.csv";
 const COLUMNS = [
   "date", "lat", "lon", "depth_m", "viz_m", "model_viz_m",
   "wind_from_deg", "species", "result", "notes",
+  // APPENDED, not inserted after "date" where it belongs semantically. A new
+  // column in the middle would silently shift every value in every existing
+  // row by one. On the end, an old 10-field row and a new 11-field row still
+  // agree about what the first ten mean, and reconcileHeader below pads the
+  // old ones.
+  "time",
 ];
 
 const LIMITS = {
@@ -65,6 +71,12 @@ function buildRow(body) {
   const wind = num(body.wind_from_deg, 0, 360);
   if ([depth, viz, model, wind].includes(null)) return { error: "numeric field out of range" };
 
+  // Optional, but the single most useful field in the file. HH:MM, 24h.
+  let time = String(body.time ?? "").trim();
+  if (time && !/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) {
+    return { error: "time must be HH:MM, 24 hour" };
+  }
+
   const result = String(body.result ?? "").trim();
   if (result !== "" && result !== "0" && result !== "1") return { error: "result must be 0 or 1" };
 
@@ -77,7 +89,7 @@ function buildRow(body) {
     date: d, lat, lon,
     depth_m: depth, viz_m: viz, model_viz_m: model, wind_from_deg: wind,
     species: clean(body.species, LIMITS.species),
-    result,
+    result, time,
     notes: clean(body.notes, LIMITS.notes),
   };
 
@@ -100,6 +112,37 @@ const b64decode = (s) => {
   return new TextDecoder().decode(bytes);
 };
 
+/**
+ * Bring an existing file up to the current COLUMNS.
+ *
+ * Adding "time" means a file written by an older Worker has a 10-column
+ * header while new rows carry 11. Appending regardless would leave the
+ * header lying about the data. So: if the old header is a PREFIX of
+ * COLUMNS - columns only ever added at the end - rewrite the header and
+ * pad the old rows. Anything else is a real mismatch and is refused
+ * rather than guessed at, because a wrong guess corrupts the only copy.
+ */
+function reconcileHeader(content) {
+  const want = COLUMNS.join(",");
+  const lines = content.split("\n");
+  const have = (lines[0] || "").trim();
+  if (have === want) return { content };
+  if (!have) return { content: want + "\n" };
+
+  const old = have.split(",");
+  const isPrefix = old.length <= COLUMNS.length
+    && old.every((c, i) => c === COLUMNS[i]);
+  if (!isPrefix) {
+    return { error: `header mismatch: file has "${have}"` };
+  }
+  const pad = ",".repeat(COLUMNS.length - old.length);
+  lines[0] = want;
+  for (let i = 1; i < lines.length; i++) {
+    if (lines[i].trim()) lines[i] += pad;
+  }
+  return { content: lines.join("\n") };
+}
+
 async function appendToRepo(env, row) {
   const url = `https://api.github.com/repos/${env.DIVELOG_REPO}/contents/${FILE}`;
   const headers = {
@@ -120,6 +163,9 @@ async function appendToRepo(env, row) {
       sha = meta.sha;
       content = b64decode(meta.content);
       if (!content.endsWith("\n")) content += "\n";
+      const fixed = reconcileHeader(content);
+      if (fixed.error) return { ok: false, status: 500, detail: fixed.error };
+      content = fixed.content;
     } else if (get.status !== 404) {
       return { ok: false, status: 502, detail: `read failed (${get.status})` };
     }
