@@ -1,87 +1,78 @@
-# v31 — time of day, and the model value that goes with it
+# v33 — the watermark, and opening on the world
 
 ```
-v31/
-├── docs/index.html          <- supersedes v30
-└── worker/dive-relay.js     <- supersedes v27 (REDEPLOY the Worker)
+v33/
+└── docs/
+    ├── index.html    <- supersedes v31
+    └── sw.js         <- supersedes v25. THIS is the watermark fix.
 ```
-
-Nothing else changes. `config.json` v30, `fish_finder.py` v28, `sw.js` v25.
 
 ---
 
-## Why this is the field that matters
+## The watermark: your key was fine, my cache handling was not
 
-Every attempt to score the first six dives had to average conditions across
-daylight hours, because not one of them recorded a time. A day contains both
-8 m of morning calm and 2 m of afternoon chop, so averaging is close to
-asking the model nothing at all. That is most of why six dives could not tell
-us whether the forecast works.
-
-## What was added
-
-**A `Time in` field**, prefilled from the phone's own clock.
-
-**And the part that is easy to miss:** `model_viz_m` is now taken from the
-forecast hour of the DIVE, not from whenever the form happened to be open.
-Logging an evening dive over breakfast used to record breakfast's visibility
-as "what the model predicted" - then fed that into calibration as though the
-model had forecast it for the dive. It was comparing the model against a
-number it never produced for that moment.
-
-Verified against two hours of one real forecast:
-
-| hour | model said | recorded |
-| --- | --- | --- |
-| 06:00 | 6.5 m | **7** |
-| 21:00 | 7.6 m | **8** |
-
-Same form, same day, different hour, different recorded prediction.
-
-## The migration problem, and how it is handled
-
-Adding a column to a file that already exists is where data gets destroyed.
-`time` is therefore **appended at the end**, not inserted after `date` where
-it belongs semantically - a new column in the middle silently shifts every
-value in every existing row.
-
-`reconcileHeader()` then upgrades an older file: if the existing header is a
-**prefix** of the current columns, it rewrites the header and pads the old
-rows. If it is anything else, it **refuses** rather than guessing, because a
-wrong guess corrupts the only copy.
-
-Tested against a genuine 10-column file:
+Measured against CARTO directly:
 
 ```
-before  date,...,result,notes
-        2026-08-21,...,dentex,1,old row
-
-after   date,...,result,notes,time
-        2026-08-21,...,dentex,1,old row,          <- padded, nothing shifted
-        2026-08-25,...,sargus,1,dawn dive,06:30   <- new row
-        2026-08-27,...,sargus,1,dawn dive,        <- time is optional
+no key      17699 B   watermarked
+real key    19919 B   clean
+fake key    17699 B   watermarked
 ```
 
-`25:00` and unpadded `6:30` are both rejected with
-`400 time must be HH:MM, 24 hour`.
+So the key works, and the live page has it. What you were seeing was a
+**cached, pre-key `index.html`** requesting unkeyed tiles.
 
-## One repair worth recording
+That is my mistake, and the file itself says so at the top: *"Bump this
+whenever ANY file in SHELL_URLS changes."* `index.html` changed in v28, v30
+and v31 and I never touched `VERSION`. The shell is served cache-first, so a
+returning browser kept handing you the old page.
 
-The first version of `reconcileHeader` shipped with `"\n"` flattened into
-real newlines inside its string literals, which broke the module outright -
-the import failed with `SyntaxError: Invalid or unexpected token`. Caught by
-running the actual file rather than reading it. Repaired, and the regression
-now asserts that no string literal contains a raw newline.
+`VERSION` is now **v26**. That forces a fresh precache and the keyed page.
 
-## After uploading
+No tile purge is needed: the watermarked tiles were cached under URLs with no
+`?key=`, so once the new page asks for keyed URLs they simply miss and refetch
+clean. The dead entries age out under `TILE_CAP`.
 
-**Redeploy the Worker** with the new `dive-relay.js` - the app will start
-sending `time`, and until the Worker knows the column it will simply be
-dropped. Everything else is a normal push.
+## Opening on the world
 
-Your `dive_log.full.csv` needs no migration: `calibrate.py` reads only
-`viz_m` and `model_viz_m`, so a missing `time` column is harmless.
+It used to jump to `INDEX.regions[0]` - whichever coast is first in
+`regions.json` - and immediately run a point forecast there. For you that
+reads as your home spot. For everyone else it reads as an app about Istria
+that has guessed wrong, and it spent an Open-Meteo call before anyone asked
+for anything.
+
+Now: zoom 2, centred on nothing in particular, with *"Tap any coast"* and a
+line explaining what to do.
+
+```
+zoom 2, POINT null, REGION null, openMeteoCalls 0
+```
+
+## A regression I caused and caught
+
+Opening with no point made the map **inert**. The click handler read:
+
+```js
+if(POINT !== null) loadPoint(...)
+```
+
+which was only ever true because startup auto-loaded a point. Removing that
+startup left nothing to tap into.
+
+What the guard actually means is *not showing a region* - in region mode a tap
+should not throw away the structure map you are reading. Now:
+
+```js
+if(POINT !== null || REGION === null) loadPoint(...)
+```
+
+Verified both directions:
+
+| | |
+| --- | --- |
+| tap from the world view | point placed at 45.2, 13.2 |
+| tap while showing Cascais | region unchanged, still Cascais |
 
 ## Verified
 
-12/12 assertions, 36-region selftest, 0 failures, plus the browser tests above.
+8/8 assertions, 36-region selftest, 0 failures, plus the browser tests above.
