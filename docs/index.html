@@ -1126,7 +1126,14 @@ async function loadPoint(lat, lonRaw){
   }
 }
 
-map.on("click", e => { if(POINT !== null) loadPoint(e.latlng.lat, e.latlng.lng); });
+// Tap to place a point. The guard used to be `POINT !== null`, which was
+// only ever true because startup auto-loaded a point - so opening on the
+// world instead made the whole map inert. What it actually means is "not
+// showing a region": in region mode a tap should not throw away the
+// structure map you are looking at.
+map.on("click", e => {
+  if(POINT !== null || REGION === null) loadPoint(e.latlng.lat, e.latlng.lng);
+});
 
 // ---- client-side structure ------------------------------------------------
 // Bathymetry is static, so the terrain (relief, slope, depth gate) is built
@@ -1825,11 +1832,27 @@ async function load(){
     }
     if(INDEX.regions.some(r=>r.id===want)){ REGION = want; }
     else {
-      // Default to anywhere-mode: open on the first region's coast, but as a
-      // tappable point rather than a fixed region.
-      const c = INDEX.regions[0]?.centre || [45.32, 13.56];
-      map.setView(c, 10);
-      await loadPoint(c[0], c[1]);
+      // OPEN ON THE WORLD, not on one coast.
+      //
+      // This used to jump to INDEX.regions[0] - whichever coast happens to be
+      // first in regions.json - and immediately run a point forecast there.
+      // For the person who built it that reads as "my home spot". For
+      // everyone else it reads as an app about Istria that has somehow
+      // guessed wrong, and it burns an Open-Meteo call before anyone has
+      // asked for anything.
+      //
+      // A zoomed-out map says what the app actually is: tap any coast on
+      // Earth. maxBounds keeps that inside the single world Leaflet is
+      // configured for.
+      map.setView([25, 10], 2);
+      $("#rgname").textContent = "Tap any coast";
+      $("#rgsub").textContent  =
+        "conditions anywhere on Earth · or tap here to pick a mapped coast";
+      $("#err").style.display = "block";
+      $("#err").style.color = "var(--sound)";
+      $("#err").textContent =
+        "Tap anywhere on the water for visibility, swell, wind and the "
+        + "daylight window. Coasts with precomputed maps are in the list above.";
       return;
     }
   }
