@@ -193,6 +193,12 @@
   #word[data-v="poor"],#word[data-v="stay home"]{color:var(--flag)}
   #word[data-v="not now"]{color:var(--sound)}
   #limit{font-size:13.5px; color:var(--sound); margin-top:6px}
+  #why{margin-top:8px; font-size:12.5px; color:var(--sound)}
+  #why summary{cursor:pointer; display:inline-block; padding:2px 0; text-decoration:underline dotted; text-underline-offset:3px}
+  #why[hidden]{display:none}
+  #whybody{margin-top:6px; line-height:1.5; max-width:46ch}
+  #whybody b{color:var(--ink,inherit); font-weight:600}
+  #whybody .gen{display:block; margin-top:6px; color:var(--buoy,inherit)}
   #vitals{display:flex; gap:16px; margin-top:12px; flex-wrap:wrap}
   #vitals div{min-width:56px}
   #vitals b{display:block; font-size:18px; font-weight:600; margin-top:1px}
@@ -526,6 +532,7 @@
         <div class="eyebrow" id="region">loading</div>
         <div id="word">…</div>
         <div id="limit"></div>
+        <details id="why"><summary>Why this verdict?</summary><div id="whybody"></div></details>
       </div>
     </div>
     <div id="vitals"></div>
@@ -1069,6 +1076,12 @@ async function loadPoint(lat, lonRaw){
     if(nav !== NAV) return;
     const host = regionContaining(lat, lon);
     const cfg = {...MODEL};
+    // Inside a mapped coast, use THAT coast's calm-day turbidity. The point
+    // model only ever saw the global default, so a tap in Cornwall (0.45) or
+    // on a clear Caribbean reef (0.08) was judged as if it were 0.35 water,
+    // which is why unrelated places all read the same 7 m.
+    const localTuned = !!(host && host.viz_baseline != null);
+    if(localTuned) cfg.visibility = {...MODEL.visibility, baseline: host.viz_baseline};
 
     // Species: prefer the region's own hand-tuned pack; fall back to the
     // coarse worldwide biome classifier outside every defined region;
@@ -1102,6 +1115,7 @@ async function loadPoint(lat, lonRaw){
     if(nav !== NAV) return;
     // Point forecasts inherit a guide only inside a configured region.
     d.region_id = host?.id || null;
+    d.local_tuning = localTuned;
     d.species_source = speciesSource;
     // ...and, more importantly, they inherit its spearfishing status. A
     // point forecast is the DEFAULT mode, so without this a tap inside
@@ -2090,6 +2104,36 @@ function renderContext(d, meta){
   $("#regionwarn").innerHTML = warn.join("<br>");
 }
 
+// "Why this verdict?" The thresholds used to be invisible, so "stay home"
+// and "marginal" were black boxes - and the visibility bar is local, so the
+// same metres mean different things on different coasts. This states the
+// bar that was actually applied. Hidden when a cached older forecast has no
+// limits in it, rather than printing blanks.
+function renderWhy(d){
+  const box = $("#why"), L = d.verdict_limits;
+  if(!L){ box.hidden = true; return; }
+  box.hidden = false;
+  const f = x => (+x).toFixed(1);
+  let h = L.local_bar
+    ? `<b>Visibility is judged against this coast.</b> The best a calm, dry day`
+      + ` reaches here is about <b>${f(L.viz_best_m)} m</b>, so <b>Go</b> needs about`
+      + ` <b>${f(L.viz_go_m)} m</b> and <b>Marginal</b> about <b>${f(L.viz_marginal_m)} m</b>.`
+    : `<b>Visibility:</b> Go from about <b>${f(L.viz_go_m)} m</b>, Marginal from`
+      + ` <b>${f(L.viz_marginal_m)} m</b> (one fixed bar for every coast).`;
+  h += `<br><b>Stay home</b> overrides everything once the sea passes any one of:`
+     + ` swell about <b>${(+L.swell_stay_home_m).toFixed(2)} m</b> (at a ${L.period_ref_s} s period;`
+     + ` short chop counts for more, long swell for less), wind about`
+     + ` <b>${L.wind_stay_home_kmh} km/h</b>`
+     + (L.current_stay_home_ms != null
+          ? `, or current about <b>${(+L.current_stay_home_ms).toFixed(2)} m/s</b>` : "")
+     + `. The worst of those decides - visibility cannot buy it back.`;
+  if(d.point && d.local_tuning === false)
+    h += `<span class="gen">Generic estimate: this spot is outside every coast I have`
+       + ` tuned, so the calm-day visibility figure is a worldwide default, not`
+       + ` something measured here. Treat the metres as a guide.</span>`;
+  $("#whybody").innerHTML = h;
+}
+
 function renderAll(d, meta){
   meta = meta || {};
   renderContext(d, meta);
@@ -2125,6 +2169,8 @@ function renderAll(d, meta){
       ? "nothing holding it back" : "limited by " + d.now.limited_by;
   }
 
+  renderWhy(d);
+
   // Satellite water clarity, if a recent scene was processed. Optional file:
   // absent until s2_turbidity.py has run successfully.
   //
@@ -2158,7 +2204,7 @@ function renderAll(d, meta){
            Relative, not metres. Sentinel-2 L2A leaves too much atmosphere over
            water for an absolute reading, so this tracks change week to week and
            shows where the dirty water sits — it cannot confirm the
-           ${Math.round(d.now.visibility_m)} m the model claims today.
+           ${(+d.now.visibility_m).toFixed(1)} m the model claims today.
          </div>`;
       $("#sheet").insertBefore(el, $("#spots"));
     })
@@ -2169,7 +2215,7 @@ function renderAll(d, meta){
   // under groundswell. Saying "7 m" without saying where is meaningless.
   const vizAt = d.visibility_depth_m != null ? ` at ${d.visibility_depth_m} m` : "";
   const vit = [
-    ["viz" + vizAt, `${fmt(d.now.visibility_m,0)} m`],
+    ["viz" + vizAt, `${fmt(d.now.visibility_m,1)} m`],
     ["swell",     `${fmt(d.now.wave_height_m,2)} m`],
     ["wind",      `${fmt(d.now.wind_speed_kmh,0)} km/h`],
     ["wind from", `${d.now.wind_from_deg}°`],
@@ -2238,7 +2284,7 @@ function renderAll(d, meta){
       + (d.grid_resolution_m != null ? ` · grid ${d.grid_resolution_m} m` : "");
   $("#stamp").innerHTML =
     `Updated ${t.toLocaleString()} · depth band ${band}<br>
-     Weights: ${wts}<br>
+     Weights: ${wts}${d.weights_tuned ? " (maps tuned on private dive data)" : ""}<br>
      Water temp: ${d.temp_source || "unknown"}<br>
      ${bathy} · conditions Open-Meteo. Model output, not a chart. Check the
      rules and the protected areas before you get in.`;

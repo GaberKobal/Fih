@@ -220,6 +220,31 @@ function speciesDayFactors(sp, sst, vizScore, date, cfg, legalPack){
 }
 
 /** One point on Earth, scored exactly as the Python model would score it. */
+// The numbers behind the verdict, in the units a diver reads. Mirrors
+// verdict_limits() in fish_finder.py - change one, change both.
+export function verdictLimits(cfg){
+  const v = cfg.verdict || {}, vis = cfg.visibility || {}, wc = cfg.workability || {};
+  const lo = vis.viz_min_m ?? 1, hi = vis.viz_max_m ?? 11, span = hi - lo;
+  const k = v.local_bar ?? 1, base = vis.baseline ?? 0;
+  const ceil = Math.max(1 - k * base, 0.05);
+  const floor = wc.hard_floor ?? 0.2;
+  const atFloor = (good, bad) => good + (1 - floor) * (bad - good);
+  const r1 = x => Math.round(x * 10) / 10;
+  const out = {
+    viz_go_m: r1(lo + (v.go ?? 0.62) * ceil * span),
+    viz_marginal_m: r1(lo + (v.marginal ?? 0.4) * ceil * span),
+    viz_best_m: r1(lo + (1 - base) * span),
+    swell_stay_home_m: Math.round(atFloor(wc.hs_good_m ?? 0.25, wc.hs_bad_m ?? 0.9) * 100) / 100,
+    wind_stay_home_kmh: Math.round(atFloor(wc.wind_good_kmh ?? 10, wc.wind_bad_kmh ?? 35)),
+    period_ref_s: wc.period_ref_s ?? 8,
+    local_bar: k > 0,
+  };
+  if((wc.current_bad_ms ?? 0) > 0)
+    out.current_stay_home_ms =
+      Math.round(atFloor(wc.current_good_ms ?? 0.25, wc.current_bad_ms) * 100) / 100;
+  return out;
+}
+
 export async function forecastPoint(lat, lon, cfg, legalPack){
   const past = (cfg.conditions?.past_days ?? 5), fwd = (cfg.conditions?.forecast_days ?? 3);
   // Wind sea and swell separately as well as combined: they do different
@@ -426,7 +451,11 @@ export async function forecastPoint(lat, lon, cfg, legalPack){
   // and "nothing diveable today" is already said properly per-day in the
   // hour strip.
   const vc = cfg.verdict;
-  const dayScore = Math.min(viz[nowI], work[nowI]);
+  // Visibility is judged against what this water can do, not a global metre
+  // count. Mirrors local_viz() in fish_finder.py - change one, change both.
+  const vizCeil = 1 - (vc.local_bar ?? 1) * (c.baseline ?? 0);
+  const vizLocal = i => vizCeil > 0.05 ? Math.min(1, viz[i] / vizCeil) : viz[i];
+  const dayScore = Math.min(vizLocal(nowI), work[nowI]);
   const lightLeft = times.some((t,i) => i >= nowI && light[i] > 0
                                       && t.slice(0,10) === today);
   let word, limit;
@@ -440,7 +469,7 @@ export async function forecastPoint(lat, lon, cfg, legalPack){
   else if(dayScore >= vc.go)      { word = "go"; limit = "nothing limiting"; }
   else {
     word = dayScore >= vc.marginal ? "marginal" : "poor";
-    limit = viz[nowI] < work[nowI] ? "visibility"
+    limit = vizLocal(nowI) < work[nowI] ? "visibility"
           : (seaOk[nowI] <= airOk[nowI] ? "sea state" : "wind");
   }
 
@@ -477,6 +506,8 @@ export async function forecastPoint(lat, lon, cfg, legalPack){
     schema_version: 18, point: true,
     depth_range_m: [depthCfg.min_m ?? 2, depthCfg.max_m ?? 25],
     weights: cfg.weights || {},
+    weights_tuned: false,
+    verdict_limits: verdictLimits(cfg),
     temp_source: "Open-Meteo sea surface temperature (no depth profile for a point)",
     region: `${lat.toFixed(3)}, ${lon.toFixed(3)}`,
     generated: new Date().toISOString(),

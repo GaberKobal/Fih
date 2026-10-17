@@ -40,7 +40,6 @@ on:
       - "regions.json"
       - "species.json"
       - "docs/region-species.json"
-      - "weights.json"
       - "exclusions.geojson"
       - "docs/index.html"
       - "docs/anywhere.js"
@@ -87,6 +86,56 @@ jobs:
           # Needed to diff against github.event.before and tell a
           # frontend-only push from one that changes the model.
           fetch-depth: 0
+
+      # The fitted weights are the proprietary part of this project, so they
+      # live in a PRIVATE repository and never in this public one. This reads
+      # them in at build time.
+      #
+      # Optional by design: with no token, or an expired one, the build
+      # carries on with the public defaults in config.json and says so. A
+      # missing fit must never take the site down.
+      #
+      # The token is a SEPARATE fine-grained PAT with Contents: READ-ONLY on
+      # that one repository. Do not reuse the dive-log relay's token - that
+      # one can write, and a public repository's workflows should not hold it.
+      # The checkout is sparse, so the dive log itself is never downloaded to
+      # the runner, only the weights files.
+      - name: Is a private repository configured?
+        id: pvt
+        env:
+          PRIVATE_TOKEN: ${{ secrets.PRIVATE_REPO_TOKEN }}
+        run: |
+          if [ -n "$PRIVATE_TOKEN" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No PRIVATE_REPO_TOKEN secret - building with the public default weights"
+          fi
+
+      - name: Fetch private weights
+        id: pvtco
+        if: steps.pvt.outputs.present == 'true'
+        continue-on-error: true
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ vars.PRIVATE_REPO || 'GaberKobal/Fih-divelog' }}
+          token: ${{ secrets.PRIVATE_REPO_TOKEN }}
+          path: private
+          persist-credentials: false
+          sparse-checkout: |
+            weights.json
+            weights_*.json
+          sparse-checkout-cone-mode: false
+
+      - name: Private weights status
+        run: |
+          if [ "${{ steps.pvtco.outcome }}" = "failure" ]; then
+            echo "::warning::Could not read the private repository (token expired or wrong scope?) - using the public default weights"
+          elif [ -f private/weights.json ]; then
+            echo "private weights.json found - maps will use the fitted values"
+          else
+            echo "no private weights.json yet - using the defaults in config.json"
+          fi
 
       - uses: actions/setup-python@v5
         with:

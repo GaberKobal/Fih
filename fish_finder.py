@@ -89,6 +89,55 @@ from scipy.ndimage import (binary_dilation, binary_opening,
                            median_filter)
 
 ROOT = Path(__file__).resolve().parent
+
+# Where fitted values live. Fitting is the one genuinely proprietary thing in
+# this project - it is what dive logs turn into - so it is kept OUT of this
+# public repository. CI checks the private repository out into ./private
+# (see .github/workflows/update.yml) and this module reads weights.json from
+# there. FISH_PRIVATE_DIR points at a local clone of that repository instead.
+PRIVATE_DIR = Path(os.environ.get("FISH_PRIVATE_DIR") or ROOT / "private")
+
+
+def fitted_path(name="weights.json"):
+    """The fitted-values file, or None. Private directory first; a copy in
+    the project root is still honoured so a local run keeps working, but
+    .gitignore keeps it from ever being committed."""
+    for d in (PRIVATE_DIR, ROOT):
+        if (d / name).is_file():
+            return d / name
+    return None
+
+
+def load_fitted(name="weights.json"):
+    path = fitted_path(name)
+    if path is None:
+        return {}
+    def num(v):
+        return (isinstance(v, (int, float)) and not isinstance(v, bool)
+                and math.isfinite(v))
+
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        # Valid JSON is not the same as usable JSON. A list, a null or a
+        # half-edited object would otherwise surface later as an
+        # AttributeError or KeyError inside a region and fail every region.
+        if not isinstance(data, dict):
+            raise ValueError("not a JSON object")
+        w = data.get("weights")
+        if w is not None and not (isinstance(w, dict)
+                                  and all(num(v) for v in w.values())):
+            raise ValueError("weights must map names to numbers")
+        vc = data.get("visibility_correction")
+        if vc is not None and not (isinstance(vc, dict) and num(vc.get("scale"))
+                                   and num(vc.get("offset"))):
+            raise ValueError("visibility_correction needs a numeric scale and offset")
+    except (OSError, ValueError) as e:
+        # A truncated, corrupt or mis-shaped private file must not take the
+        # forecast down with it: fall back to the public defaults, loudly.
+        print(f"WARNING: {path} is unusable ({e}) - using the public defaults",
+              file=sys.stderr)
+        return {}
+    return data
 CACHE = ROOT / "cache"
 OUT = ROOT / "docs" / "data"
 
@@ -2230,6 +2279,70 @@ def daily_breakdown(h, daily, viz, viz_m, work, move, cfg, now_iso,
     return days
 
 
+def local_viz(viz_now, cfg):
+    """Visibility judged against what THIS water can do.
+
+    The score runs 0-1 and the metre figure is 1 + 10 x score, but a calm dry
+    day only reaches 1 - baseline, and baseline is region-specific (0.08 on a
+    clear Caribbean reef, 0.50 on the Cornish and Scottish coasts). Comparing
+    that to one global bar meant a place whose very best day is 6.5 m could
+    never be called Go, and a place that is almost never below 7 m was Go
+    almost always. Dividing by the local ceiling makes 1.0 mean "as good as
+    it gets here", which is what a diver actually means by a good day.
+
+    verdict.local_bar scales it: 1 judges fully against the local ceiling, 0
+    restores the old global bar. The baselines are still hand-set estimates
+    until calibrate.py --fit-viz has real dives to fit, so this moves the bar
+    to the right place without making the number it is applied to any truer.
+    """
+    k = float((cfg.get("verdict") or {}).get("local_bar", 1.0))
+    base = float((cfg.get("visibility") or {}).get("baseline", 0.0))
+    ceiling = 1.0 - k * base
+    if ceiling <= 0.05:
+        return float(viz_now)
+    return float(min(1.0, viz_now / ceiling))
+
+
+def verdict_limits(cfg):
+    """The numbers behind the verdict, in the units a diver reads.
+
+    Shown in the app so "stay home" is never a black box: what visibility
+    counts as Go and Marginal HERE, the best a calm dry day can do here, and
+    where the sea-state, wind and current gates close. Swell is quoted at the
+    reference period, because period scales the effective height.
+    """
+    v = cfg.get("verdict") or {}
+    vis = cfg.get("visibility") or {}
+    wc = cfg.get("workability") or {}
+    lo, hi = float(vis.get("viz_min_m", 1.0)), float(vis.get("viz_max_m", 11.0))
+    span = hi - lo
+    k = float(v.get("local_bar", 1.0))
+    base = float(vis.get("baseline", 0.0))
+    ceiling = max(1.0 - k * base, 0.05)
+    floor = float(wc.get("hard_floor", 0.2))
+
+    def at_floor(good, bad):
+        # Inverse of work = 1 - norm(x, good, bad) at the hard floor.
+        return good + (1.0 - floor) * (bad - good)
+
+    cur_bad = float(wc.get("current_bad_ms", 0.0) or 0.0)
+    out = {
+        "viz_go_m": round(lo + float(v.get("go", 0.62)) * ceiling * span, 1),
+        "viz_marginal_m": round(lo + float(v.get("marginal", 0.4)) * ceiling * span, 1),
+        "viz_best_m": round(lo + (1.0 - base) * span, 1),
+        "swell_stay_home_m": round(at_floor(float(wc.get("hs_good_m", 0.25)),
+                                            float(wc.get("hs_bad_m", 0.9))), 2),
+        "wind_stay_home_kmh": round(at_floor(float(wc.get("wind_good_kmh", 10.0)),
+                                             float(wc.get("wind_bad_kmh", 35.0)))),
+        "period_ref_s": float(wc.get("period_ref_s", 8.0)),
+        "local_bar": k > 0,
+    }
+    if cur_bad > 0:
+        out["current_stay_home_ms"] = round(
+            at_floor(float(wc.get("current_good_ms", 0.25)), cur_bad), 2)
+    return out
+
+
 def verdict(viz_now, viz_m_now, work_now, sea_now, air_now, cfg,
             light_now=1.0, daylight_left=True):
     """A single word plus the reason, because that is the actual decision.
@@ -2242,7 +2355,8 @@ def verdict(viz_now, viz_m_now, work_now, sea_now, air_now, cfg,
     half over. Whether the sea is diveable is the separate branch below, and
     "nothing diveable today" is already stated per-day in the hour strip.
     """
-    day = min(viz_now, work_now)
+    viz_local = local_viz(viz_now, cfg)
+    day = min(viz_local, work_now)
 
     # Conditions alone are not a verdict. "Go" at 22:00 is wrong however flat
     # the sea is, and it contradicted the panel below saying the day was over.
@@ -2257,10 +2371,10 @@ def verdict(viz_now, viz_m_now, work_now, sea_now, air_now, cfg,
     if day >= cfg["verdict"]["go"]:
         return "go", "nothing limiting", day
     if day >= cfg["verdict"]["marginal"]:
-        limit = "visibility" if viz_now < work_now else (
+        limit = "visibility" if viz_local < work_now else (
             "sea state" if sea_now <= air_now else "wind")
         return "marginal", limit, day
-    limit = "visibility" if viz_now < work_now else (
+    limit = "visibility" if viz_local < work_now else (
         "sea state" if sea_now <= air_now else "wind")
     return "poor", limit, day
 
@@ -3015,13 +3129,12 @@ def run(cfg, selftest=False, out_dir=None, conditions=None):
     # one that reaches the log and the app. Correcting the pre-wind-regime
     # value here would just get overwritten by the recompute above and the
     # fit would silently have no effect.
-    vzc = (json.loads((ROOT / "weights.json").read_text(encoding="utf-8")).get("visibility_correction")
-           if (ROOT / "weights.json").exists() else None)
+    vzc = load_fitted().get("visibility_correction")
     if vzc:
         viz_m = np.clip(vzc["scale"] * viz_m + vzc["offset"], 0.3, 40.0)
-        log(f"visibility: applying fitted correction "
-            f"({vzc['scale']:.2f}x {vzc['offset']:+.1f} m, n={vzc['n']}, "
-            f"r={vzc['r']}, residual sd {vzc['residual_sd_m']} m)")
+        # No numbers in the log: Actions logs of a public repository are
+        # public, and these are the fitted values this change keeps private.
+        log("visibility: applying the privately fitted correction")
 
     elev = solar_elevation_deg(h["time"], clat, clon, tz_offset)
     light = light_quality(elev, cfg, h.get("cloud_cover"))
@@ -3054,12 +3167,11 @@ def run(cfg, selftest=False, out_dir=None, conditions=None):
         sea_temp = float(np.nanmedian(h["sea_surface_temperature"]))
 
     weights_cfg = dict(cfg["weights"])
-    wpath = ROOT / "weights.json"
-    if wpath.exists():
-        fitted = json.loads(wpath.read_text(encoding="utf-8"))
-        weights_cfg.update(fitted.get("weights", {}))
-        log(f"weights: using fitted values from {wpath.name} "
-            f"(n={fitted.get('n_dives', '?')}, auc={fitted.get('auc', '?')})")
+    fitted = load_fitted()
+    weights_tuned = bool(fitted.get("weights"))
+    if weights_tuned:
+        weights_cfg.update(fitted["weights"])
+        log("weights: using the privately fitted values")
 
     # ---- gates: static, so computed once ----
     dfit = depth_fit(depth_m, land, cfg)
@@ -3347,7 +3459,13 @@ def run(cfg, selftest=False, out_dir=None, conditions=None):
         "best_window": window,
         "days": days,
         "utc_offset_seconds": tz_offset,
-        "weights": weights_cfg,
+        # The footer prints these, and latest.json is public. Publishing the
+        # fitted values here would hand out exactly what weights.json being
+        # private is meant to protect, so the file carries the baseline from
+        # config.json and a flag saying the maps were computed with tuned ones.
+        "weights": dict(cfg["weights"]),
+        "weights_tuned": weights_tuned,
+        "verdict_limits": verdict_limits(cfg),
         "depth_range_m": [cfg["depth"]["min_m"], cfg["depth"]["max_m"]],
         "entry_points": cfg.get("entry_points", []),
         "repo_edit_url": cfg.get("repo_edit_url"),
@@ -3376,8 +3494,10 @@ def run(cfg, selftest=False, out_dir=None, conditions=None):
         # How many days actually have a per-species raster on disk. The app
         # reads this instead of discovering the 404 the hard way.
         "species_maps_days": int(cfg.get("species_maps_days", 3)),
+        # A flag only. The fitted scale/offset/r used to be published here
+        # too, which put the private calibration in a public file; nothing
+        # in the app read them, so they are simply not written.
         "visibility_calibrated": bool(vzc),
-        "visibility_correction": vzc,
         "temp_source": ("Copernicus Marine measured profile" if profile
                         else "estimated from SST + seasonal thermocline"),
         "temp_profile": profile,
@@ -3592,6 +3712,11 @@ def main():
             "verdict": payload["now"]["verdict"],
             "score": payload["now"]["score"],
             "visibility_m": payload["now"]["visibility_m"],
+            # This coast's calm-day turbidity. A tap INSIDE the region runs
+            # the in-browser point model, which only knows the global default
+            # unless told - so every tap in Cornwall was being judged as if
+            # it were 0.35 water rather than the 0.45 it is configured as.
+            "viz_baseline": round(float(cfg["visibility"]["baseline"]), 3),
             "wind_from_deg": payload["now"]["wind_from_deg"],
             "best_window": payload.get("best_window"),
             "generated": payload["generated"],

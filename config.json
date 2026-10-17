@@ -110,7 +110,9 @@
   },
   "verdict": {
     "go": 0.62,
-    "marginal": 0.4
+    "marginal": 0.4,
+    "local_bar": 1.0,
+    "_local_bar_note": "How far visibility is judged against what THIS water can do rather than against one global metre count. 1.0 = fully local: the best a calm dry day can reach here (set by this region's visibility.baseline) counts as 100%, so Go and Marginal mean 'good for here'. 0.0 = the old global bar, under which 138 of 800 coasts could never be called Go at all. It changes the verdict, not the metre figure shown. The baselines it divides by are hand-set estimates until calibrate.py --fit-viz has real dives to fit."
   },
   "species_file": "species.json",
   "species_ids": null,

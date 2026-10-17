@@ -127,9 +127,13 @@ def main():
     ap.add_argument("--config", default=str(ROOT / "config.json"))
     # The log is no longer in this repository. Dives go straight into a
     # PRIVATE repo through the Cloudflare relay, so nothing about anyone's
-    # spot is ever public. Clone that repo and point --log at it, or at the
-    # local dive_log.full.csv for your own dives.
-    ap.add_argument("--log", default=str(ROOT / "dive_log.full.csv"))
+    # spot is ever public. Clone that repo and either point FISH_PRIVATE_DIR
+    # at it (the log is then found there, and the fitted weights are written
+    # back into it), or pass --log explicitly. Failing that, the local
+    # dive_log.full.csv is used.
+    private_log = ff.PRIVATE_DIR / "dive_log.csv"
+    ap.add_argument("--log", default=str(
+        private_log if private_log.is_file() else ROOT / "dive_log.full.csv"))
     ap.add_argument("--l2", type=float, default=1.0)
     ap.add_argument("--species", default=None,
                     help="fit one species only, using its id from species.json")
@@ -247,8 +251,21 @@ def main():
 
     out["species"] = args.species
     name = f"weights_{args.species}.json" if args.species else "weights.json"
-    (ROOT / name).write_text(json.dumps(out, indent=1), encoding="utf-8")
-    print(f"wrote {ROOT / name}")
+    # Written to the PRIVATE directory when there is one. The fitted values
+    # are the proprietary part of this project and the public repository must
+    # never hold them; CI reads them back from the private repo on every run.
+    # With no private directory it falls back to the project root, where
+    # .gitignore stops it being committed - it works locally and goes nowhere.
+    dest = ff.PRIVATE_DIR if ff.PRIVATE_DIR.is_dir() else ROOT
+    (dest / name).write_text(json.dumps(out, indent=1), encoding="utf-8")
+    print(f"wrote {dest / name}")
+    if dest == ROOT:
+        print("\nNOTE: no private directory found, so this is only a local file.\n"
+              "      Clone your private repository, set FISH_PRIVATE_DIR to it,\n"
+              "      re-run, then commit and push THAT repository - the daily\n"
+              "      build picks the file up from there.")
+    else:
+        print(f"\ncommit and push {dest} to publish the fit to the daily build.")
 
 
 if __name__ == "__main__":

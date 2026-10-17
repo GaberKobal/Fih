@@ -447,9 +447,18 @@ rows for one species you can fit that species on its own:
 `python calibrate.py --species sargus`.
 
 Then run `python calibrate.py`. It fits a logistic regression of `result` on
-the terms sampled at your points, writes `weights.json`, and the daily job
-picks that up automatically. It prints an AUC so you can see whether the model
-beats guessing, and it will tell you plainly when it does not.
+the terms sampled at your points and writes `weights.json`. It prints an AUC so
+you can see whether the model beats guessing, and it will tell you plainly when
+it does not.
+
+**`weights.json` is private and never lives in this repository.** Clone your
+private repository, point `FISH_PRIVATE_DIR` at it, and `calibrate.py` reads
+`dive_log.csv` from there and writes the fit back into it. Commit and push
+*that* repository. The daily build checks it out using the read-only
+`PRIVATE_REPO_TOKEN` secret and applies the fit; with no token, or no file yet,
+it carries on with the public defaults in `config.json`. The published
+`latest.json` carries the public baseline weights and a `weights_tuned` flag,
+never the fitted values.
 
 Below about 30 dives the fit will overfit whichever spot you happened to visit
 most; the script says so rather than quietly producing numbers.
