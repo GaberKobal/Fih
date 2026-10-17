@@ -1,58 +1,20 @@
-// structure.js — the spatial half of the model, running in the browser.
-//
-// This is what removes the need for configured regions. GMRT's GridServer can
-// return a plain ArcInfo ASCII grid, which parses with a split() and no
-// library at all, so the browser can pull bathymetry for a box around any
-// point on Earth and score it directly.
-//
-// What is cached and what is not:
-//   bathymetry   static. Cached in the Cache API, keyed by bbox — fetched
-//                once per area, ever.
-//   relief, slope  derived from bathymetry only, so also static. Computed
-//                once per box and kept alongside it.
-//   shelter      NOT static. It is upwind fetch, so it turns with the wind
-//                and is recomputed every time the forecast changes. Cheap,
-//                because the land mask is already in hand.
-//
-// The one real risk is CORS: if gmrt.org does not allow cross-origin reads
-// the browser cannot fetch it and there is no way around that without a
-// server. The error path says so plainly rather than failing silently.
-
 const GMRT = "https://www.gmrt.org/services/GridServer";
 const BATHY_CACHE = "bathy-v1";
 const OSM_CACHE = "osm-v1";
 
 export const defaults = {
-  radius_km: 30,          // how far the box reaches out from the tapped point
-  cell_m: 200,            // working grid; GMRT resolves ~100 m at best
-  // Working depth band, matching depth.min_m / best_m / max_m in config.json.
-  // The scan used to top out at 30 m while every region map stopped at 24,
-  // so the same piece of seabed scored differently depending on which mode
-  // you were in. Both are 25 m now.
+  radius_km: 30,
+  cell_m: 200,
   depth_min_m: 2, depth_best: [4, 18], depth_max_m: 25,
   relief_scale_m: 3.0, slope_scale: 0.04, background_m: 600,
   fetch_max_km: 20, fetch_step_m: 250, swell_weight: 0.5,
   w_relief: 0.35, w_slope: 0.20, w_shelter: 0.45, w_wreck: 0.3,
   wreck_radius_m: 250,
   top_spots: 15, min_spot_score: 0.35, min_separation_m: 500,
-  // Cosmetic only: how far the colour wash is held back from any detected
-  // shoreline, in metres. See dilateLand()/toDataURL().
   land_buffer_m: 220,
-  // Shelter's pull on a SPECIES map, matching weights.shelter in
-  // config.json. Kept separate from w_shelter above, which is the
-  // structure map's own normalised weight.
   species_shelter_weight: 0.3,
 };
 
-/* ---------------------------------------------------------------- fetching */
-
-/** A box reaching `radiusKm` out from the point in every direction, so it is
- *  2 x radiusKm on a side. Radius is how far you would swim, which is the
- *  quantity a spearo actually thinks in.
- *
- *  Longitude is clamped rather than wrapped: a box straddling the
- *  antimeridian would confuse every consumer downstream, and none of the
- *  scan sizes offered can reach it from anywhere you would dive. */
 export function boxAround(lat, lon, radiusKm){
   const dLat = radiusKm / 111.32;
   const dLon = radiusKm / (111.32 * Math.max(0.05, Math.cos(lat * Math.PI / 180)));
@@ -60,7 +22,6 @@ export function boxAround(lat, lon, radiusKm){
           lon_min: Math.max(-180, lon - dLon), lon_max: Math.min(180, lon + dLon)};
 }
 
-/** ArcInfo ASCII grid — six header lines then rows, north to south. */
 function parseAsciiGrid(text){
   const lines = text.split("\n");
   const hdr = {};
@@ -84,23 +45,14 @@ function parseAsciiGrid(text){
       vals[k++] = (v === nodata || !isFinite(v)) ? NaN : v;
     }
   }
-  // Rows arrive north-first; flip so index 0 is the southern edge.
   const elev = new Float32Array(nx * ny);
   for(let y = 0; y < ny; y++)
     elev.set(vals.subarray((ny - 1 - y) * nx, (ny - y) * nx), y * nx);
 
-  // ArcInfo may give its lower-left value as a cell corner or centre.  The
-  // score array is cell-centred, so preserve that distinction before turning
-  // a projected grid back into WGS84.  Treating a corner as a centre shifts
-  // an otherwise correct 200 m grid half a cell onto the shore.
   const xIsCorner = hdr.xllcorner != null, yIsCorner = hdr.yllcorner != null;
   const x0 = (xIsCorner ? hdr.xllcorner : hdr.xllcenter) + (xIsCorner ? cs / 2 : 0);
   const y0 = (yIsCorner ? hdr.yllcorner : hdr.yllcenter) + (yIsCorner ? cs / 2 : 0);
 
-  // GMRT defaults to Mercator, so the grid can arrive in projected metres
-  // rather than degrees. Detect that from the magnitude of the corner and
-  // resample onto a uniform lat/lon grid, which is what everything downstream
-  // assumes.
   if(Math.abs(x0) > 360){
     const R = 20037508.34;
     const toLon = x => x / R * 180;
@@ -134,9 +86,8 @@ export async function fetchBathymetry(box, opts = {}){
   });
   const url = `${GMRT}?${q}`;
 
-  // Static data: once fetched for an area, never fetch it again.
   let cache = null;
-  try{ cache = await caches.open(BATHY_CACHE); }catch(e){ /* private mode */ }
+  try{ cache = await caches.open(BATHY_CACHE); }catch(e){  }
   if(cache){
     const hit = await cache.match(url);
     if(hit) return parseAsciiGrid(await hit.text());
@@ -158,8 +109,6 @@ export async function fetchBathymetry(box, opts = {}){
   if(cache) cache.put(url, new Response(text));
   return parseAsciiGrid(text);
 }
-
-/* ------------------------------------------------------------- grid maths */
 
 const idx = (g, y, x) => y * g.nx + x;
 
@@ -187,15 +136,9 @@ function boxBlur(src, nx, ny, r){
   }
   return out;
 }
-/** Three box blurs approximate a Gaussian closely and run in linear time. */
 const blur = (src, nx, ny, r) =>
   boxBlur(boxBlur(boxBlur(src, nx, ny, r), nx, ny, r), nx, ny, r);
 
-/** Keep only water reachable from the deepest cell — kills inland lakes,
- *  river valleys and marina basins without needing a full labelling pass.
- *
- *  `blocked`, when given, is an extra wall the flood cannot cross: the
- *  rasterised OpenStreetMap coastline. See coastlineMask(). */
 function openSea(land, nx, ny, depth, blocked){
   const wall = i => land[i] || (blocked && blocked[i]);
   let seed = -1, deepest = -Infinity;
@@ -216,43 +159,12 @@ function openSea(land, nx, ny, depth, blocked){
   return keep;
 }
 
-/** Everything this scan needs from OpenStreetMap, in ONE request.
- *
- *  The coastline exists because bathymetry alone cannot answer "is this
- *  land". A global grid cell is 100-450 m across and reports the AVERAGE of
- *  what is under it, so any strip of land narrower than a cell or two
- *  averages out to a negative elevation and is classified as perfectly good
- *  diving water. Barrier islands, spits and sandy beach-backed towns all
- *  vanish that way, and the score, the wash, the depth lines and the model
- *  spots all end up on shore.
- *
- *  It is fetched together with the wrecks, and that matters as much as the
- *  data does. These used to be two POSTs to the same public Overpass
- *  endpoint seconds apart, and Overpass rate-limits per client: the second
- *  call routinely came back 429. The coastline went first and its failure
- *  was swallowed, so the common outcome was a scan with wrecks but NO land
- *  mask — which is exactly the state in which model spots march up the
- *  beach and into the town behind it. One request cannot rate-limit itself.
- *
- *  Returns {coast, wrecks}. */
 export async function fetchSeabedContext(box){
-  // CACHED FOREVER, in the browser.
-  //
-  // Overpass is volunteer-funded infrastructure and its usage policy asks
-  // people not to build applications that make it a dependency for many
-  // users. Server-side that is honoured already: 468 regions, fetched once
-  // each, then cached on disk. Client-side it was not — every press of
-  // "Scan structure" issued a fresh query, including re-scanning the same
-  // stretch of coast, which is exactly the pattern the policy is about.
-  //
-  // Coastlines, wrecks and reserves do not change between scans, so the
-  // response is stored in the Cache API keyed by the box. Scanning the same
-  // area again costs nothing and reaches nobody's server.
   const key = `https://cache.local/overpass/${box.lat_min.toFixed(4)},`
             + `${box.lon_min.toFixed(4)},${box.lat_max.toFixed(4)},`
             + `${box.lon_max.toFixed(4)}`;
   let store = null;
-  try{ store = await caches.open(OSM_CACHE); }catch(e){ /* private mode */ }
+  try{ store = await caches.open(OSM_CACHE); }catch(e){  }
   if(store){
     const hit = await store.match(key);
     if(hit) return JSON.parse(await hit.text());
@@ -284,9 +196,6 @@ async function fetchSeabedContextUncached(box){
         coast.push(el.geometry.map(p => [p.lon, p.lat]));
       continue;
     }
-    // `out geom` gives nodes their lat/lon and ways their full geometry, so
-    // a wreck mapped as a way is averaged to a centre here rather than
-    // needing a second `out center` pass.
     let lat = el.lat, lon = el.lon;
     if(lat == null && el.geometry && el.geometry.length){
       lat = el.geometry.reduce((a, p) => a + p.lat, 0) / el.geometry.length;
@@ -309,12 +218,6 @@ async function fetchSeabedContextUncached(box){
   return {coast, wrecks: {type: "FeatureCollection", features: feats}};
 }
 
-/** Burn the coastline polylines onto the grid as an impassable wall.
- *
- *  Sampled at half-cell steps so a segment running diagonally cannot slip
- *  between two cells and leave a hole for the flood fill to escape through,
- *  which is the one failure mode that would matter — a single gap lets the
- *  sea leak inland and the mask becomes worse than useless. */
 function coastlineMask(nx, ny, lat0, lon0, cell, cellLon, lines){
   const blocked = new Uint8Array(nx * ny);
   const put = (x, y) => {
@@ -334,10 +237,6 @@ function coastlineMask(nx, ny, lat0, lon0, cell, cellLon, lines){
   return blocked;
 }
 
-/** Static half: everything derivable from bathymetry alone.
- *
- *  `coast` is the optional OSM coastline from fetchCoastline(). Passing it
- *  is what stops a sub-cell barrier island being scored as open water. */
 export function buildTerrain(grid, o = defaults, coast = null){
   const {nx, ny, elev, cell, lat0, lon0} = grid;
   const cellLon = grid.cellLon ?? cell;
@@ -352,10 +251,6 @@ export function buildTerrain(grid, o = defaults, coast = null){
     depth[i] = land[i] ? NaN : -e;
   }
 
-  // Flood the sea inward from the deepest cell. With a coastline supplied
-  // the shoreline is a wall, so anything the sea cannot reach across it —
-  // barrier islands, spits, lagoons, harbour basins — comes out as land
-  // however deep the bathymetry claims it is.
   let coastUsed = false;
   const bathyWater = land.reduce((a, v) => a + (v ? 0 : 1), 0);
   if(coast && coast.length){
@@ -363,12 +258,6 @@ export function buildTerrain(grid, o = defaults, coast = null){
     const sea2 = openSea(land, nx, ny, depth, blocked);
     let kept = 0;
     for(let i = 0; i < nx * ny; i++) if(sea2[i]) kept++;
-    // Sanity gate. Overpass clips ways at the bbox, so a coastline can
-    // arrive with an open end; if the wall has a hole the fill leaks and we
-    // are no worse off than before, but if the box is mostly enclosed the
-    // fill can instead be strangled down to a puddle. Refusing the mask
-    // when it would delete most of the sea keeps a bad fetch from turning
-    // the whole map to land — the failure that would actually cost a dive.
     if(kept > 0.2 * bathyWater){
       for(let i = 0; i < nx * ny; i++) if(!sea2[i]) land[i] = 1;
       coastUsed = true;
@@ -380,17 +269,12 @@ export function buildTerrain(grid, o = defaults, coast = null){
   }
   for(let i = 0; i < nx * ny; i++) if(land[i]) depth[i] = NaN;
 
-  // Fill land with the local median-ish value so the coast does not read as a
-  // cliff in the derivatives.
   let acc = 0, n = 0;
   for(let i = 0; i < nx*ny; i++) if(!land[i]){ acc += depth[i]; n++; }
   const mean = n ? acc / n : 0;
   const filled = new Float32Array(nx * ny);
   for(let i = 0; i < nx * ny; i++) filled[i] = land[i] ? mean : depth[i];
 
-  // Three box blurs of radius r approximate a Gaussian of sigma ~= 1.4r, so
-  // the radius has to be the target sigma divided by 1.4 - not by 3, which
-  // made the background too tight to see anything above it.
   const cellM = cell * 111320;
   const bgR = Math.max(2, Math.round((o.background_m / cellM) / 1.4));
   const bg = blur(filled, nx, ny, bgR);
@@ -404,7 +288,6 @@ export function buildTerrain(grid, o = defaults, coast = null){
     slope[i] = land[i] ? 0 : Math.min(1, Math.hypot(gy, gx) / o.slope_scale);
   }
 
-  // Depth gate: a trapezoid over the band you actually hunt.
   const dfit = new Float32Array(nx * ny);
   const [bLo, bHi] = o.depth_best;
   for(let i = 0; i < nx * ny; i++){
@@ -418,14 +301,12 @@ export function buildTerrain(grid, o = defaults, coast = null){
           coastUsed};
 }
 
-/** Species depth envelope, intersected with what you can actually dive.
- *  Mirrors species_depth_fit() in fish_finder.py. */
 function speciesDepthFit(T, sp, o){
   const n = T.nx * T.ny;
   const out = new Float32Array(n);
   const lo = Math.max(sp.depth_m[0], o.depth_min_m);
   const hi = Math.min(sp.depth_m[1], o.depth_max_m);
-  if(hi <= lo) return out;                      // dives shallower than it lives
+  if(hi <= lo) return out;
   const blo = Math.min(Math.max(sp.depth_best_m[0], lo), hi);
   const bhi = Math.max(Math.min(sp.depth_best_m[1], hi), lo);
   for(let i = 0; i < n; i++){
@@ -438,17 +319,6 @@ function speciesDepthFit(T, sp, o){
   return out;
 }
 
-/** Where THIS species should be, not where structure is in general.
- *
- *  Mirrors species_spatial_score() in fish_finder.py so a scanned point and
- *  a precomputed region answer the same question the same way: reweight
- *  relief and slope by what the animal actually associates with, keep
- *  shelter at its configured pull because that is about whether YOU can
- *  hunt rather than about the fish, then gate on the species' own depth
- *  envelope intersected with your working depth band.
- *
- *  Takes the shelter and wreck fields already computed by score(), so
- *  switching target costs no extra fetch and no re-tracing of fetch rays. */
 export function speciesScore(T, sp, shelter, wreck, o = defaults){
   const n = T.nx * T.ny;
   const r = sp.relief_affinity ?? 0.5, sl = sp.slope_affinity ?? 0.5;
@@ -469,7 +339,6 @@ export function speciesScore(T, sp, shelter, wreck, o = defaults){
   return out;
 }
 
-/** Dynamic half: fetch traced from wherever the wind and swell are today. */
 export function shelterFrom(T, fromDeg, o = defaults){
   const {nx, ny, land, cell} = T;
   const th = ((fromDeg % 360) + 360) % 360 * Math.PI / 180;
@@ -486,7 +355,7 @@ export function shelterFrom(T, fromDeg, o = defaults){
     for(let s = 1; s <= maxSteps; s++){
       fy += stepLat; fx += stepLon;
       const yy = Math.round(fy), xx = Math.round(fx);
-      if(yy < 0 || yy >= ny || xx < 0 || xx >= nx) break;   // outside = open water
+      if(yy < 0 || yy >= ny || xx < 0 || xx >= nx) break;
       if(land[yy * nx + xx]){ hit = s; break; }
     }
     out[i] = 1 - Math.min(1, hit / maxSteps);
@@ -494,10 +363,6 @@ export function shelterFrom(T, fromDeg, o = defaults){
   return out;
 }
 
-/** A soft halo around each charted wreck, tapering linearly to 0 at
- *  radiusM — the same shape as wreck_score() in fish_finder.py, just
- *  computed in true metres via T.dyM/T.dxM instead of over a Mercator
- *  raster. Point data, so it needs none of the raster's corrections. */
 export function wreckScore(T, wrecks, radiusM = 250){
   const {nx, ny, lat0, lon0, cell, dyM, dxM} = T;
   const cellLon = T.cellLon ?? cell;
@@ -510,7 +375,7 @@ export function wreckScore(T, wrecks, radiusM = 250){
     const fy = (lat - lat0) / cell, fx = (lon - lon0) / cellLon;
     for(let y = 0; y < ny; y++){
       const dy = (y - fy) * dyM;
-      if(Math.abs(dy) >= radiusM) continue;         // quick reject by row
+      if(Math.abs(dy) >= radiusM) continue;
       const rowBudget = Math.sqrt(radiusM*radiusM - dy*dy) / Math.abs(dxM || 1);
       const xLo = Math.max(0, Math.floor(fx - rowBudget));
       const xHi = Math.min(nx - 1, Math.ceil(fx + rowBudget));
@@ -552,20 +417,6 @@ export function findSpots(T, s, o = defaults){
   const {nx, ny, cell, lat0, lon0, depth} = T;
   const sep = Math.max(1, Math.round(o.min_separation_m / (cell * 111320)));
 
-  // Two hard gates that do not depend on the score field being right.
-  //
-  // A waypoint that lands on the beach, or in the street behind it, is the
-  // most damaging output this thing can produce, and it was reachable
-  // whenever the land mask was wrong — a coarse depth grid over a sandy
-  // shore averages the first few hundred metres of town to a negative
-  // elevation, so those cells were "water" at a perfectly good depth and
-  // won the local-maximum test. The colour wash was already held back by
-  // land_buffer_m; the spots were not, so they marched inland alone.
-  //
-  // So: no spot within land_buffer_m of anything classified as land, and no
-  // spot without a real depth at or below the shallow limit. These are
-  // cheap, they are independent of the coastline fetch having succeeded,
-  // and a mark that fails either of them is worthless anyway.
   const bufM = o.land_buffer_m ?? 0;
   const nearLand = bufM > 0 ? dilateLand(T.land, nx, ny,
       Math.round(bufM / Math.max(T.dyM || cell * 111320, 1)),
@@ -599,20 +450,8 @@ export function findSpots(T, s, o = defaults){
   return out;
 }
 
-/** Dilation of the land mask by a distance in METRES, for painting only.
- *  Global bathymetry disagrees with the vector coastline right at the coast
- *  — river mouths, breakwaters, marinas, reclaimed land — and GMRT's own
- *  cell can be 100-200 m across, so the wash could sit a couple of hundred
- *  metres up the beach. This was one cell, which is a different physical
- *  distance at every zoom and every latitude and was simply too small at
- *  200 m cells. Expressing the margin in metres and deriving the cell radius
- *  from it makes the pull-back the same on the ground everywhere.
- *
- *  Cosmetic only: it does not touch T.land, so findSpots() still places real
- *  marks right up to the true coastline and the score field is unchanged. */
 function dilateLand(land, nx, ny, ry, rx){
   ry = Math.max(1, ry | 0); rx = Math.max(1, rx | 0);
-  // Separable: dilate along x, then along y. O(n·r) instead of O(n·r²).
   const tmp = new Uint8Array(land.length), out = new Uint8Array(land.length);
   for(let y = 0; y < ny; y++) for(let x = 0; x < nx; x++){
     let hit = 0;
@@ -637,48 +476,28 @@ function invMercatorY(y){
   return (2 * Math.atan(Math.exp(y)) - Math.PI / 2) * 180 / Math.PI;
 }
 
-/** Paint the score field to a data URL for a Leaflet ImageOverlay. */
 export function toDataURL(T, s, alphaFloor = 0.35, alphaFull = 0.80, o = defaults){
   const {nx, ny, lat0, cell, land} = T;
   const cv = document.createElement("canvas");
   cv.width = nx; cv.height = ny;
   const ctx = cv.getContext("2d");
   const img = ctx.createImageData(nx, ny);
-  // viridis, sampled
   const ramp = [[68,1,84],[59,82,139],[33,145,140],[94,201,98],[253,231,37]];
   const bufM = (o && o.land_buffer_m) ?? defaults.land_buffer_m;
   const landEdge = land && dilateLand(land, nx, ny,
     Math.round(bufM / Math.max(T.dyM || cell * 111320, 1)),
     Math.round(bufM / Math.max(Math.abs(T.dxM) || cell * 111320, 1)));
 
-  // Leaflet stretches this canvas linearly in Mercator y across the corners
-  // bounds() gives it, but the source grid s[]/land[] is evenly spaced in
-  // plain latitude, so every row in between lands tens of metres — over a
-  // hundred at the 50 km radius option — north or south of where it should
-  // be. Resample each output row from its true Mercator-y position instead,
-  // the same correction write_overlay_png makes on the Python side.
-  //
-  // The span has to be the one bounds() actually hands Leaflet, which is the
-  // OUTER EDGES of the first and last cells, not their centres. Resampling
-  // across the centres while Leaflet stretched the result across the edges
-  // left the whole overlay scaled slightly too large and shifted by half a
-  // cell — around 100 m at the 200 m working grid, all of it landing on the
-  // shore side, which is precisely where it is most visible.
   const half = cell / 2;
   const latTop = lat0 + (ny - 1) * cell + half, latBot = lat0 - half;
   const yTop = mercatorY(latTop), yBot = mercatorY(latBot);
   for(let y = 0; y < ny; y++){
-    // Sample at the CENTRE of each output row, not its top edge.
     const yMerc = yTop - ((y + 0.5) / ny) * (yTop - yBot);
-    let rf = (invMercatorY(yMerc) - lat0) / cell;      // fractional source row, 0 = south
+    let rf = (invMercatorY(yMerc) - lat0) / cell;
     rf = Math.min(ny - 1, Math.max(0, rf));
     const r0 = Math.floor(rf), r1 = Math.min(ny - 1, r0 + 1), f = rf - r0;
     for(let x = 0; x < nx; x++){
       const o2 = (y * nx + x) * 4;
-      // Both rows the value is blended from must be clear of land, otherwise
-      // the blend carries a water score onto a shoreline cell — the same
-      // smear the NEAREST land pick was meant to prevent, just reintroduced
-      // through the other input.
       if(landEdge && (landEdge[r0 * nx + x] || landEdge[r1 * nx + x])){
         img.data[o2+3] = 0; continue;
       }
@@ -696,9 +515,6 @@ export function toDataURL(T, s, alphaFloor = 0.35, alphaFull = 0.80, o = default
   return cv.toDataURL("image/png");
 }
 
-// Case -> pair(s) of edges crossed, for 4-corner marching squares. Corners
-// are bl=bit0, br=bit1, tr=bit2, tl=bit3, each set when depth > level.
-// Cases 5 and 10 are the ambiguous saddles and resolve to two segments.
 const MS_CASES = {
   1: [["L","B"]],           2: [["B","R"]],
   3: [["L","R"]],            4: [["R","T"]],
@@ -709,21 +525,10 @@ const MS_CASES = {
   13:[["B","R"]],           14: [["L","B"]],
 };
 
-/** Depth contour lines via marching squares over the depth grid — a vector
- *  result, so unlike toDataURL() there is no Mercator restretch to correct
- *  for; each vertex is a true lat/lon and Leaflet projects it directly.
- *  Land reads as a sentinel well below the shallowest level asked for, so no
- *  line is ever drawn running onto the shore, matching depth_contours() in
- *  fish_finder.py. */
 export function contourLines(T, levels = [5, 10, 15, 20, 30]){
   const {nx, ny, land, depth, lat0, lon0, cell} = T;
   const cellLon = T.cellLon ?? cell;
 
-  // Fill land with the local water mean before smoothing — the same
-  // technique buildTerrain() uses — so the coast does not read as a cliff
-  // and blur out a spurious ring of crossings right at the shoreline. Cells
-  // that actually touch land are still excluded below using the true mask,
-  // not this filled proxy, so a line can never end up drawn onto the shore.
   let acc = 0, n = 0;
   for(let i = 0; i < nx * ny; i++) if(!land[i]){ acc += depth[i]; n++; }
   const mean = n ? acc / n : 0;
@@ -752,7 +557,7 @@ export function contourLines(T, levels = [5, 10, 15, 20, 30]){
           if(edge === "B") return [lonAt(x + t(level,v00,v10)), latAt(y)];
           if(edge === "R") return [lonAt(x+1), latAt(y + t(level,v10,v11))];
           if(edge === "T") return [lonAt(x + t(level,v01,v11)), latAt(y+1)];
-          return [lonAt(x), latAt(y + t(level,v00,v01))];            // "L"
+          return [lonAt(x), latAt(y + t(level,v00,v01))];
         };
         for(const [e0, e1] of pairs) lines.push([pt(e0), pt(e1)]);
       }
@@ -765,21 +570,12 @@ export function contourLines(T, levels = [5, 10, 15, 20, 30]){
   return {type: "FeatureCollection", features: feats};
 }
 
-// Overpass is a free, shared, volunteer-run service and it rate-limits per
-// client with a 429. A scan that gets one is a scan with no land mask, so it
-// is worth trying more than one host before giving up: these are the public
-// mirrors, all CORS-enabled, all serving the same planet database.
 const OVERPASS_MIRRORS = [
   "https://overpass-api.de/api/interpreter",
   "https://overpass.kumi.systems/api/interpreter",
   "https://overpass.private.coffee/api/interpreter",
 ];
 
-/** POST one Overpass query, falling through the mirrors on rate limit,
- *  gateway timeout or an unreachable host. Throws only when they all fail. */
-// Never more than one Overpass request in flight from this tab, and never
-// two closer together than OVERPASS_MIN_GAP_MS. The cache above means most
-// scans reach it not at all; this bounds the rest.
 const OVERPASS_MIN_GAP_MS = 3000;
 let _opChain = Promise.resolve(), _opLast = 0;
 
@@ -802,27 +598,18 @@ async function overpass(query){
                                     body: "data=" + encodeURIComponent(query)});
       if(res.status === 429 || res.status === 504 || res.status === 502){
         last = new Error(`Overpass ${new URL(url).hostname} returned HTTP ${res.status}`);
-        continue;                       // busy right now — try the next mirror
+        continue;
       }
       if(!res.ok) throw new Error(`Overpass returned HTTP ${res.status}`);
       return await res.json();
     }catch(e){
-      last = e;                         // unreachable or malformed — next
+      last = e;
     }
   }
   throw last || new Error("no Overpass mirror could be reached");
 }
 
 export function bounds(T){
-  // T.lat0/T.lon0 are the CENTRE of the first (southernmost/westernmost)
-  // cell, not the edge of the scanned box. Leaflet's ImageOverlay stretches
-  // the picture so its outer pixel edges land exactly on the bounds it is
-  // given — so handing it cell centres pulls both edges inward by half a
-  // cell, which is small near the middle of the box but, right where it
-  // matters, means the outermost row/column of colour (often the strip
-  // hugging the coast) is drawn up to half a cell into the wrong side of
-  // the shoreline. Extend to the true outer edges instead, matching
-  // raster_bounds() in fish_finder.py.
   const halfLat = T.cell / 2, halfLon = (T.cellLon ?? T.cell) / 2;
   return [[T.lat0 - halfLat, T.lon0 - halfLon],
           [T.lat0 + (T.ny - 1) * T.cell + halfLat,

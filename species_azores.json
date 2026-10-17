@@ -1,5 +1,4 @@
 {
-  "_note": "BIOLOGY ONLY. Compiled from general spearfishing-guide and fisheries-literature sources (not a validated regional survey), for the Azores' mid-Atlantic volcanic seamount fauna, which is genuinely different from mainland Portugal: fewer Diplodus/Sparus-type seabream, more amberjack, blacktail comber and pelagic-adjacent structure species. Depth, temperature, substrate and season of presence and how each species responds to water clarity. None of it is law.",
   "species": [
     {
       "id": "seriola_dumerili",
@@ -109,6 +108,5 @@
       "name_en": "Red porgy",
       "name_local": "pargo"
     }
-  ],
-  "_legal_note": "Legal rules live in legal/PT.json and apply nationally - Portugal's mainland size/season entries do not necessarily match Azorean regional measures. One important regional rule this app cannot currently show: the Regional Government of the Azores prohibits spearfishing for dusky grouper (Epinephelus marginatus, 'mero') outright, which is why it is deliberately not listed as a target species here even though it is present and commonly seen. Always check current Azorean regional rules, not just national PT ones, before diving."
+  ]
 }

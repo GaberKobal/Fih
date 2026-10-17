@@ -182,7 +182,6 @@ def main():
     cfg = ff.region_config(base, region)
     bbox = cfg["bbox"]
 
-    # Reference depths: whatever bathymetry this region already uses.
     key = (f"{bbox['lon_min']}_{bbox['lat_min']}_{bbox['lon_max']}_"
            f"{bbox['lat_max']}_{cfg['grid_resolution_m']}")
     rl, ro, relev, provider, native = ff.fetch_bathymetry(
@@ -201,7 +200,7 @@ def main():
                                                args.resolution)
     log(f"bands: {blue.shape[0]}x{blue.shape[1]} at {args.resolution:.0f} m")
 
-    ref = ff.regrid(rl, ro, -relev, lats, lons)       # positive-down depth
+    ref = ff.regrid(rl, ro, -relev, lats, lons)
     water = (scl == 6) & ~np.isin(scl, [3, 8, 9, 10, 11])
     ratio = stumpf_ratio(blue, green)
 

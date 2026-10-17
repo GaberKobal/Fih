@@ -1,5 +1,4 @@
 {
-  "_note": "BIOLOGY ONLY. Compiled from general spearfishing-guide sources (not a validated regional survey), for the temperate/subtropical Western Australian reef fauna around Rottnest and Perth. Depth, temperature, substrate and season of presence and how each species responds to water clarity. None of it is law - Western Australia has its own detailed size/bag rules, and Rottnest Island itself is a marine reserve with several no-take sanctuary zones that are not encoded anywhere in this app.",
   "species": [
     {
       "id": "glaucosoma_hebraicum",
@@ -91,6 +90,5 @@
       "name_en": "Breaksea cod",
       "name_local": "breaksea cod"
     }
-  ],
-  "_legal_note": "Legal rules live in legal/<JURISDICTION>.json and are merged in at run time. No legal pack exists yet for AU-WA, so this app will correctly show 'not researched' rather than any size or season claim - the WA Department of Primary Industries and Regional Development (DPIRD) publishes the real rules, and Rottnest Island's own sanctuary zones (e.g. Parker Point, Salmon Bay, Little Salmon Bay) ban all fishing including spearfishing outright, which this app does not currently mask out."
+  ]
 }

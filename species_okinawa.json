@@ -1,5 +1,4 @@
 {
-  "_note": "BIOLOGY ONLY. Compiled from general spearfishing-guide sources (not a validated regional survey), for Okinawa's subtropical Pacific/East China Sea reef fauna. Depth, temperature, substrate and season of presence and how each species responds to water clarity. None of it is law - Japanese prefectural rules on spearfishing are strict and vary, and are not encoded anywhere in this app. Humphead wrasse is deliberately not listed here even though it is a known local catch: it is IUCN-listed as Endangered and heavily protected in much of its Indo-Pacific range, and this app should not encourage targeting it.",
   "species": [
     {
       "id": "chlorurus_microrhinos",
@@ -91,6 +90,5 @@
       "name_en": "Snapper",
       "name_local": "gurukun-adjacent"
     }
-  ],
-  "_legal_note": "Legal rules live in legal/<JURISDICTION>.json and are merged in at run time. No legal pack exists yet for JP, so this app will correctly show 'not researched' rather than any size or season claim - Okinawa prefectural rules on spearfishing gear, protected species and marine protected areas are strict, vary by location, and are not encoded anywhere in this app yet."
+  ]
 }

@@ -1,5 +1,4 @@
 {
-  "_note": "A practical regional identification guide. These are likely species, not a claim that a species is in season, legal to take, or safe to target. The scored species cards remain the validated model layer.",
   "regions": {
     "novigrad": {"species":[{"common":"White seabream","scientific":"Diplodus sargus"},{"common":"Two-banded seabream","scientific":"Diplodus vulgaris"},{"common":"Gilthead seabream","scientific":"Sparus aurata"},{"common":"European seabass","scientific":"Dicentrarchus labrax"},{"common":"Common octopus","scientific":"Octopus vulgaris"}]},
     "kvarner": {"species":[{"common":"White seabream","scientific":"Diplodus sargus"},{"common":"Two-banded seabream","scientific":"Diplodus vulgaris"},{"common":"Common dentex","scientific":"Dentex dentex"},{"common":"Brown meagre","scientific":"Sciaena umbra"},{"common":"Common octopus","scientific":"Octopus vulgaris"}]},

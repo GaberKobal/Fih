@@ -1,5 +1,4 @@
 {
-  "_note": "BIOLOGY ONLY. Compiled from general spearfishing-guide sources (not a validated regional survey), for the temperate US/Canada East Coast (roughly Cape Cod to the Carolinas). Depth, temperature, substrate and season of presence and how each species responds to water clarity. None of it is law - rules vary sharply by state (for example Massachusetts bans spearfishing striped bass outright, while New York and Rhode Island allow it), and none of that is encoded anywhere in this app.",
   "species": [
     {
       "id": "morone_saxatilis",
@@ -109,6 +108,5 @@
       "name_en": "Sheepshead",
       "name_local": "sheepshead"
     }
-  ],
-  "_legal_note": "Legal rules live in legal/<JURISDICTION>.json and are merged in at run time. No legal pack exists yet for the US East Coast states, so this app will correctly show 'not researched' rather than any size or season claim - and the rules genuinely differ state to state (Massachusetts bans spearfishing striped bass and lobster outright; other states allow striped bass but regulate size and season)."
+  ]
 }

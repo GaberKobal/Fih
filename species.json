@@ -1,13 +1,4 @@
 {
-  "_note": [
-    "name_en is shown in the app; name_local is the Croatian name.",
-    "",
-    "BIOLOGY ONLY. Depth, temperature, substrate, season of presence and how each species responds to water clarity. None of it is law.",
-    "",
-    "Legal rules live in legal/<JURISDICTION>.json and are merged in at run time, because a closed season in Croatia means nothing in Slovenia. A region picks its pack in regions.json.",
-    "",
-    "months = when the animal is realistically present and huntable, which is a biological claim. A legal closure is separate and always wins."
-  ],
   "species": [
     {
       "id": "sargus",
@@ -362,15 +353,5 @@
       "name_en": "Common cuttlefish",
       "name_local": "sipa"
     }
-  ],
-  "_legal_note": [
-    "Closed seasons and sizes below are a CONVENIENCE, not legal advice, and",
-    "they were checked once on 2026-07-29. Croatian rules are amended year to",
-    "year. An empty closed_seasons list means I found no closure - not that",
-    "none exists. Verify against the current Pravilnik o zastiti riba i drugih",
-    "morskih organizama at ribarstvo.mps.hr before every season.",
-    "",
-    "Spearfishing in Croatia needs a SPORT licence (not the plain recreational",
-    "one), age 16+, no diving apparatus."
   ]
 }

@@ -1,8 +1,5 @@
 name: Add region
 
-# Same pattern as the dive log: the site cannot write to the repo, so
-# add-region.html opens a prefilled issue and this turns it into a commit.
-
 on:
   issues:
     types: [opened, labeled]

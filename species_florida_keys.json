@@ -1,5 +1,4 @@
 {
-  "_note": "BIOLOGY ONLY. Compiled from general spearfishing-guide sources (not a validated regional survey), for the Florida Keys' subtropical Atlantic reef fauna. Depth, temperature, substrate and season of presence and how each species responds to water clarity. None of it is law - Florida (and Monroe County specifically) has detailed, actively-enforced rules on species, size, season and protected zones (including the Florida Keys National Marine Sanctuary) that are not encoded anywhere in this app. Sources disagree on some specifics (e.g. whether grouper/snapper spearfishing is currently allowed in state waters); do not treat this file as a legal answer either way.",
   "species": [
     {
       "id": "lachnolaimus_maximus",
@@ -109,6 +108,5 @@
       "name_en": "Mangrove snapper",
       "name_local": "mangrove"
     }
-  ],
-  "_legal_note": "Legal rules live in legal/<JURISDICTION>.json and are merged in at run time. No legal pack exists yet for US-FL, so this app will correctly show 'not researched' rather than any size or season claim - the Florida Fish and Wildlife Conservation Commission (FWC) publishes the real, actively-enforced rules, including no-spearfishing zones within the Florida Keys National Marine Sanctuary and species that cannot be speared anywhere in Florida (snook, tarpon, redfish and others)."
+  ]
 }

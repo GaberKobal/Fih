@@ -1,30 +1,15 @@
-// anywhere.js — the conditions half of the model, running in the browser.
-//
-// Why this exists: bathymetry needs precomputing, but conditions do not.
-// Open-Meteo is free, keyless, CORS-enabled and global, so the browser can
-// fetch a point forecast for anywhere on Earth and score it directly. That
-// turns "twenty configured regions" into "every coast in the world", with the
-// spatial structure map as a bonus where a region happens to exist.
-//
-// The constants come from data/model.json, written by fish_finder.py from the
-// same config.json the Python model uses. Only the arithmetic is duplicated,
-// never the numbers — otherwise the two would drift apart silently.
-
 const OM_MARINE = "https://marine-api.open-meteo.com/v1/marine";
 const OM_WEATHER = "https://api.open-meteo.com/v1/forecast";
 
 const clamp01 = v => Math.max(0, Math.min(1, v));
 const norm = (x, lo, hi) => clamp01((x - lo) / (hi - lo));
 
-/** Exponential memory: what the sea remembers of the last few days. */
 function decayMemory(x, tauHours){
   const k = Math.exp(-1 / tauHours);
   let acc = 0;
   return x.map(v => (acc = acc * k + (v || 0)) * (1 - k));
 }
 
-/** Linear dispersion relation, w^2 = g k tanh(k h), solved for k by Newton
- *  from the deep-water guess. Mirrors wave_number() in fish_finder.py. */
 function waveNumber(T, h, g = 9.81){
   const Tc = Math.min(25, Math.max(1, T)), hh = Math.max(0.5, h);
   const w = 2 * Math.PI / Tc;
@@ -38,13 +23,6 @@ function waveNumber(T, h, g = 9.81){
   return k;
 }
 
-/** Near-bed orbital velocity, u_b = pi H / (T sinh(k h)), m/s.
- *
- *  The quantity that actually lifts sediment, and the reason visibility now
- *  depends on wave PERIOD and on DEPTH. The old model used Hs cubed, which
- *  has neither in it: 1 m at 4 s and 1 m at 11 s scored identically over
- *  25 m of water even though the second stirs the bed about seventy times
- *  harder. Mirrors bottom_orbital_velocity() in fish_finder.py. */
 function orbitalVelocity(H, T, depth){
   if(!isFinite(H) || H <= 0) return 0;
   const Tc = Math.min(25, Math.max(1, isFinite(T) ? T : 8));
@@ -54,9 +32,6 @@ function orbitalVelocity(H, T, depth){
   return Math.PI * H / (Tc * Math.max(sinh, 1e-9));
 }
 
-/** How hard the sea works the bottom at `depth`, 0-1. Wind sea and swell
- *  are combined in quadrature because orbital velocities are variances and
- *  add in energy, not linearly. */
 function stirring(h, cfg, depth){
   const c = cfg.visibility, n = h.time.length;
   if((c.stir_model || "orbital") === "hs_cubed"){
@@ -84,7 +59,6 @@ function stirring(h, cfg, depth){
   return out;
 }
 
-/** NOAA solar position — pure arithmetic, valid anywhere. */
 function solarElevation(times, lat, lon, tzOffsetSec){
   return times.map(t => {
     const local = new Date(t + "Z");
@@ -121,9 +95,6 @@ function lightQuality(elev, cfg, cloudPct){
   });
 }
 
-/** Falling-barometer-before-a-front nudge — same bounded, non-gating shape
- *  as pressure_factor_series() in fish_finder.py. Returns null (no-op) if
- *  the field is missing. */
 function pressureFactor(h, cfg){
   const c = cfg.pressure || {};
   const p = h.pressure_msl;
@@ -133,14 +104,14 @@ function pressureFactor(h, cfg){
   const cap = c.max_swing ?? 0.08;
   return p.map((v, i) => {
     if(i < win || !isFinite(v) || !isFinite(p[i-win])) return 1.0;
-    const trend = (v - p[i-win]) / win;      // hPa/h, negative = falling
+    const trend = (v - p[i-win]) / win;
     return 1 + Math.max(-cap, Math.min(cap, -trend * sens));
   });
 }
 
 function classifyWind(dirDeg, speed, gust, cfg){
   const regs = cfg.wind_regimes;
-  if(!regs) return {name:"", viz:1, work:1};      // named winds are regional
+  if(!regs) return {name:"", viz:1, work:1};
   const d = ((dirDeg % 360) + 360) % 360;
   let name = "other", spec = regs.other || {};
   for(const [key, r] of Object.entries(regs)){
@@ -171,11 +142,6 @@ function legalStatus(sp, date, legalPack){
   const L = (legalPack && legalPack.species && legalPack.species[sp.id]) || {};
   if(!legalPack || !legalPack.closed_seasons_researched)
     return {open:true, reason:"", unknown:true, legal:L};
-  // `date` was built by parsing a LOCAL wall-clock string as if it were UTC,
-  // so only the getUTC* accessors read back the hour that was put in. The
-  // local getters shift it by the browser's own offset, which rolled a
-  // 00:00 local hour back into the previous day for anyone west of UTC and
-  // moved every closed-season boundary by a day for them.
   const md = String(date.getUTCMonth()+1).padStart(2,"0") + "-"
            + String(date.getUTCDate()).padStart(2,"0");
   for(const w of (L.closed_seasons || [])){
@@ -188,7 +154,7 @@ function legalStatus(sp, date, legalPack){
 }
 
 function speciesDayFactors(sp, sst, vizScore, date, cfg, legalPack){
-  const month = date.getUTCMonth() + 1;      // see the note in legalStatus()
+  const month = date.getUTCMonth() + 1;
   const dMid = (sp.depth_best_m[0] + sp.depth_best_m[1]) / 2;
   const tAt = tempAtDepth(sst, dMid, month, cfg);
   const tempFit = trapezoid(tAt, sp.temp_c[0], sp.temp_best_c[0],
@@ -203,10 +169,6 @@ function speciesDayFactors(sp, sst, vizScore, date, cfg, legalPack){
     id: sp.id, name_en: sp.name_en || sp.common, common: sp.common,
     name_local: sp.name_local,
     scientific: sp.scientific, note: sp.note, viz_pref: pref,
-    // Carried through so the client-side structure scan can draw a map for
-    // THIS species — speciesScore() in structure.js needs the affinities
-    // and the full depth envelope, not just the preferred band. Without
-    // them, selecting a target in point mode could only change the text.
     depth_best_m: sp.depth_best_m, depth_m: sp.depth_m,
     relief_affinity: sp.relief_affinity, slope_affinity: sp.slope_affinity,
     substrate: sp.substrate, wary: sp.wary,
@@ -219,9 +181,6 @@ function speciesDayFactors(sp, sst, vizScore, date, cfg, legalPack){
   };
 }
 
-/** One point on Earth, scored exactly as the Python model would score it. */
-// The numbers behind the verdict, in the units a diver reads. Mirrors
-// verdict_limits() in fish_finder.py - change one, change both.
 export function verdictLimits(cfg){
   const v = cfg.verdict || {}, vis = cfg.visibility || {}, wc = cfg.workability || {};
   const lo = vis.viz_min_m ?? 1, hi = vis.viz_max_m ?? 11, span = hi - lo;
@@ -247,9 +206,6 @@ export function verdictLimits(cfg){
 
 export async function forecastPoint(lat, lon, cfg, legalPack){
   const past = (cfg.conditions?.past_days ?? 5), fwd = (cfg.conditions?.forecast_days ?? 3);
-  // Wind sea and swell separately as well as combined: they do different
-  // jobs (chop makes it unworkable, swell reaches the bottom) and arrive
-  // from different quarters. Same request, more fields.
   const mVars = ["wave_height","wave_period","wave_direction",
                  "wind_wave_height","wind_wave_period","wind_wave_direction",
                  "swell_wave_height","swell_wave_period","swell_wave_direction",
@@ -272,13 +228,6 @@ export async function forecastPoint(lat, lon, cfg, legalPack){
   const h = {time: times};
   mVars.forEach(k => h[k] = (m.hourly[k] || []).map(v => v == null ? NaN : v));
 
-  // The two endpoints are queried with timezone=auto INDEPENDENTLY, and they
-  // do not always resolve the same zone for a coastal point — the marine grid
-  // can sit in the neighbouring maritime zone. Merging the arrays by position
-  // then silently pairs 14:00 waves with 13:00 wind. fetch_conditions() in
-  // fish_finder.py refuses outright when the axes differ; here, where there is
-  // a user waiting, realign the weather series onto the marine time axis by
-  // timestamp instead, and only give up if they genuinely do not overlap.
   const wTimes = (w.hourly && w.hourly.time) || [];
   let wAt = i => i;
   if(wTimes.length !== times.length || wTimes[0] !== times[0]){
@@ -297,50 +246,30 @@ export async function forecastPoint(lat, lon, cfg, legalPack){
     });
   });
 
-  // Both endpoints report their own offset; the weather one is authoritative
-  // because sunrise/sunset and the wall-clock hours the user reads come from
-  // it. Fall back to the marine one rather than to UTC, which would shift the
-  // whole day for anyone the weather endpoint did not answer for.
   const tz = (w.utc_offset_seconds ?? m.utc_offset_seconds ?? 0) | 0;
 
-  // ---- visibility: decaying memory of stirring and runoff ----
   const c = cfg.visibility;
-  // Stirring is evaluated at the depth actually hunted, because the near-bed
-  // orbital velocity that lifts sediment depends on it. A 5 m spot and a
-  // 22 m spot part company completely under groundswell.
   const dBest = cfg.depth?.best_m || [4, 12];
   const vizDepth = 0.5 * (dBest[0] + dBest[1]);
   const stir = decayMemory(stirring(h, cfg, vizDepth), c.wave_tau_h);
   const plume = decayMemory(h.precipitation.map(v => v||0), c.rain_tau_h);
-  // c.baseline is the turbidity the water carries when nothing has happened
-  // — see visibility_series() in fish_finder.py for why it has to exist.
-  // Without it every calm dry day pinned visibility at viz_max_m, which is
-  // why the number always read optimistically: it was the ceiling, not a
-  // forecast.
   const vBase = c.baseline ?? 0;
-  // stirring() already returns 0-1, so no second normalise here.
   let viz = stir.map((s,i) => clamp01(1 - (vBase
     + c.wave_weight * clamp01(s)
     + c.rain_weight * norm(plume[i], 0, c.rain_ref_mm_per_h))));
 
-  // ---- workability, wind regime, movement, light ----
   const wc = cfg.workability;
   const regimes = times.map((_,i) => classifyWind(h.wind_direction_10m[i]||0,
     h.wind_speed_10m[i]||0, h.wind_gusts_10m[i], cfg));
   viz = viz.map((v,i) => clamp01(v * regimes[i].viz));
   const vizM = viz.map(v => c.viz_min_m + v * (c.viz_max_m - c.viz_min_m));
 
-  // A given significant height feels very different depending on period:
-  // short-period wind chop is steep, long-period ground swell of the same
-  // height is smooth. Mirrors workability_series() in fish_finder.py.
   const periodRef = wc.period_ref_s ?? 8.0;
   const steep = (H, T) => {
     const hv = isFinite(H) ? H : 0;
     const pv = Math.min(20, Math.max(2, isFinite(T) ? T : periodRef));
     return hv * Math.min(1.6, Math.max(0.6, periodRef / pv));
   };
-  // Wind sea and swell judged separately, worst one decides. A metre of 4 s
-  // chop and a metre of 12 s swell are not the same day on the surface.
   const hasSplit = (h.wind_wave_height || []).some(isFinite)
                 || (h.swell_wave_height || []).some(isFinite);
   const hsEff = times.map((_,i) => {
@@ -352,9 +281,6 @@ export async function forecastPoint(lat, lon, cfg, legalPack){
   });
   const seaOk = hsEff.map(v => 1 - norm(v, wc.hs_good_m, wc.hs_bad_m));
   const airOk = h.wind_speed_10m.map(v => 1 - norm(isFinite(v)?v:30, wc.wind_good_kmh, wc.wind_bad_kmh));
-  // Drift. Nothing used to gate on current at all, so a screaming spring
-  // tide read as MORE attractive through the movement reward rather than as
-  // a reason to stay out.
   const curBad = wc.current_bad_ms ?? 0;
   const flowOk = times.map((_,i) => curBad > 0
     ? 1 - norm(isFinite(h.ocean_current_velocity[i]) ? h.ocean_current_velocity[i] : 0,
@@ -375,7 +301,6 @@ export async function forecastPoint(lat, lon, cfg, legalPack){
   const light = lightQuality(solarElevation(times, lat, lon, tz), cfg, h.cloud_cover);
   const pf = pressureFactor(h, cfg);
 
-  // ---- hourly score, days, best window ----
   const dw = cfg.day_weights;
   const hourly = times.map((_,i) =>
     (dw.visibility*viz[i] + dw.workability*work[i] + dw.movement*move[i])
@@ -419,12 +344,6 @@ export async function forecastPoint(lat, lon, cfg, legalPack){
     const future = hours.filter(x => !x.past);
     const peak = future.length ? future.reduce((a,b)=>b.score>a.score?b:a) : null;
 
-    // The hour this day should be judged on: when you would actually be in
-    // the water, not whatever hour happens to sort first. Mirrors
-    // representative_hour() in fish_finder.py. Reading idx[0] meant every
-    // day was described by its 00:00 wind — a direction that has usually
-    // turned right round by the time the sun is up, which is what made the
-    // day tabs and the shelter map disagree with each other.
     const repT = bw ? bw.start : (peak && peak.score > 0 ? peak.t : `${date}T12:00`);
     let rep = idx[0];
     for(const i of idx) if(times[i].slice(0,13) === repT.slice(0,13)){ rep = i; break; }
@@ -440,19 +359,7 @@ export async function forecastPoint(lat, lon, cfg, legalPack){
             viz_m: +vizM[rep].toFixed(1), species: []};
   });
 
-  // ---- headline verdict ----
-  //
-  // Daylight and conditions are two separate questions and must not be
-  // collapsed. The previous test required light > 0 AND workable > floor for
-  // every remaining hour before it would agree the day had light left in it,
-  // so a blown-out but perfectly sunny midday reported "no diveable light
-  // left today" — an astronomical claim about the sun, made because of the
-  // wind. Ask only about the sun here; the sea gets its own branch below,
-  // and "nothing diveable today" is already said properly per-day in the
-  // hour strip.
   const vc = cfg.verdict;
-  // Visibility is judged against what this water can do, not a global metre
-  // count. Mirrors local_viz() in fish_finder.py - change one, change both.
   const vizCeil = 1 - (vc.local_bar ?? 1) * (c.baseline ?? 0);
   const vizLocal = i => vizCeil > 0.05 ? Math.min(1, viz[i] / vizCeil) : viz[i];
   const dayScore = Math.min(vizLocal(nowI), work[nowI]);
@@ -473,14 +380,6 @@ export async function forecastPoint(lat, lon, cfg, legalPack){
           : (seaOk[nowI] <= airOk[nowI] ? "sea state" : "wind");
   }
 
-  // ---- species, only where a validated pack applies ----
-  //
-  // Scored per day, at that day's representative hour. Previously one
-  // "today" result was computed and then assigned to every day by
-  // reference, so tomorrow's tab showed today's temperature fit, today's
-  // clarity fit and today's closed-season answer — and selecting a species
-  // on one day mutated the shared object for all of them. A closure that
-  // opens tomorrow is exactly the case a spearo checks the app for.
   const speciesOn = (i, dateStr) => {
     const date = new Date(dateStr + "T12:00Z");
     return (cfg.species || []).map(sp =>
@@ -495,12 +394,6 @@ export async function forecastPoint(lat, lon, cfg, legalPack){
 
   const keep = (a) => a.slice(Math.max(0, nowI-24), Math.min(a.length, nowI+60));
 
-  // renderAll() reads depth_range_m and weights unconditionally for the
-  // footer. They were never present on a point payload, so the very last
-  // statement of renderAll threw and the point path — the default mode —
-  // finished every load by replacing the panel with "Could not get a
-  // forecast here: Cannot read properties of undefined". Everything above
-  // it had already drawn, which is why it looked like a cosmetic glitch.
   const depthCfg = cfg.depth || {};
   return {
     schema_version: 18, point: true,

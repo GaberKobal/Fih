@@ -1,35 +1,4 @@
 {
-  "_note": [
-    "Every region the forecast can cover. Each one is a separate daily run and",
-    "its own folder under docs/data/, so the page can switch between them.",
-    "",
-    "COVERAGE IS NOT UNIFORM, and the app says so per region:",
-    "  species_file  a validated species pack, or null. The pack in this repo",
-    "                is Adriatic and its legal rules are Croatian - applying it",
-    "                to Greece or Spain would be confidently wrong, so those",
-    "                regions run structure + conditions only until someone",
-    "                builds a pack for them.",
-    "  jurisdiction  whose fishing law applies. Closed seasons and minimum",
-    "                sizes in species.json are Croatian ONLY.",
-    "  enabled       whether the daily workflow computes it. Clicking a region",
-    "                in the app does NOT enable it - the app can only show",
-    "                regions that already ran, so a disabled one would just say",
-    "                'no forecast yet'. Everything in this file is enabled.",
-    "",
-    "Bathymetry is EMODnet, which covers European seas only. Outside that",
-    "footprint the relief term has nothing to work with and the region should",
-    "not be added at all.",
-    "",
-    "WORLDWIDE: regions outside EMODnet's footprint fall back to NOAA's global SRTM15+ at 15 arc-seconds (~300-450 m). The relief term cannot see a reef at that scale, and the app says so per region rather than pretending.",
-    "",
-    "WHY ENABLING A REGION CHANGES THE SPECIES LIST: point mode covers conditions and structure anywhere on Earth, but the species it names come from regionContaining() in docs/index.html, which only sees regions that ACTUALLY RAN - that is, enabled ones. Outside every enabled region the app falls back to the coarse ocean-basin classifier in BIOME_RULES, which is a reference list for that stretch of ocean rather than a pack tuned to the coast, and which deliberately carries no legal sizes or seasons at all. So enabling the region you actually dive is the single thing that most improves what the app tells you about fish there.",
-    "",
-    "Enabling also brings the extras a region alone provides: exclusion zones, charted wrecks, depth contours, precomputed per-species maps, GPX export, Sentinel-2 turbidity and the Copernicus temperature profile. Each costs roughly 600 KB of output and a few seconds of compute per day.",
-    "",
-    "EVERY REGION IN THIS FILE IS ENABLED. That is a deliberate answer to 'do regions turn on when a user clicks them' - they do not, and cannot: the app renders precomputed output, so a region that never ran has nothing to show. The daily job therefore computes all of them. Budget roughly 600 KB and a few seconds each, so expect a bigger artifact and a longer run; .github/workflows/update.yml has its timeout raised to match, and the bathymetry cache means only the first run after adding a region is slow.",
-    "",
-    "visibility.baseline is overridden per region. It is the turbidity the water carries when nothing has happened, and it is the single most local number in the model - a turbid north Adriatic shelf and a Cycladic drop-off are not the same water. The default in config.json is 0.35, tuned on Novigrad; clear-water regions set it lower here."
-  ],
   "regions": [
     {
       "id": "novigrad",
@@ -1494,8 +1463,7 @@
           1.0,
           0.5
         ],
-        "reference_depth_m": 25.0,
-        "_note": "Red Sea / Gulf of Aqaba: warm and near-uniform to well below diving depth. Set explicitly because the latitude rule in region_config() would otherwise treat 28 N as temperate-ish."
+        "reference_depth_m": 25.0
       },
       "spearfishing": "restricted",
       "spearfishing_note": "spearfishing is banned across much of the Egyptian Red Sea"
@@ -4300,8 +4268,7 @@
           1.0,
           0.5
         ],
-        "reference_depth_m": 25.0,
-        "_note": "Red Sea / Gulf of Aqaba: warm and near-uniform to well below diving depth. Set explicitly because the latitude rule in region_config() would otherwise treat 28 N as temperate-ish."
+        "reference_depth_m": 25.0
       },
       "spearfishing": "restricted",
       "spearfishing_note": "Red Sea protected areas; spearfishing banned in much of this coast"
@@ -4349,8 +4316,7 @@
           1.0,
           0.5
         ],
-        "reference_depth_m": 25.0,
-        "_note": "Red Sea / Gulf of Aqaba: warm and near-uniform to well below diving depth. Set explicitly because the latitude rule in region_config() would otherwise treat 28 N as temperate-ish."
+        "reference_depth_m": 25.0
       },
       "spearfishing": "restricted",
       "spearfishing_note": "Wadi el Gemal national park zones"
@@ -4398,8 +4364,7 @@
           1.0,
           0.5
         ],
-        "reference_depth_m": 25.0,
-        "_note": "Red Sea / Gulf of Aqaba: warm and near-uniform to well below diving depth. Set explicitly because the latitude rule in region_config() would otherwise treat 28 N as temperate-ish."
+        "reference_depth_m": 25.0
       },
       "spearfishing": "restricted",
       "spearfishing_note": "Ras Mohammed national park; spearfishing prohibited in the park"
@@ -4447,8 +4412,7 @@
           1.0,
           0.5
         ],
-        "reference_depth_m": 25.0,
-        "_note": "Red Sea / Gulf of Aqaba: warm and near-uniform to well below diving depth. Set explicitly because the latitude rule in region_config() would otherwise treat 28 N as temperate-ish."
+        "reference_depth_m": 25.0
       },
       "spearfishing": "restricted",
       "spearfishing_note": "Aqaba Marine Park"
@@ -4496,8 +4460,7 @@
           1.0,
           0.5
         ],
-        "reference_depth_m": 25.0,
-        "_note": "Red Sea / Gulf of Aqaba: warm and near-uniform to well below diving depth. Set explicitly because the latitude rule in region_config() would otherwise treat 28 N as temperate-ish."
+        "reference_depth_m": 25.0
       }
     },
     {
@@ -4543,8 +4506,7 @@
           1.0,
           0.5
         ],
-        "reference_depth_m": 25.0,
-        "_note": "Red Sea / Gulf of Aqaba: warm and near-uniform to well below diving depth. Set explicitly because the latitude rule in region_config() would otherwise treat 28 N as temperate-ish."
+        "reference_depth_m": 25.0
       }
     },
     {

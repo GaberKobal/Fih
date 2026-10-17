@@ -1,5 +1,4 @@
 {
-  "_note": "BIOLOGY ONLY. Compiled from general spearfishing-guide sources (not a validated regional survey), for Southern California's temperate kelp-forest fauna. Depth, temperature, substrate and season of presence and how each species responds to water clarity. None of it is law - California has its own detailed size/bag/season rules (CDFW) that are not encoded anywhere in this app yet.",
   "species": [
     {
       "id": "semicossyphus_pulcher",
@@ -109,6 +108,5 @@
       "name_en": "Yellowtail",
       "name_local": "yellowtail"
     }
-  ],
-  "_legal_note": "Legal rules live in legal/<JURISDICTION>.json and are merged in at run time. No legal pack exists yet for US-CA, so this app will correctly show 'not researched' rather than any size or season claim - California Department of Fish and Wildlife (CDFW) publishes the real rules, including species with no-take status."
+  ]
 }

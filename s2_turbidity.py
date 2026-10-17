@@ -63,7 +63,6 @@ TOKEN_URL = ("https://identity.dataspace.copernicus.eu/auth/realms/CDSE/"
 PROCESS_URL = "https://sh.dataspace.copernicus.eu/api/v1/process"
 CATALOG_URL = "https://sh.dataspace.copernicus.eu/api/v1/catalog/1.0.0/search"
 
-# Nechad et al. (2009), Sentinel-2 B04 (665 nm)
 NECHAD_A = 366.14
 NECHAD_C = 0.19563
 
@@ -123,8 +122,6 @@ def post_json(url, token, payload, timeout=180, raw=False, accept=None):
         with urllib.request.urlopen(req, timeout=timeout) as r:
             return r.read() if raw else json.loads(r.read())
     except urllib.error.HTTPError as e:
-        # Sentinel Hub puts a useful message in the body; surface it instead
-        # of a bare status code.
         try:
             detail = e.read().decode("utf-8", "replace")[:600]
         except Exception:
@@ -136,9 +133,6 @@ def find_scene(token, bbox, days, max_cloud):
     """Most recent Sentinel-2 L2A pass over the box under the cloud limit."""
     end = dt.date.today()
     start = end - dt.timedelta(days=days)
-    # The CDSE catalog rejects the STAC `query` extension, so cloud filtering
-    # happens here instead. Over two weeks that is at most a handful of
-    # passes, so there is nothing to gain from server-side filtering anyway.
     res = post_json(CATALOG_URL, token, {
         "collections": ["sentinel-2-l2a"],
         "bbox": [bbox["lon_min"], bbox["lat_min"], bbox["lon_max"], bbox["lat_max"]],
@@ -164,7 +158,7 @@ def find_scene(token, bbox, days, max_cloud):
             "Raise --max-cloud or --days.")
         return None
 
-    scored.sort(reverse=True)                 # most recent first
+    scored.sort(reverse=True)
     when, cloud = scored[0]
     return {"datetime": when, "cloud": cloud}
 
@@ -213,11 +207,10 @@ def scene_depth(bbox, shape, cfg):
            f"{cfg['grid_resolution_m']}")
     blats, blons, elev = ff.fetch_emodnet_bathymetry(
         b, cfg["grid_resolution_m"] / 111320.0, key)
-    # scene rows run north -> south; regrid wants ascending latitude
     lats = np.linspace(b["lat_min"], b["lat_max"], shape[0])
     lons = np.linspace(b["lon_min"], b["lon_max"], shape[1])
     elev_g = ff.regrid(blats, blons, elev, lats, lons)
-    return -elev_g[::-1, :]                      # positive metres, north first
+    return -elev_g[::-1, :]
 
 
 def turbidity_from_red(red, scl, depth=None, min_depth_m=0.0, dark_pct=5.0):
@@ -239,7 +232,7 @@ def turbidity_from_red(red, scl, depth=None, min_depth_m=0.0, dark_pct=5.0):
     stays trustworthy; absolute values inherit the assumption.
     """
     water = (scl == 6)
-    bad = np.isin(scl, [3, 8, 9, 10, 11])          # shadow, cloud, cirrus, snow
+    bad = np.isin(scl, [3, 8, 9, 10, 11])
     ok = water & ~bad & np.isfinite(red) & (red > 0) & (red < NECHAD_C * 0.95)
     if depth is not None and min_depth_m > 0:
         deep = np.isfinite(depth) & (depth >= min_depth_m)
@@ -307,17 +300,12 @@ def main():
 
     cfg = json.loads(Path(args.config).read_text(encoding="utf-8"))
 
-    # Regions each get their own scene and their own output folder.
     regions = json.loads(Path(args.regions).read_text(encoding="utf-8")).get("regions", [])
     picked = ([r for r in regions if r["id"] == args.region] if args.region
               else [r for r in regions if r.get("enabled")])
     if not picked:
         log("no matching region in regions.json - skipping")
         return
-    # Least-recently-sampled first. The reading is relative, so it is worth
-    # nothing to a region until that region has several scenes to compare
-    # against; resampling the same coast every week while 799 others have
-    # none is the one ordering guaranteed not to get there.
     def last_scene(r):
         try:
             h = json.loads((ROOT / "cache" / f"s2_history_{r['id']}.json")
@@ -377,8 +365,6 @@ def sample_region(region, base_cfg, args, token):
     p10 = float(np.percentile(t, 10))
     p75 = float(np.percentile(t, 75))
     p90 = float(np.percentile(t, 90))
-    # Contrast is the robust product here: it survives the offset assumption,
-    # because subtracting a constant does not change differences much.
     contrast = p90 - p10
     out = {
         "scene_datetime": scene["datetime"],
@@ -387,8 +373,6 @@ def sample_region(region, base_cfg, args, token):
         "min_depth_m": args.min_depth,
         "dark_pixel_offset_rho": round(offset, 5) if offset else 0,
         "relative": bool(offset),
-        # Relative, not absolute. Track these across dates; do not read them
-        # as metres.
         "turbidity_relative_fnu": {"median": round(med, 2),
                                    "p10": round(p10, 2),
                                    "p75": round(p75, 2),
@@ -413,8 +397,6 @@ def sample_region(region, base_cfg, args, token):
 
 
 if __name__ == "__main__":
-    # This is an optional reality check, not part of the forecast. It must
-    # never turn the daily run red.
     try:
         main()
     except Exception as exc:

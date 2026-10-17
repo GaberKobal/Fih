@@ -1,5 +1,4 @@
 {
-  "_note": "BIOLOGY ONLY. Compiled from general spearfishing-guide sources (not a validated regional survey), for the wider Northland coast around the Poor Knights - the reserve itself is no-take and these species describe the fishable coast around it, not the reserve. Depth, temperature, substrate and season of presence and how each species responds to water clarity. None of it is law.",
   "species": [
     {
       "id": "seriola_lalandi_nz",
@@ -73,6 +72,5 @@
       "name_en": "John Dory",
       "name_local": "john dory"
     }
-  ],
-  "_legal_note": "Legal rules live in legal/<JURISDICTION>.json and are merged in at run time. No legal pack exists yet for NZ, so this app will correctly show 'not researched' rather than any size or season claim - New Zealand Fisheries publishes the real rules, and critically, the Poor Knights Islands themselves are a no-take marine reserve where all fishing including spearfishing is banned; this app's region bbox covers the wider coast, not just the reserve, and the reserve boundary is NOT masked out."
+  ]
 }

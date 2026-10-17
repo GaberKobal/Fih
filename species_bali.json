@@ -1,5 +1,4 @@
 {
-  "_note": "BIOLOGY ONLY. Compiled from general spearfishing-guide sources (not a validated regional survey), for Bali's tropical Indo-Pacific coral reef fauna. Depth, temperature, substrate and season of presence and how each species responds to water clarity. None of it is law. Parrotfish are deliberately not listed as a target here even though they are abundant reef fish: many Indonesian coastal communities avoid spearing them because of their role grazing algae and keeping reefs healthy, and this app should not encourage otherwise.",
   "species": [
     {
       "id": "plectropomus_leopardus",
@@ -91,6 +90,5 @@
       "name_en": "Great barracuda",
       "name_local": "barracuda"
     }
-  ],
-  "_legal_note": "Legal rules live in legal/<JURISDICTION>.json and are merged in at run time. No legal pack exists yet for ID, so this app will correctly show 'not researched' rather than any size or season claim. Indonesian regulations vary by region, and spearfishing with scuba (as opposed to freediving) is prohibited in Bali specifically - none of this is encoded anywhere in this app yet."
+  ]
 }

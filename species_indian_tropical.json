@@ -1,5 +1,4 @@
 {
-  "_note": "BIOLOGY ONLY. Compiled from general spearfishing-guide sources (not a validated regional survey), for tropical Indian Ocean reef fauna (Red Sea, East Africa, and the wider western Indian Ocean). Heavy overlap with the Indo-Pacific coral-triangle list (species_bali.json) is real, not a copy-paste error: several of these genera range continuously from East Africa to the Central Pacific. Depth, temperature, substrate and season of presence and how each species responds to water clarity. None of it is law, and critically: spearfishing is banned outright in the Maldives, which sits inside this biome's rough geographic footprint - this app has no way to know it has crossed into Maldivian waters specifically, so do not take this file's presence as any indication spearfishing is permitted at a given point.",
   "species": [
     {
       "id": "plectropomus_leopardus_io",
@@ -109,6 +108,5 @@
       "name_en": "Great barracuda",
       "name_local": "barracuda"
     }
-  ],
-  "_legal_note": "Legal rules live in legal/<JURISDICTION>.json and are merged in at run time. No legal pack exists for any western Indian Ocean jurisdiction, so this app will correctly show 'not researched' rather than any size or season claim. This is a coarse ocean-basin fallback, not a country-specific pack: it cannot distinguish Egypt from Kenya from the Maldives, and spearfishing is banned outright in the Maldives specifically."
+  ]
 }

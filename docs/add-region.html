@@ -10,8 +10,6 @@
 <link rel="stylesheet" media="print" onload="this.media='all'"
       href="https://fonts.googleapis.com/css2?family=Nunito+Sans:opsz,wght@6..12,400;6..12,600;6..12,700&display=swap">
 <style>
-  /* Type matches index.html — see the long note there. Monospace survives
-     only in the <pre>, where the JSON block genuinely wants alignment. */
   :root{
     --abyss:#071A22; --shelf:#0E2E3A; --shoal:#164657; --line:#1E5163;
     --chart:#C9DDE3; --sound:#6E93A0; --buoy:#F2B138; --flag:#E4573D; --kelp:#5FBFA0;
@@ -93,15 +91,7 @@
 <script>
 const $ = s => document.querySelector(s);
 const map = L.map("map").setView([30, 0], 2);
-// Same provider as the main map: the OSMF tile policy excludes
-// third-party apps. See the note in index.html.
-//
-// KEEP THIS IN SYNC WITH CARTO_KEY IN index.html. Two files, one key. CARTO
-// now watermark raster tiles requested without one, and this page would go
-// on being defaced long after the main map was fixed - which is exactly the
-// kind of thing nobody notices, because this page is opened once in a while
-// rather than every day. Get a key at https://carto.com/basemaps/apikey.
-const CARTO_KEY = "cb1_255u_1_4382ef54d116fc3875415230";        // <- paste the SAME key as in index.html
+const CARTO_KEY = "cb1_255u_1_4382ef54d116fc3875415230";
 L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
     + (CARTO_KEY ? "?key=" + encodeURIComponent(CARTO_KEY) : ""),
   {maxZoom:18, subdomains:"abcd", crossOrigin:"",
@@ -112,8 +102,6 @@ L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r
 
 let box = null, rect = null, ISSUE = null;
 
-// Fetch the region index so ids can be checked for collisions and the
-// submit button knows where to file.
 fetch("data/index.json",{cache:"no-store"}).then(r=>r.ok?r.json():null)
   .then(d=>{ if(d) window.EXISTING = new Set(d.regions.map(r=>r.id)); })
   .catch(()=>{});
@@ -122,7 +110,6 @@ fetch("data/index.json").then(r=>r.json())
   .then(r=>r && r.json()).then(d=>{ if(d) ISSUE = d.repo_issue_url; })
   .catch(()=>{});
 
-// Shift-drag is Leaflet's box-zoom; borrow the same gesture for selection.
 map.on("boxzoomend", e => setBox(e.boxZoomBounds));
 let start = null;
 map.on("mousedown", e => { if(e.originalEvent.shiftKey) return; start = e.latlng; });
@@ -155,9 +142,6 @@ function build(){
     country: $("#f_country").value.trim(),
     jurisdiction: $("#f_juris").value.trim().toUpperCase(),
     group: ($("#f_group").value || "").trim().toLowerCase() || "ungrouped",
-    // Added regions start OFF. With 468 in the file the daily run is
-    // driven by FISH_REGIONS or by the enabled flags, and a submission
-    // silently joining the schedule is not what anyone expects.
     enabled: false,
     bbox: {
       lon_min: +box.getWest().toFixed(4),  lat_min: +box.getSouth().toFixed(4),

@@ -14,8 +14,7 @@
     "best_m": [
       4.0,
       10.0
-    ],
-    "_note": "best_m set from 6 logged dives at 4-10 m - that is where you actually hunt, not the 8-18 m I guessed. max_m raised 24 -> 25 m; note this is the ceiling of the SCORED band, not a plateau - depth_fit() tapers from best_m[1] down to zero at max_m + soft_edge_m, so ground at 25 m still scores, just low."
+    ]
   },
   "entry_points": [],
   "max_swim_km": 2.0,
@@ -41,8 +40,7 @@
   "shelter": {
     "max_fetch_km": 20.0,
     "fetch_step_m": 150.0,
-    "swell_weight": 0.5,
-    "_note": "swell_weight splits shelter between wind fetch and swell fetch. Wind alone missed old swell running in from a different quarter than today's breeze."
+    "swell_weight": 0.5
   },
   "habitat": {
     "enabled": false,
@@ -70,20 +68,13 @@
     "rain_ref_mm_per_h": 1.0,
     "wave_weight": 0.35,
     "rain_weight": 0.68,
-    "_note_rain": "rain_exponent is below 1 on purpose: it makes the rain term concave. decay_memory normalises for a CONSTANT input, so a short downpour never approaches the reference and small events barely registered - 2 mm moved visibility 0.3 m and 5 mm moved it 0.7 m. Lowering the reference instead fixed the small events and destroyed the large ones, because every setting that made 5 mm bite also pinned a 20 mm storm and a 60 mm deluge to the same floor. Measured at 12 m: 2 mm now costs 1.2 m, 5 mm costs 2.0 m, 20 mm costs 4.1 m, 60 mm still costs the full 6.5 m, and a coast is still 3.1 m down a day after a 20 mm storm rather than 1.3 m.",
     "rain_exponent": 0.55,
     "river_weight": 0.35,
     "viz_min_m": 1.0,
     "viz_max_m": 11.0,
     "stir_model": "orbital",
     "orbital_ref_ms": 0.35,
-    "orbital_exponent": 3.0,
-    "_stir_note": "How wave stirring of the seabed is estimated. 'orbital' uses the near-bed orbital velocity from linear wave theory, u_b = pi*H/(T*sinh(k*h)) with k from the dispersion relation - the quantity that actually lifts sediment, and one that depends on wave PERIOD and on DEPTH. 'hs_cubed' restores the previous behaviour, which used significant height alone: it could not tell 1 m of 4 s wind chop from 1 m of 11 s groundswell over 25 m of water, even though the second stirs the bed about seventy times harder. Wind sea and swell are evaluated separately and combined in quadrature, because orbital velocities are variances and add in energy rather than linearly.",
-    "_orbital_ref_note": "orbital_ref_ms is the near-bed velocity that counts as fully stirred. Fine sand starts moving around 0.1-0.2 m/s, so 0.35 is a shelf that is properly worked over. Lower it on a muddy or silty bottom that clouds at the slightest movement, raise it on coarse sand or gravel that needs a real sea to shift. This is the number to reach for first if the model calls water dirty when it is not.",
-    "_river_note": "river_weight is how much a river in flood counts against clarity, on top of local rainfall. They are different signals: rain here is weather you can see, whereas a catchment that emptied 200 km inland arrives a day or two later under a clear sky. See the river block below.",
-    "_note": "Checked against 6 logged dives Aug 2026: predicted 12-13 m while actual ran 5-10 m, correlation r=+0.07. This model is NOT yet predictive.",
-    "_baseline_note": "THE FIX FOR 'VISIBILITY IS ALWAYS OVERESTIMATED'. Turbidity used to start at zero, so with no recent swell or rain the model reported viz_max_m - the ceiling - on every calm dry day. It was not forecasting 11 m, it was reporting the maximum. baseline (0-1) is what the water carries when nothing has happened: plankton, current-driven resuspension, river and land input, fine sediment that never fully settles. At 0.35 a flat calm day now reads about 7.5 m instead of 11, 0.6 m of swell about 6 m, and 1 m of swell about 4 m - which is where the dive log actually sits.",
-    "_tuning_note": "baseline is the most region-specific number in this file. A turbid north Adriatic shelf and a Cycladic drop-off are not the same water, so the clear-water regions override it downward in regions.json. wave_ref_hs was also lowered 1.4 -> 1.0: cubed and normalised against 1.4 m, anything under about 0.8 m of swell barely registered at all, which is wrong on a shallow sandy shelf where even short chop lifts sediment. The real fix for all of this is calibrate.py --fit-viz once ~15 dives are logged; it writes visibility_correction to weights.json and overrides these guesses with a fit."
+    "orbital_exponent": 3.0
   },
   "workability": {
     "hs_good_m": 0.25,
@@ -93,10 +84,7 @@
     "hard_floor": 0.2,
     "period_ref_s": 8.0,
     "current_good_ms": 0.25,
-    "current_bad_ms": 1.0,
-    "_current_note": "Drift. Nothing used to gate on current at all - ocean_current_velocity only ever fed the 'movement' reward, so a screaming spring tide could read as MORE attractive rather than as a reason to stay out of the water. About 0.5 m/s is a knot, which is a drift dive; 1.0 m/s is two knots and is not a dive. Set current_bad_ms to 0 to switch the gate off.",
-    "_split_note": "Wind sea and swell are now judged separately and the worse one decides, because a metre of 4 s chop and a metre of 12 s swell are not the same day on the surface. Where the split fields are missing the combined sea state is used exactly as before.",
-    "_period_note": "Reference swell period in seconds; no adjustment at this period. Shorter periods (steep wind chop) scale wave height up toward the bad threshold, longer periods (smooth ground swell) scale it down, capped at 0.6x-1.6x."
+    "current_bad_ms": 1.0
   },
   "movement": {
     "tide_rate_ref_m_per_h": 0.08,
@@ -111,15 +99,12 @@
   "verdict": {
     "go": 0.62,
     "marginal": 0.4,
-    "local_bar": 1.0,
-    "_local_bar_note": "How far visibility is judged against what THIS water can do rather than against one global metre count. 1.0 = fully local: the best a calm dry day can reach here (set by this region's visibility.baseline) counts as 100%, so Go and Marginal mean 'good for here'. 0.0 = the old global bar, under which 138 of 800 coasts could never be called Go at all. It changes the verdict, not the metre figure shown. The baselines it divides by are hand-set estimates until calibrate.py --fit-viz has real dives to fit."
+    "local_bar": 1.0
   },
   "species_file": "species.json",
   "species_ids": null,
   "species_maps_days": 1,
-  "_species_maps_days_note": "How many forecast days get a per-species PNG and GPX. This is the single biggest lever on run time and artifact size: three days x eight species is 24 rasters per region per run on top of the three general ones, and at 1 that drops to 8. Scores, spots, seasons and legal status are still produced for EVERY day either way - those are a few kB of JSON - so only the picture is capped, and the app falls back to today's map for later days with a note saying so. Set it to 3 to restore a per-species map for every day; raise the region count instead if you would rather spend the budget on coverage.",
   "thermocline": {
-    "_note": "How much colder it is at depth than at the surface, by month (Jan..Dec). The north Adriatic stratifies hard in summer, so surface temperature says nothing about where a demersal fish actually sits. These are estimates - check them against your dive computer and edit.",
     "monthly_drop_c": [
       0,
       0,
@@ -138,21 +123,17 @@
   },
   "repo_edit_url": "https://github.com/GaberKobal/fish-finder/edit/main/dive_log.csv",
   "light": {
-    "_note": "Sun elevation shapes the hourly score. 0 below the horizon (night spearfishing is prohibited in Croatia); best at low sun; worst under flat high sun.",
     "golden_max_deg": 12.0,
     "high_sun_deg": 45.0,
     "high_sun_factor": 0.6,
-    "cloud_softening": 0.5,
-    "_cloud_note": "0-1, how much of the high-sun penalty heavy overcast can undo (0.5 = up to half the gap back at 100% cloud cover). Does not touch the night gate or raise dawn/dusk quality above 1.0."
+    "cloud_softening": 0.5
   },
   "pressure": {
-    "_note": "Falling-barometer-before-a-front is a common angling heuristic with much weaker evidence behind it than visibility or sea state, so this only ever nudges the score by a few percent - it never gates a verdict or becomes a 'limited by' reason. Set sensitivity to 0 to disable.",
     "trend_window_h": 3,
     "sensitivity": 0.02,
     "max_swing": 0.08
   },
   "wind_regimes": {
-    "_note": "Direction the wind blows FROM, degrees. First match wins.",
     "bora": {
       "from_deg": [
         20,
@@ -200,42 +181,33 @@
     "penalty": 0.8
   },
   "cmems": {
-    "_note": "Real temperature at depth, replacing the thermocline guesses. Credentials come from the COPERNICUSMARINE_SERVICE_USERNAME and COPERNICUSMARINE_SERVICE_PASSWORD environment variables, set as GitHub Actions secrets. NEVER put a username or password in this file - it is committed to a public repository. Falls back to the thermocline estimate automatically if credentials are missing or the service is unreachable.",
     "enabled": true,
     "dataset_id": "cmems_mod_med_phy-tem_anfc_4.2km_P1D-m",
     "variable": "thetao",
     "pad_deg": 0.1,
     "max_depth_m": 50.0,
-    "_note_global": "Note the -thetao. Copernicus splits both the Mediterranean and the global analysis-forecast products into one dataset per variable, which is why dataset_id above carries -tem. The global id here was the bare cmems_mod_glo_phy_anfc_0.083deg_P1D-m, which exists but does not serve temperature: every region outside the Mediterranean failed with 'The variable thetao is neither a variable or a standard name in the dataset' and silently fell back to the thermocline estimate. The Mediterranean worked throughout, which is what hid it.",
     "dataset_id_global": "cmems_mod_glo_phy-thetao_anfc_0.083deg_P1D-m"
   },
   "water": {
-    "_note": "min_width_cells severs narrow channels; require_sea_connection then discards whatever is left inland. EMODnet carries the Mirna estuary several km up the valley and it was being scored as diveable sea.",
     "min_width_cells": 3,
     "require_sea_connection": true,
     "min_shore_clearance_m": 60,
     "min_sea_fraction": 0.5,
     "bathy_min_valid": 0.9
   },
-  "_site_url_note": "The public URL of the site, no trailing slash. Used ONLY to build the per-region pages under docs/r/ and sitemap.xml, which need absolute URLs. It must match the real GitHub Pages address exactly, including case, or search engines will see the canonical tags point somewhere that does not exist. Leave it empty to skip generating the pages entirely.",
   "s2": {
-    "_note": "Sentinel-2 turbidity, folded into visibility.baseline. s2_turbidity.py measures how dirty the water actually LOOKS, which is the only signal here that can see a plankton bloom or a river plume - the six logged dives went from 10 m to 5 m in the same 500 m of coast while swell, wind and rain stayed flat, so no weather-driven term could ever have caught it. The reading is RELATIVE: Sen2Cor leaves a large atmospheric residual over water, the script subtracts a dark-pixel offset, and it says outright that spatial contrast is reliable and absolute metres are not. So a single scene means nothing and only its deviation from what this coast normally reads is used. Nothing is applied until min_scenes have accumulated in cache/s2_history_<id>.json.",
     "enabled": true,
     "min_scenes": 4,
     "baseline_per_fnu": 0.06,
-    "max_shift": 0.15,
-    "_tuning_note": "baseline_per_fnu converts a deviation in relative FNU into a shift in baseline (0-1, higher is dirtier). 0.06 is a deliberately timid guess and is NOT calibrated: one FNU above this coast's usual costs about 0.6 m of visibility at the current viz_min/viz_max. max_shift caps the whole thing at 0.15, about 1.5 m, so a bad scene or a mis-set offset can never dominate the forecast. Tune both against the viz_m column in dive_log.csv once dives and scenes overlap - which needs dives logged on days with a clear Sentinel-2 pass."
+    "max_shift": 0.15
   },
   "analytics": {
-    "_note": "Where the generated pages under docs/r/ send their one counting GET. Leave it empty and they send nothing at all. If it is empty, the endpoint already set in ANALYTICS.endpoint in docs/index.html is used instead, so there is one line to edit rather than two places to keep in step - the run logs which of the two it took. Same terms as the app: no third-party script, no cookies, no storage, Do Not Track and Global Privacy Control honoured. The path sent is /r/<id>, a public region id carrying no location, and it deliberately matches what the app reports for the same coast so it reads as one row; a search landing is still distinguishable because it arrives with an external referrer.",
     "endpoint": ""
   },
   "site_url": "https://gaberkobal.github.io/Fih",
-  "_dive_relay_note": "Where the Log a dive form POSTs. A Cloudflare Worker (worker/dive-relay.js) holds a GitHub token in ITS secrets and appends the row to a private repository, so no dive is ever public and no token is ever in the browser. Empty disables the Submit button and leaves Copy row, which is the safe default: better to collect nothing than to publish someone's spot. Deploy the worker, then paste its https://...workers.dev URL here.",
   "dive_relay_url": "https://dive-relay.gaber-kobal1.workers.dev",
   "repo_issue_url": "https://github.com/GaberKobal/Fih/issues/new",
   "overlay": {
-    "_note": "Defaults reproduce the original appearance. Knobs if you want to change it: supersample 2 halves the block size at 4x the file size; raising alpha_floor_score hides low-scoring water so only candidate spots are painted; land_buffer_m is how far the colour wash is held back from the coastline, in metres, and is cosmetic only - it never changes a score or moves a spot. Raise it if the wash still touches the beach, lower it if it is hiding water you want to see.",
     "supersample": 1,
     "land_buffer_m": 200,
     "alpha_floor_score": 0.02,
@@ -244,7 +216,6 @@
     "palette_colors": 64
   },
   "contours": {
-    "_note": "Depth lines drawn on the map. Orientation only, not navigation.",
     "enabled": true,
     "levels_m": [
       5,
@@ -257,7 +228,6 @@
     "min_points": 8
   },
   "bathymetry": {
-    "_note": "auto picks EMODnet (~115 m) inside European seas and GMRT elsewhere. GMRT merges research multibeam over a global base, so the resolution varies by how well surveyed a coast is - the code measures what arrives rather than trusting this file. Falls back down the chain GMRT -> SRTM15+ if a source is down, so an outage costs quality, not the region.",
     "provider": "auto",
     "erddap_dataset": "srtm15plus",
     "erddap_dataset_360": "srtm15plus_Lon0360",
@@ -269,23 +239,17 @@
     "min_grid_resolution_m": 40.0
   },
   "river": {
-    "_note": "River discharge from Open-Meteo's flood API - free, keyless, cached per region per day. Normalised against the river's OWN median over baseline_days, because the absolute figure means nothing across regions: the Mirna runs at half a cubic metre a second and the Tejo at hundreds. A ratio of 1.0 is a normal day and flood_ratio_ref is where it counts as fully turbid. Regions with no river at the queried point return nothing and fall back to rainfall alone, which is the correct answer for an island.",
     "enabled": true,
     "baseline_days": 60,
     "flood_ratio_ref": 3.0
   },
   "coastline": {
-    "_note": "The real shoreline from OpenStreetMap, used to decide what is land. Bathymetry alone reports the average of what is under each cell, so a barrier island or a spit narrower than a cell or two averages out to negative elevation and gets scored as open water - which is how the colour wash and the depth contours ended up painted across the beach at Faro. Cached per region in cache/. Set enabled to false to fall back to the bathymetric land edge alone.",
-    "_cost_note": "Fetched once per region, in the SAME Overpass request as the wrecks, then cached forever. Some coasts are enormous - Lofoten is 2965 ways - and Overpass can take a couple of minutes over one. That cost is bounded (see overpass_query) and paid once; if it is exceeded the region falls back to the bathymetric land edge, says so, and the spot gates in find_spots still keep marks off the shore.",
     "enabled": true
   },
   "protected": {
-    "_note": "Protected areas from OpenStreetMap, masked into the exclusion gate. Every region but novigrad shipped with no mask at all, and the catalogue includes coasts where spearfishing is banned outright - Bonaire, the Galapagos, the Poor Knights, the Calanques and Kornati cores. IUCN management categories 1a, 1b, 2 and 3 are treated as no-take and MASKED; 4, 5 and 6 routinely permit fishing (the Great Barrier Reef Marine Park is a 6) so they are reported by name instead of blanked. Cached per region.",
-    "_limits": "OSM is NOT the authoritative source. That is the World Database on Protected Areas, which needs an API token. OSM marine coverage is incomplete and protect_class is often missing, in which case nothing is masked. Absence of a mask is not evidence that there is no reserve, and the app says so.",
     "enabled": true
   },
   "wrecks": {
-    "_note": "Charted wrecks from OpenStreetMap. Point data, so unaffected by bathymetry resolution - the one structure signal that is as good in Bali as in Istria.",
     "enabled": true,
     "radius_m": 250.0
   }

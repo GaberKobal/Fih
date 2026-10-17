@@ -125,12 +125,6 @@ def fit_visibility(rows, cfg):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", default=str(ROOT / "config.json"))
-    # The log is no longer in this repository. Dives go straight into a
-    # PRIVATE repo through the Cloudflare relay, so nothing about anyone's
-    # spot is ever public. Clone that repo and either point FISH_PRIVATE_DIR
-    # at it (the log is then found there, and the fitted weights are written
-    # back into it), or pass --log explicitly. Failing that, the local
-    # dive_log.full.csv is used.
     private_log = ff.PRIVATE_DIR / "dive_log.csv"
     ap.add_argument("--log", default=str(
         private_log if private_log.is_file() else ROOT / "dive_log.full.csv"))
@@ -144,10 +138,6 @@ def main():
     args = ap.parse_args()
 
     cfg = json.loads(Path(args.config).read_text(encoding="utf-8"))
-    # Explicit encoding: the dive log carries local species names and note
-    # text, and open() would otherwise decode it with the platform default —
-    # cp1252 on Windows, which cannot read UTF-8 and raises on the first
-    # accented character.
     with open(args.log, encoding="utf-8") as fh:
         rows = list(csv.DictReader(fh))
     rows = [r for r in rows if r.get("lat") and r.get("result") not in (None, "")]
@@ -159,8 +149,6 @@ def main():
 
     y = np.array([float(r["result"]) > 0 for r in rows], float)
     print(f"{len(rows)} dives, {int(y.sum())} positive, {int((1 - y).sum())} blank")
-    # Visibility is fitted from the log alone - it needs no bathymetry, so it
-    # runs before anything that touches the network.
     viz_fit = fit_visibility(rows, cfg) if args.fit_viz else None
     if args.fit_viz and viz_fit is None and len(rows) < MIN_DIVES:
         print("\nSkipping the spatial fit as well - not enough dives yet.")
@@ -173,7 +161,6 @@ def main():
     if y.sum() == 0 or y.sum() == len(y):
         raise SystemExit("need both successes and blanks in the log to fit anything")
 
-    # Rebuild the static spatial terms from the cached bathymetry.
     bbox = cfg["bbox"]
     lats, lons = ff.build_target_grid(bbox, cfg["grid_resolution_m"])
     key = (f"{bbox['lon_min']}_{bbox['lat_min']}_{bbox['lon_max']}_"
@@ -187,13 +174,11 @@ def main():
     relief_s, slope_s, _, _ = ff.structure_terms(depth_m, land, lats, lons, cfg)
     terms = {"relief": relief_s, "slope": slope_s}
 
-    # Shelter depends on the wind on the day, so it is only fitted if the log
-    # records a wind direction.
     have_wind = all(r.get("wind_from_deg") for r in rows)
     shelter_cache = {}
     if have_wind:
         for r in rows:
-            wd = round(float(r["wind_from_deg"]) / 30.0) * 30.0   # 12 sectors
+            wd = round(float(r["wind_from_deg"]) / 30.0) * 30.0
             if wd not in shelter_cache:
                 shelter_cache[wd], _ = ff.upwind_shelter(land, lats, lons, wd, cfg)
     else:
@@ -251,11 +236,6 @@ def main():
 
     out["species"] = args.species
     name = f"weights_{args.species}.json" if args.species else "weights.json"
-    # Written to the PRIVATE directory when there is one. The fitted values
-    # are the proprietary part of this project and the public repository must
-    # never hold them; CI reads them back from the private repo on every run.
-    # With no private directory it falls back to the project root, where
-    # .gitignore stops it being committed - it works locally and goes nowhere.
     dest = ff.PRIVATE_DIR if ff.PRIVATE_DIR.is_dir() else ROOT
     (dest / name).write_text(json.dumps(out, indent=1), encoding="utf-8")
     print(f"wrote {dest / name}")

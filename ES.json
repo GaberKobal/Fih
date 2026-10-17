@@ -1,18 +1,4 @@
 {
-  "_note": [
-    "Fishing rules applied to regions with jurisdiction ES.",
-    "",
-    "THREE TIERS OF CONFIDENCE, and the app shows which is which:",
-    "  min_size_cm from EU Reg 2019/1241 Annex IX is real law and a FLOOR -",
-    "    the national rule may be stricter and often is.",
-    "  framework rules (licence, night, scuba, distances) are widely",
-    "    reported and stable, but were NOT taken from a primary source",
-    "   except for HR. Treat ES as a prompt to check, not an answer.",
-    "  closed_seasons are researched for HR only. An empty list here means",
-    "    NOT RESEARCHED, not 'no closure exists'.",
-    "",
-    "Primary source: https://www.mapa.gob.es"
-  ],
   "jurisdiction": "ES",
   "country": "Spain",
   "confidence": "framework only",

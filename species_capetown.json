@@ -1,5 +1,4 @@
 {
-  "_note": "BIOLOGY ONLY. Compiled from general spearfishing-guide sources (not a validated regional survey), for False Bay's cold, Benguela/Agulhas-influenced temperate fauna. Depth, temperature, substrate and season of presence and how each species responds to water clarity. None of it is law - South Africa has its own detailed size/bag rules and a national-fish level of protection around galjoen that are not encoded anywhere in this app.",
   "species": [
     {
       "id": "dichistius_capensis",
@@ -73,6 +72,5 @@
       "name_en": "Yellowtail",
       "name_local": "yellowtail"
     }
-  ],
-  "_legal_note": "Legal rules live in legal/<JURISDICTION>.json and are merged in at run time. No legal pack exists yet for ZA, so this app will correctly show 'not researched' rather than any size or season claim - South Africa publishes real, actively-enforced size and bag limits (e.g. galjoen and red roman both carry specific minimum sizes and daily limits) that are not encoded anywhere in this app yet."
+  ]
 }

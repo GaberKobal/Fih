@@ -1,5 +1,4 @@
 {
-  "_note": "BIOLOGY ONLY. Compiled from general spearfishing-guide sources (not a validated regional survey), for Oahu's tropical Central Pacific reef fauna. Depth, temperature, substrate and season of presence and how each species responds to water clarity. None of it is law - Hawaii has its own size/bag rules and some species (notably large terminal-phase uhu) are subject to conservation guidance that is not encoded anywhere in this app.",
   "species": [
     {
       "id": "chlorurus_perspicillatus",
@@ -109,6 +108,5 @@
       "name_en": "Bigeye emperor",
       "name_local": "mu"
     }
-  ],
-  "_legal_note": "Legal rules live in legal/<JURISDICTION>.json and are merged in at run time. No legal pack exists yet for US-HI, so this app will correctly show 'not researched' rather than any size or season claim - Hawaii DLNR publishes the real rules, including size limits on several of the species above."
+  ]
 }

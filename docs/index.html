@@ -4,16 +4,6 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#071A22">
-<!-- PINS THE LAUNCH URL.
-     Without a manifest, "Add to Home Screen" saves whatever URL happened to
-     be on screen at that moment - INCLUDING THE HASH. Add the icon while
-     looking at a tapped point and the shortcut is that point forever, and
-     iOS relaunches a standalone app from its saved URL every time it is
-     evicted from memory, which is often. That is how a coast chosen once
-     becomes the coast the app always opens on.
-     start_url "." is the app root, so a launch always begins with no hash
-     and lands on the default view. An icon ALREADY on a home screen keeps
-     the URL it was created with; it has to be removed and re-added. -->
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icon-192.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -25,36 +15,15 @@
 <link rel="stylesheet" media="print" onload="this.media='all'"
       href="https://fonts.googleapis.com/css2?family=Nunito+Sans:opsz,wght@6..12,400;6..12,600;6..12,700&display=swap">
 <style>
-  /* ---------------------------------------------------------------
-     TYPE. This used to be system faces only, on the grounds that the
-     page opens in a car park on one bar of signal. That constraint is
-     still real, so the change is made in a way that respects it:
-
-       * Nunito Sans is a humanist face with open apertures and soft
-         terminals — the "less robotic" part. It loads non-blocking
-         (media=print swapped to all on load) with display=swap, so the
-         page paints in the system fallback immediately and reflows to
-         Nunito when it arrives. It is precached by sw.js, so after the
-         first visit it is instant and works with no signal at all.
-       * Readouts moved off the monospace face onto tabular-lining
-         figures in the same family. Monospace is what made a viz number
-         read like a terminal; tnum keeps the digits from jittering as
-         they tick, which is the only thing mono was buying.
-       * ALL-CAPS with wide tracking was the other robotic tell. Labels
-         are sentence case now and lean on colour and weight instead.
-
-     Monospace survives in exactly one place: the CSV row in the dive
-     log, where column alignment is the actual point.
-     --------------------------------------------------------------- */
   :root{
-    --abyss:#071A22;      /* page ground: deep petrol, not neutral black */
-    --shelf:#0E2E3A;      /* panels */
-    --shoal:#164657;      /* raised, hover */
+    --abyss:#071A22;
+    --shelf:#0E2E3A;
+    --shoal:#164657;
     --line:#1E5163;
-    --chart:#C9DDE3;      /* chart-paper text */
-    --sound:#6E93A0;      /* muted */
-    --buoy:#F2B138;       /* cardinal-mark amber */
-    --flag:#E4573D;       /* dive-flag red */
+    --chart:#C9DDE3;
+    --sound:#6E93A0;
+    --buoy:#F2B138;
+    --flag:#E4573D;
     --kelp:#5FBFA0;
 
     --sans: "Nunito Sans", ui-rounded, -apple-system, "Segoe UI Variable Text",
@@ -75,7 +44,6 @@
     color:var(--sound);
   }
 
-  /* ---- region bar: which coast, and where else is good today ---- */
   #regionbar{
     display:flex; align-items:center; justify-content:space-between; gap:10px;
     padding:9px 16px; background:var(--abyss); cursor:pointer;
@@ -114,7 +82,6 @@
   .rg .tag{font-size:11.5px; color:var(--sound); letter-spacing:.01em;
     display:block; margin-top:2px}
 
-  /* First-open safety gate. */
   #gate{position:fixed; inset:0; z-index:2000; background:rgba(4,14,19,.93);
     display:flex; align-items:center; justify-content:center; padding:18px;
     -webkit-overflow-scrolling:touch; overflow-y:auto}
@@ -130,8 +97,6 @@
     border:1px solid var(--buoy); border-radius:6px; background:var(--shoal);
     color:var(--chart); font:600 14px/1 var(--sans)}
   #gateok:hover{background:var(--line)}
-  /* A stop, not a caveat. This is the one message in the app that is not
-     advisory, so it does not share the amber styling everything else uses. */
   #banner{display:none; padding:11px 16px; font-size:13px; line-height:1.5;
     border-bottom:1px solid var(--line)}
   #banner.stop{background:rgba(228,87,61,.16); color:#FFD9D1;
@@ -142,41 +107,20 @@
   #regionwarn{padding:9px 16px; font-size:11.5px; color:var(--buoy);
     background:rgba(242,177,56,.08); border-bottom:1px solid var(--line); display:none}
 
-  /* ---- signature: the verdict band is also the 72-hour forecast ---- */
   #verdict{
     position:relative; padding:14px 16px 12px;
     border-bottom:1px solid var(--line);
     background:var(--shelf); overflow:hidden;
-    /* Never let flex shrink this: #verdict has overflow:hidden, so if the
-       sheet competes for height the vitals get silently clipped. That is
-       what hid viz/swell/wind on the desktop layout. */
     flex:0 0 auto;
   }
-  /* The 72-hour outlook, as a wash behind the verdict.
-     ------------------------------------------------------------------
-     This was a <canvas> sized in JS from clientWidth/clientHeight at draw
-     time. Explicit pixel dimensions beat `inset:0`, so the moment anything
-     reflowed afterwards — the webfont swapping in, the vitals wrapping to a
-     second row, a longer "limited by" line — the canvas stayed at its old
-     size and became a hard-edged coloured rectangle sitting in the middle
-     of the panel. A CSS gradient cannot go stale: it is painted by the
-     layout engine at whatever size the element currently is.
-     Opacity is down from .30 too. The full red-amber-green ramp at 30% over
-     the panel colour came out an opaque olive that read as a block rather
-     than a tint. */
   #vgrad{
     position:absolute; inset:0; pointer-events:none; opacity:.17;
     background-image:linear-gradient(90deg,var(--shelf),var(--shelf));
   }
-  /* Darkened downward so the text always sits on the same ground no matter
-     what the outlook underneath is doing. */
   #verdict::after{
     content:""; position:absolute; inset:0; pointer-events:none;
     background:linear-gradient(180deg,rgba(7,26,34,.10),rgba(7,26,34,.62));
   }
-  /* One consistent cue for the verdict, in the same colour as the word, so
-     the band reads as deliberate rather than as whatever the gradient
-     happened to land on. */
   #verdict{border-left:3px solid var(--line)}
   #verdict[data-v="go"]{border-left-color:var(--kelp)}
   #verdict[data-v="marginal"]{border-left-color:var(--buoy)}
@@ -202,21 +146,17 @@
   #vitals{display:flex; gap:16px; margin-top:12px; flex-wrap:wrap}
   #vitals div{min-width:56px}
   #vitals b{display:block; font-size:18px; font-weight:600; margin-top:1px}
-  /* Signals the model observes but deliberately does not score, so they read
-     as context rather than as part of the verdict. */
   #observed{position:relative; margin-top:10px; padding-top:8px;
     border-top:1px solid rgba(201,221,227,.14);
     font-size:12px; color:var(--sound); line-height:1.5; display:none}
   #observed .eyebrow{display:inline; margin-right:4px}
 
-  /* ---- species strip: ranked by how catchable each is today ---- */
   #species{
     display:flex; gap:8px; overflow-x:auto; padding:10px 16px;
     border-bottom:1px solid var(--line); background:var(--abyss);
     scrollbar-width:none; -webkit-overflow-scrolling:touch;
   }
   #species::-webkit-scrollbar{display:none}
-  /* On a mouse, a hidden horizontal scrollbar is a trap - show it. */
   @media (hover:hover){
     #species{scrollbar-width:thin; flex-wrap:wrap}
     #species::-webkit-scrollbar{display:block; height:8px}
@@ -243,13 +183,8 @@
   #regionguide .guide-list i{color:var(--sound); font-size:11px}
   #regionguide .guide-note{margin-top:5px; color:var(--sound); font-size:11px; line-height:1.4}
 
-  /* ---- map ---- */
   #map{flex:1 1 auto; min-height:44vh; background:var(--abyss)}
   .leaflet-container{background:var(--abyss); font-family:var(--sans)}
-  /* Deliberately left smooth. Nearest-neighbour rendering keeps the
-     coastline exact but turns the map into a wall of blocks at dive zoom,
-     which is a worse trade. The land mask baked into the PNG means any
-     remaining bleed fades to transparent rather than sitting solid on shore. */
   .leaflet-control-attribution{
     background:rgba(7,26,34,.82)!important; color:var(--sound)!important; font-size:9px
   }
@@ -262,10 +197,6 @@
     box-shadow:0 0 0 1px rgba(242,177,56,.55);
   }
   .mark.dim{background:var(--sound); box-shadow:none}
-  /* Charted wrecks. A plain red dot was indistinguishable from the point
-     marker and from OpenSeaMap's own symbology underneath; this is a
-     deliberately different shape — a rotated square with a cross — so a
-     wreck never reads as "a spot the model picked". */
   .wreckmark{
     width:18px;height:18px;transform:rotate(45deg);
     background:rgba(228,87,61,.22); border:1.6px solid var(--flag);
@@ -277,24 +208,19 @@
   .wreckmark::before{left:50%; top:2px; bottom:2px; width:1.6px; margin-left:-.8px}
   .wreckmark::after{top:50%; left:2px; right:2px; height:1.6px; margin-top:-.8px}
 
-  /* ---- map furniture: legend, opacity, locate ---- */
   #maptools{
     position:absolute; z-index:500; left:10px; bottom:10px;
     background:rgba(7,26,34,.88); border:1px solid var(--line); border-radius:3px;
     padding:9px 11px; font-family:var(--sans); max-width:210px;
   }
   #maptools .eyebrow{margin-bottom:5px}
-  /* Hidden on desktop: there the panel is a small corner box and collapsing
-     it would only add a click. It appears at the phone breakpoint below. */
   #mtoggle{display:none; width:100%; align-items:center; justify-content:space-between;
     gap:8px; margin-top:8px; padding:9px 0 2px; min-height:34px;
     background:none; border:0; border-top:1px solid var(--line);
     color:var(--chart); cursor:pointer; text-align:left;
     font:600 12.5px/1.2 var(--sans); letter-spacing:.005em}
-  /* The caret is the affordance. It must say "there is more below" while
-     collapsed and "this closes" while open. */
-  #mtoggle::after{content:"\25B4"; font-size:13px; color:var(--buoy)}   /* up */
-  #maptools.collapsed #mtoggle::after{content:"\25BE"}                  /* down */
+  #mtoggle::after{content:"\25B4"; font-size:13px; color:var(--buoy)}
+  #maptools.collapsed #mtoggle::after{content:"\25BE"}
   #maptools.collapsed #mtbody{display:none}
   #ramp{height:9px; border-radius:2px; margin-bottom:3px;
     background:linear-gradient(90deg,#440154,#3b528b,#21918c,#5ec962,#fde725)}
@@ -315,7 +241,6 @@
     color:var(--chart); cursor:pointer; font-size:15px;
   }
 
-  /* ---- bottom drawer ---- */
   #sheet{
     flex:0 0 auto; max-height:42vh; overflow-y:auto;
     border-top:1px solid var(--line); background:var(--shelf);
@@ -326,7 +251,6 @@
   #window .when{font-size:17px; font-weight:700; color:var(--buoy)}
   #spark{display:block; width:100%; height:46px; margin-top:10px}
 
-  /* ---- day tabs + hour-by-hour strip ---- */
   #days{display:flex; gap:6px; margin:10px 0 2px; flex-wrap:wrap}
   .day{
     flex:1 1 auto; min-width:78px; cursor:pointer; text-align:left;
@@ -380,7 +304,6 @@
   .actions a:hover,.actions button:hover{background:var(--line)}
   :focus-visible{outline:2px solid var(--buoy); outline-offset:2px}
 
-  /* ---- dive log ---- */
   details#log{border-bottom:1px solid var(--line)}
   details#log > summary{
     padding:12px 16px; cursor:pointer; list-style:none;
@@ -429,14 +352,6 @@
     cursor:pointer; font:600 12px/1 var(--sans)}
   #stamp{padding:10px 16px 16px; font-size:11px; color:var(--sound)}
   #err{padding:20px 16px; color:var(--flag); font-size:14px; display:none}
-  /* Tabular lining figures: digits keep their column as a value ticks over,
-     which is the only thing the monospace face was really buying.
-     ---------------------------------------------------------------------
-     This has to sit AFTER every rule above that uses the `font:` shorthand.
-     The shorthand resets font-variant to normal, so declaring tabular-nums
-     earlier in the sheet would be silently undone for .mark, #hourax,
-     .depthline, #ramplab, the spot ranks and the log inputs — every readout
-     that jitters most when it changes. */
   .num,#vitals b,.rg .w,.rg .v,.sp .sc,.mark,#ramplab,.depthline,
   #window .when,.day .dt,#hourax,#hourdet b,ol#spots li .rank,
   .coords,.depth,.form input,.form select{
@@ -448,25 +363,13 @@
     #verdict{animation:rise .4s ease-out both}
     @keyframes rise{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
   }
-  /* Phone: let the document scroll instead of cramming three panes into
-     100vh. display:contents on #left lets the map sit between the verdict
-     and the sheet without changing the markup order. */
   @media (max-width:819px){
     html,body{height:auto}
     #left{display:contents}
     #verdict{order:1; flex:0 0 auto}
     #map{order:2; flex:0 0 auto; height:50vh; min-height:0}
     #sheet{order:3; flex:0 0 auto; max-height:none; overflow:visible}
-    /* The map is 50vh here, so on an 812 px phone it is 406 px and the legend
-       was 268 px of it. Collapsed it is 64 px, or 16%.
-       max-height is in vh while the map is 50vh, so HALVE it to read the
-       figure that matters: 22vh is 179 px, about 44% of the map, and only
-       while the reader has deliberately opened it. Past that it scrolls
-       rather than growing. */
     #mtoggle{display:flex}
-    /* min-width matters once it collapses: the box shrink-wraps its content,
-       and with only the header left that was 84 px, squashing the ramp the
-       panel exists to show. */
     #maptools{max-height:22vh; overflow-y:auto; padding:8px 10px;
       max-width:190px; min-width:158px}
     #maptools .keyrow{font-size:11px}
@@ -482,10 +385,6 @@
 </head>
 <body>
 
-<!-- Shown once, before anything else, and dismissed into localStorage.
-     This app sends people to a coordinate to hold their breath; the risks
-     are not inferable from a colour ramp, and the model's limits are not
-     something a first-time user can be expected to work out. -->
 <div id="gate" hidden>
   <div class="card">
     <h2>Before you use this</h2>
@@ -511,9 +410,6 @@
 </div>
 
 <div id="left">
-  <!-- The "full maps ▾" toggle that used to sit here is gone. The bar itself
-       is still the control that opens the coast list — #rgsub says so — so
-       nothing became unreachable, there is just no separate widget for it. -->
   <div id="regionbar" role="button" tabindex="0" aria-expanded="false"
        aria-controls="regionpanel">
     <span>
@@ -560,12 +456,6 @@
       <summary>Log a dive</summary>
       <div class="form">
         <label>Date<input type="date" id="f_date"></label>
-        <!-- TIME IS THE FIELD THAT MAKES THE LOG WORTH KEEPING. Without it
-             a dive can only be compared against a whole day of conditions,
-             and a day contains both 8 m of morning calm and 2 m of afternoon
-             chop. Every scoring run against the first six dives had to
-             average across daylight hours, which is most of why they could
-             not tell the model anything. -->
         <label>Time in<input type="time" id="f_time"></label>
         <label>Species<select id="f_species"></select></label>
         <label>Lat<input id="f_lat" inputmode="decimal" placeholder="45.32187"></label>
@@ -581,10 +471,6 @@
         </label>
         <label class="wide">Notes<textarea id="f_notes" rows="2"
             placeholder="Conditions, what you saw. Public - do not name the spot."></textarea></label>
-        <!-- Coordinates are rounded to about a kilometre before anything is
-             published, but this box is free text and goes into the public log
-             verbatim. Saying so in the placeholder is the only thing that
-             stops someone typing the name of their reef into it. -->
         <div id="rowout"></div>
         <span class="wide" style="display:flex;gap:8px;flex-wrap:wrap">
           <button type="button" class="sp" id="f_here" style="min-width:0">Use my location</button>
@@ -649,24 +535,13 @@
 <div id="map">
   <button id="locate" type="button" title="Show my position">◎</button>
   <div id="maptools">
-    <!-- On a phone this panel was about 300 px tall against a ~440 px map:
-         the score ramp, two key rows, three controls and the scan box. It
-         collapses to just the ramp there, which is the only part you read
-         at a glance; everything else is a setting you touch once. -->
     <div class="eyebrow">Score</div>
     <div id="ramp"></div>
     <div id="ramplab"><span>low</span><span>high</span></div>
-    <!-- A labelled full-width row, not an icon in the corner. Collapsed, the
-         panel is just a colour ramp, and a bare "+" was not enough to say
-         that the key and the controls were still there - it read as the
-         legend having lost half of itself. -->
     <button type="button" id="mtoggle" aria-expanded="true" aria-controls="mtbody">
       <span>Key and controls</span>
     </button>
    <div id="mtbody">
-    <!-- Key. The wreck symbol was on the map with nothing anywhere saying
-         what it meant, so it read as either a hazard or another model
-         mark. It is neither: it is charted third-party data. -->
     <div class="key">
       <span class="keyrow"><span class="mark" style="width:17px;height:17px;font-size:9px">1</span>
         Model spot, best first</span>
@@ -692,19 +567,14 @@
       </label>
       <div id="scanmsg" style="font-size:11.5px;color:var(--sound);margin-top:5px;line-height:1.4"></div>
     </div>
-   </div><!-- /#mtbody -->
+   </div>
   </div>
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
-// Bumped whenever the page needs a matching fish_finder.py, and vice versa.
-// The two files live in different folders and get uploaded separately, so a
-// mismatch is easy to create and was previously invisible.
 const PAGE_VERSION = 18;
 
-// Safety gate. Shown until acknowledged, then remembered. Versioned so the
-// notice can be reissued if what it says materially changes.
 const GATE_KEY = "diveforecast.ack.v1";
 (function(){
   const el = document.getElementById("gate");
@@ -721,44 +591,13 @@ const GATE_KEY = "diveforecast.ack.v1";
 })();
 
 
-// ---- usage counting -------------------------------------------------------
-//
-// OFF until you put an endpoint in ANALYTICS.endpoint below. GitHub Pages
-// gives you no server logs, so counting has to happen in the browser.
-//
-// This deliberately loads NO third-party script. It sends one short GET to
-// a counting endpoint and nothing else: no cookies, no localStorage, no
-// fingerprinting, no identifiers, no session stitching. That keeps it
-// cookieless under ePrivacy, which is why there is no consent banner for it,
-// and it keeps the offline story intact — the request simply fails and the
-// app does not notice.
-//
-// THE PATH IS SANITISED, and that is the point.
-//
-// The URL hash of this app carries real coordinates: "#@38.6900,-9.3500" is
-// somewhere a person is thinking about diving, to about eleven metres. Every
-// off-the-shelf analytics snippet reports location.href verbatim, which
-// would hand a third party a list of people's dive spots — quite possibly
-// their home coast. So nothing here reports the hash as written:
-//
-//   #cascais           -> /r/cascais    (a public region id, harmless)
-//   #@38.69,-9.35      -> /point        (NO coordinates, ever)
-//   no hash            -> /
-//
-// Recommended endpoint is GoatCounter: free for non-commercial use, open
-// source, cookieless, and it takes a plain GET so no script tag is needed.
-//   ANALYTICS.endpoint = "https://YOURCODE.goatcounter.com/count"
-// Anything that accepts ?p=<path>&t=<title>&r=<referrer> works the same way.
 const ANALYTICS = {
-  endpoint: "https://fishcounter.goatcounter.com/count",             // e.g. "https://yourcode.goatcounter.com/count"
-  countScans: true,        // also count structure scans, as /scan
+  endpoint: "https://fishcounter.goatcounter.com/count",
+  countScans: true,
 };
 
 const track = (() => {
   let last = null;
-  // Do Not Track and Global Privacy Control are honoured. They are a stated
-  // preference not to be counted, and this is not important enough to
-  // override one.
   const optedOut = () => {
     try{
       return navigator.doNotTrack === "1" || window.doNotTrack === "1"
@@ -767,102 +606,42 @@ const track = (() => {
   };
   return function track(path, title){
     if(!ANALYTICS.endpoint || optedOut()) return;
-    if(path === last) return;          // never count the same view twice
+    if(path === last) return;
     last = path;
     try{
       const u = ANALYTICS.endpoint
         + "?p=" + encodeURIComponent(path)
         + "&t=" + encodeURIComponent((title || "").slice(0, 80))
-        // Referrer only if it is another site, never our own hash-laden URL.
         + "&r=" + encodeURIComponent(
             document.referrer && !document.referrer.startsWith(location.origin)
               ? document.referrer : "");
-      // fetch, NOT sendBeacon. sendBeacon always issues a POST, and a
-      // GoatCounter-style /count endpoint answers GET - so this preferred
-      // the one method the endpoint does not accept, and every view it
-      // thought it had counted was very likely discarded at the other end.
-      // keepalive gives the same survives-the-unload behaviour, on a GET.
       if(window.fetch) fetch(u, {mode:"no-cors", keepalive:true}).catch(()=>{});
       else { const i = new Image(); i.src = u; }
-    }catch(e){ /* counting must never break the app */ }
+    }catch(e){  }
   };
 })();
 
-/** Turn whatever is on screen into a path that carries no location. */
 function trackView(){
   const h = (location.hash || "").replace("#", "");
   if(!h)                 return track("/", "Dive forecast");
   if(h.startsWith("@"))  return track("/point", "Point forecast");
-  // Region ids are a fixed public list, so they are safe to report.
   if(/^[a-z0-9-]{2,40}$/.test(h)) return track("/r/" + h, h);
   track("/", "Dive forecast");
 }
 
-// Offline: the app must open in a car park with one bar.
 if("serviceWorker" in navigator)
   addEventListener("load",()=>navigator.serviceWorker.register("sw.js").catch(()=>{}));
 
 const $ = s => document.querySelector(s);
 const fmt = (n,d=1) => (n===null||n===undefined||Number.isNaN(n)) ? "–" : Number(n).toFixed(d);
 
-// ONE world, not an endless carousel of copies.
-//
-// Leaflet repeats the basemap horizontally by default and does not wrap the
-// coordinates that come back with it, so panning east far enough handed us
-// longitude 235.6897 for a point on the Oregon coast and Open-Meteo rejected
-// it outright. noWrap stops the tiles repeating, maxBounds stops the view
-// leaving the single world, and together they remove the whole class of
-// problem at source — wrapLon() below stays as a belt for deep links and
-// for anything that arrives from outside the map.
 const WORLD = L.latLngBounds([-85, -180], [85, 180]);
 const map = L.map("map", {
   zoomControl:false, attributionControl:true,
   worldCopyJump:false, maxBounds:WORLD, maxBoundsViscosity:1.0, minZoom:2,
 });
 L.control.zoom({position:"bottomright"}).addTo(map);
-// BASE MAP.
-//
-// This was tile.openstreetmap.org. The OSM Foundation's tile usage policy
-// is explicit that those servers are for OSM's own use and light,
-// non-commercial traffic, NOT for third-party apps — heavy use gets
-// blocked, and "my app got popular" is not a defence. Serving a public
-// spearfishing app off them would be taking from a donation-funded
-// resource that exists for something else.
-//
-// CARTO's raster basemaps NOW REQUIRE A KEY. From their FAQ: the raster
-// endpoint at basemaps.cartocdn.com "predate[s] the vector service"; it is
-// "still available, but... now require[s] an API key and [is] being retired".
-// Without a key the tiles come back covered in a repeated "API key required"
-// watermark - CARTO are explicit that the map still works and nothing is
-// blocked, but it is defaced, and their terms forbid hiding the notice.
-//
-// GET ONE: https://carto.com/basemaps/apikey - free, no CARTO account, and
-// no need to declare whether the project is commercial. The free tier is
-// 5 million tile requests a calendar month, which also means this setting
-// stays correct if the app is ever monetised. Paste it here.
-//
-// Longer term CARTO recommend moving to their VECTOR basemaps, since raster
-// is on the way out. Measured before deciding, so nobody has to measure it
-// again: it is NOT the rewrite it sounds like - @maplibre/maplibre-gl-leaflet
-// runs MapLibre as a Leaflet layer, so every marker, overlay, geojson and
-// event here stays exactly as it is. The real cost is weight:
-//
-//     Leaflet today          42 KB gzipped
-//     + MapLibre GL         211 KB
-//     + the plugin            3 KB
-//     ------------------------------
-//     map JS after          256 KB, six times heavier
-//
-// on an app whose whole premise is opening on one bar of signal, and on the
-// first load specifically - which is the load a stranger arriving from a
-// search engine gets. Deliberately NOT done for that reason.
-//
-// REVISIT WHEN: CARTO announce an actual retirement date (they have not),
-// or the traffic justifies the payload. The migration itself is a couple of
-// hours; it is the 214 KB that is the decision.
-const CARTO_KEY = "cb1_255u_1_4382ef54d116fc3875415230";        // <- paste your key here
-// The SAME key also has to go in docs/add-region.html, which draws its
-// own map from the same endpoint. Two files, one key.
+const CARTO_KEY = "cb1_255u_1_4382ef54d116fc3875415230";
 const TILES = {
   url: "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
        + (CARTO_KEY ? "?key=" + encodeURIComponent(CARTO_KEY) : ""),
@@ -872,13 +651,6 @@ const TILES = {
     + 'rel="noopener">CARTO</a>',
   subdomains: "abcd",
 };
-// crossOrigin is what makes the tile cache in sw.js real rather than
-// decorative. Without it Leaflet's <img> requests are no-cors, the responses
-// come back OPAQUE, and the service worker's `if (res.ok)` is false for an
-// opaque response - so not one tile was ever stored, trimTiles() never ran,
-// and TILE_CAP was a number describing nothing. The whole "opens in a car
-// park with one bar" promise rested on a cache that was always empty.
-// Both CDNs answer with Access-Control-Allow-Origin: *, checked.
 L.tileLayer(TILES.url, {
   maxZoom:18, noWrap:true, bounds:WORLD, crossOrigin:"",
   subdomains:TILES.subdomains, attribution:TILES.attribution
@@ -891,19 +663,12 @@ L.tileLayer("https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png", {
     + ' · bathymetry EMODnet / GMRT / NOAA'
 }).addTo(map);
 
-// The legend is map furniture, not a map target. Without this Leaflet receives
-// a click on its controls as a map click and moves the point forecast.
 const mapTools = $("#maptools");
 L.DomEvent.disableClickPropagation(mapTools);
 L.DomEvent.disableScrollPropagation(mapTools);
 ["pointerdown", "pointerup", "touchstart", "touchend"].forEach(type =>
   mapTools.addEventListener(type, e => e.stopPropagation()));
 
-// Start collapsed on a phone, open on a desktop. Matched to the CSS
-// breakpoint above rather than to a user-agent string. Once the reader has
-// chosen, remember it: the controls inside are things you set and then want
-// to stay set, and reopening the panel on every visit to reach them is worse
-// than the height it costs.
 const mtBreak = window.matchMedia("(max-width:819px)");
 const mtBtn = $("#mtoggle");
 function setTools(open){
@@ -918,106 +683,51 @@ mtBtn.addEventListener("click", () => {
   setTools(open);
   try { localStorage.setItem("maptools", open ? "open" : "shut"); } catch {}
 });
-// Rotating the phone, or resizing a desktop window across the breakpoint,
-// should pick the sensible default again for anyone who has never chosen.
 mtBreak.addEventListener("change", e => {
   if (mtSaved === null) setTools(!e.matches);
 });
 
-let overlay=null, marks=[], DATA=null, sel=null;   // sel: null = structure map
+let overlay=null, marks=[], DATA=null, sel=null;
 let INDEX=null, REGION=null, contours=null, wreckLayer=null, meMarker=null;
-let MODEL=null, POINT=null, ptMarker=null, REGION_SPECIES=null; // POINT set = "anywhere" mode
-let STRUCT=null, TERRAIN=null, scanBox=null, WRECKS=null;    // client-side structure model
+let MODEL=null, POINT=null, ptMarker=null, REGION_SPECIES=null;
+let STRUCT=null, TERRAIN=null, scanBox=null, WRECKS=null;
 let overlayOpacity=0.75;
 
-// WHICH NAVIGATION IS CURRENT.
-//
-// Every loader here is async and reads the GLOBAL REGION, including
-// dataUrl below. Pick coast A, then pick coast B before A's latest.json
-// has arrived, and both loads are in flight; whichever resolves LAST wins
-// and paints its data over the other. A resolving second put you back on
-// the coast you had just left, with the URL still saying B.
-//
-// It is a race, so it is intermittent, and it is far worse on a phone
-// where the network is slower and more variable - which is exactly where
-// it was noticed. Contours, wrecks and the turbidity band had the same
-// problem and could paint the previous coast's shapes onto the new map.
-//
-// Every navigation takes a ticket. After each await, a loader holding a
-// stale ticket returns instead of rendering.
 let NAV = 0;
 
-// Every data file now lives under its region's folder.
 const dataUrl = f => `data/${REGION}/${f}`;
 
-// ---- anywhere mode -------------------------------------------------------
-// Conditions do not need precomputing: Open-Meteo is global, free and
-// CORS-enabled, so the browser can score any point on Earth directly. Only
-// the structure map needs a configured region.
 function regionContaining(lat, lon){
   return (INDEX?.regions || []).find(r => r.bbox
     && lat >= r.bbox.lat_min && lat <= r.bbox.lat_max
     && lon >= r.bbox.lon_min && lon <= r.bbox.lon_max);
 }
 
-// Very coarse worldwide fallback for points outside every defined region: a
-// fixed, ordered list of rectangular lon/lat boxes, first match wins, each
-// pointing at the species pack in MODEL.species_packs that is the closest
-// available ecological match for that stretch of ocean. This exists so a
-// tap anywhere on Earth returns *something* rather than nothing; it is
-// deliberately coarser than a hand-tuned region (see regions.json) and is
-// used only when regionContaining() finds no match. It never implies a
-// legal pack applies - with no specific jurisdiction there is nothing to
-// merge in, so species shown this way carry no size/season claims at all.
-// Coverage was left with large holes — the whole Atlantic side of South
-// America, the Great Barrier Reef, mainland Japan and Korea, tropical West
-// Africa, the Baltic and Norway, the Arabian Gulf, the eastern Black Sea —
-// and a tap in any of them returned "no species data for this point". The
-// list below closes those, ordered so the tighter, more confident boxes are
-// tested before the broad ocean-basin ones they sit inside.
-//
-// The honesty rule is unchanged and still the important part: a biome match
-// is a REFERENCE LIST for that stretch of ocean, never a claim that the pack
-// was tuned there and never a legal claim, and the app labels it as such
-// (see DATA.species_source === "biome" in load()). Where no pack is even
-// roughly right — the Southern Ocean, the Arctic, the Humboldt upwelling off
-// Chile and Peru, which is a genuinely distinct cold assemblage with no pack
-// in this repo — the correct answer is still nothing, and these stay out.
 const BIOME_RULES = [
-  // Enclosed / semi-enclosed seas - distinct fauna, checked before the
-  // broader ocean-basin boxes they sit inside of.
-  {file: "species.json",                lon: [-6.5, 42],   lat: [30, 48]},    // Mediterranean, Adriatic, Aegean & Black Sea (east to the Georgian coast)
-  {file: "species_indian_tropical.json",lon: [32, 44],     lat: [12, 30]},    // Red Sea
-  {file: "species_indian_tropical.json",lon: [46, 60],     lat: [22, 31]},    // Persian/Arabian Gulf & Gulf of Oman
-  {file: "species_florida_keys.json",   lon: [-98, -58],   lat: [7, 31]},     // Caribbean & Gulf of Mexico
-  // Atlantic
-  {file: "species_azores.json",         lon: [-32, -13],   lat: [27, 41]},    // Macaronesia (Azores/Madeira/Canaries)
-  {file: "species_azores.json",         lon: [-26, -22],   lat: [14, 18]},    // Cabo Verde — same Macaronesian province, south of the box above
-  // NE Atlantic Europe, the North Sea and the Norwegian coast. Deliberately
-  // stops at 14 E: the Baltic proper is brackish at 6-8 PSU with no sparids
-  // in it at all, so the Atlanto-Mediterranean pack would be confidently
-  // wrong there rather than merely approximate. Structure-only is the honest
-  // answer, the same call this file already makes for the Humboldt current.
+  {file: "species.json",                lon: [-6.5, 42],   lat: [30, 48]},
+  {file: "species_indian_tropical.json",lon: [32, 44],     lat: [12, 30]},
+  {file: "species_indian_tropical.json",lon: [46, 60],     lat: [22, 31]},
+  {file: "species_florida_keys.json",   lon: [-98, -58],   lat: [7, 31]},
+  {file: "species_azores.json",         lon: [-32, -13],   lat: [27, 41]},
+  {file: "species_azores.json",         lon: [-26, -22],   lat: [14, 18]},
   {file: "species.json",                lon: [-20, 14],    lat: [30, 71]},
-  {file: "species.json",                lon: [-20, -6],    lat: [8, 30]},     // NW Africa: Morocco to Senegal — Atlanto-Mediterranean overlap
-  {file: "species_capetown.json",       lon: [-20, 22],    lat: [-35, 8]},    // SE Atlantic / W Africa, Gulf of Guinea down to Benguela and False Bay
-  {file: "species_capetown.json",       lon: [22, 32],     lat: [-35, -25]},  // South Africa east coast (Agulhas side)
-  {file: "species_nwatlantic.json",     lon: [-80, -50],   lat: [24, 55]},    // NW Atlantic US/Canada, extended over the Maritimes
-  {file: "species_florida_keys.json",   lon: [-58, -30],   lat: [-24, 8]},    // Tropical W Atlantic: Guianas and Brazil to about Rio
-  {file: "species_nwatlantic.json",     lon: [-62, -50],   lat: [-45, -24]},  // Temperate SW Atlantic: Uruguay, N Argentine shelf
-  // Indian Ocean
-  {file: "species_indian_tropical.json",lon: [20, 100],    lat: [-35, 30]},   // wider western Indian Ocean, Sri Lanka and the Andaman side
-  // Pacific
-  {file: "species_bali.json",           lon: [95, 165],    lat: [-12, 22]},   // Coral Triangle / SE Asia / Melanesia
-  {file: "species_bali.json",           lon: [141, 158],   lat: [-25, -10]},  // Great Barrier Reef and the Coral Sea
-  {file: "species_okinawa.json",        lon: [117, 132],   lat: [18, 41]},    // East China Sea, Taiwan, Yellow Sea and the Korean coast
-  {file: "species_okinawa.json",        lon: [128, 150],   lat: [30, 46]},    // Mainland Japan, Honshu to Hokkaido
-  {file: "species_oahu.json",           lon: [155, 180],   lat: [-30, 30]},   // Central/West Pacific islands
-  {file: "species_oahu.json",           lon: [-180, -130], lat: [-30, 30]},   // Central/East Pacific islands (antimeridian wrap), incl. Hawaii and Galapagos
-  {file: "species_socal.json",          lon: [-135, -105], lat: [15, 52]},    // NE Pacific (Baja to Vancouver Island)
-  {file: "species_poorknights.json",    lon: [145, 180],   lat: [-50, -25]},  // SW Pacific temperate (SE Australia/NZ)
-  {file: "species_poorknights.json",    lon: [-180, -172], lat: [-50, -30]},  // Chatham Rise side of NZ (antimeridian wrap)
-  {file: "species_rottnest.json",       lon: [108, 145],   lat: [-45, -20]},  // SW/S Australia temperate
+  {file: "species.json",                lon: [-20, -6],    lat: [8, 30]},
+  {file: "species_capetown.json",       lon: [-20, 22],    lat: [-35, 8]},
+  {file: "species_capetown.json",       lon: [22, 32],     lat: [-35, -25]},
+  {file: "species_nwatlantic.json",     lon: [-80, -50],   lat: [24, 55]},
+  {file: "species_florida_keys.json",   lon: [-58, -30],   lat: [-24, 8]},
+  {file: "species_nwatlantic.json",     lon: [-62, -50],   lat: [-45, -24]},
+  {file: "species_indian_tropical.json",lon: [20, 100],    lat: [-35, 30]},
+  {file: "species_bali.json",           lon: [95, 165],    lat: [-12, 22]},
+  {file: "species_bali.json",           lon: [141, 158],   lat: [-25, -10]},
+  {file: "species_okinawa.json",        lon: [117, 132],   lat: [18, 41]},
+  {file: "species_okinawa.json",        lon: [128, 150],   lat: [30, 46]},
+  {file: "species_oahu.json",           lon: [155, 180],   lat: [-30, 30]},
+  {file: "species_oahu.json",           lon: [-180, -130], lat: [-30, 30]},
+  {file: "species_socal.json",          lon: [-135, -105], lat: [15, 52]},
+  {file: "species_poorknights.json",    lon: [145, 180],   lat: [-50, -25]},
+  {file: "species_poorknights.json",    lon: [-180, -172], lat: [-50, -30]},
+  {file: "species_rottnest.json",       lon: [108, 145],   lat: [-45, -20]},
 ];
 
 function biomeSpeciesFile(lat, lon){
@@ -1032,22 +742,6 @@ function clearSpatial(){
   TERRAIN = scanBox = WRECKS = null;
 }
 
-// Leaflet does NOT wrap longitude as you pan. Drag the map far enough east
-// and getCenter()/latlng.lng keep counting past 180 into a second, third,
-// fourth copy of the world — which is how a tap on the Oregon coast arrived
-// as longitude 235.6897 and Open-Meteo answered "Longitude must be in range
-// of -180 to 180", making the entire US west coast look unsupported. It was
-// never unsupported; the request was malformed. Everything that leaves this
-// page — the forecast call, the GMRT box, the Overpass box, the region and
-// biome lookups, the deep link — has to use the wrapped value.
-//
-// The marker deliberately keeps the RAW longitude: the user is looking at
-// the third copy of the world and the pin belongs where they tapped.
-// The short-circuit is not an optimisation. Running an in-range longitude
-// through the modulo arithmetic returns it changed in the last couple of
-// digits (-9.35 comes back as -9.350000000000023), and that value goes into
-// the deep-link hash and the bathymetry cache key — so an untouched point
-// would miss its own cache and produce a slightly different URL each visit.
 const wrapLon = l =>
   (l >= -180 && l <= 180) ? l : ((((l + 180) % 360) + 360) % 360) - 180;
 
@@ -1076,18 +770,9 @@ async function loadPoint(lat, lonRaw){
     if(nav !== NAV) return;
     const host = regionContaining(lat, lon);
     const cfg = {...MODEL};
-    // Inside a mapped coast, use THAT coast's calm-day turbidity. The point
-    // model only ever saw the global default, so a tap in Cornwall (0.45) or
-    // on a clear Caribbean reef (0.08) was judged as if it were 0.35 water,
-    // which is why unrelated places all read the same 7 m.
     const localTuned = !!(host && host.viz_baseline != null);
     if(localTuned) cfg.visibility = {...MODEL.visibility, baseline: host.viz_baseline};
 
-    // Species: prefer the region's own hand-tuned pack; fall back to the
-    // coarse worldwide biome classifier outside every defined region;
-    // otherwise none. Legal status is a separate, stricter question - a
-    // biome match never carries one, since there is no specific
-    // jurisdiction to merge law in from.
     let speciesSource = null;
     if(host && host.species_file && MODEL.species_packs?.[host.species_file]){
       cfg.species = MODEL.species_packs[host.species_file];
@@ -1103,25 +788,12 @@ async function loadPoint(lat, lonRaw){
     }
     const pack = host && host.has_species && host.jurisdiction
                ? MODEL.legal[host.jurisdiction] : null;
-    if(!host) cfg.wind_regimes = null;       // named winds are regional
+    if(!host) cfg.wind_regimes = null;
     const d = await forecastPoint(lat, lon, cfg, pack);
-    // THE ONE THAT MATTERED. v21 guarded the model fetch and the dynamic
-    // import above and missed this, which is the only await here that is
-    // actually slow: it goes to Open-Meteo. A point forecast therefore
-    // finished RELIABLY LAST - a live API call cannot beat a local
-    // latest.json - so leaving a point for a region deterministically
-    // snapped back to the point a second or two later. Not intermittent
-    // like the region-to-region race: every single time.
     if(nav !== NAV) return;
-    // Point forecasts inherit a guide only inside a configured region.
     d.region_id = host?.id || null;
     d.local_tuning = localTuned;
     d.species_source = speciesSource;
-    // ...and, more importantly, they inherit its spearfishing status. A
-    // point forecast is the DEFAULT mode, so without this a tap inside
-    // Bonaire or the Galapagos showed no warning whatsoever — the one
-    // place the warning matters most, because there is no region page to
-    // have read first.
     d.spearfishing = host?.spearfishing || null;
     d.spearfishing_note = host?.spearfishing_note || null;
     $("#err").style.display = "none";
@@ -1130,9 +802,6 @@ async function loadPoint(lat, lonRaw){
   }catch(e){
     if(nav !== NAV) return;
     $("#err").style.color = "var(--flag)";
-    // Only blame inland water when that is actually what happened. The
-    // blanket suffix was attached to every failure, so a range error, a
-    // rate limit or an offline phone all read as "you tapped on land".
     const inland = /inland|marine data/i.test(e.message);
     $("#err").textContent = "Could not get a forecast here: " + e.message
       + (inland ? " Open-Meteo has no marine data for inland points, so tap"
@@ -1140,23 +809,10 @@ async function loadPoint(lat, lonRaw){
   }
 }
 
-// Tap to place a point. The guard used to be `POINT !== null`, which was
-// only ever true because startup auto-loaded a point - so opening on the
-// world instead made the whole map inert. What it actually means is "not
-// showing a region": in region mode a tap should not throw away the
-// structure map you are looking at.
 map.on("click", e => {
   if(POINT !== null || REGION === null) loadPoint(e.latlng.lat, e.latlng.lng);
 });
 
-// ---- client-side structure ------------------------------------------------
-// Bathymetry is static, so the terrain (relief, slope, depth gate) is built
-// once per box and cached. Shelter is NOT static - it is upwind fetch - so it
-// is recomputed whenever the selected day changes the wind.
-// Which species the scanned map is drawn for. `sel` names the target; this
-// resolves it to the biology needed to score ground for it — the affinities
-// and the depth envelope, which speciesDayFactors() now carries through on
-// the day record precisely so this does not need a second lookup.
 function selectedSpeciesBiology(){
   if(!sel || !DATA) return null;
   const list = dayData().species || DATA.species || [];
@@ -1171,9 +827,6 @@ async function paintStructure(){
   const wind = day.wind_from_deg ?? DATA.now.wind_from_deg ?? 0;
   const swell = day.swell_from_deg ?? null;
 
-  // Shelter and the wreck halo are shared by every target, so they are
-  // computed once here and reused. Switching species then costs one pass
-  // over the grid instead of re-tracing every fetch ray.
   const {score, shelter, wreck} = STRUCT.score(TERRAIN, wind, swell,
                                                TERRAIN.opts, WRECKS);
   const sp = selectedSpeciesBiology();
@@ -1181,21 +834,10 @@ async function paintStructure(){
                    : score;
 
   if(overlay) map.removeLayer(overlay);
-  // Pass the options through: toDataURL needs land_buffer_m from them to
-  // know how far to hold the wash back from the shoreline.
   overlay = L.imageOverlay(STRUCT.toDataURL(TERRAIN, field, 0.35, 0.80, TERRAIN.opts),
                            STRUCT.bounds(TERRAIN), {opacity: overlayOpacity}).addTo(map);
-  // The server refuses to publish waypoints in a banned region; the
-  // client-side scan has to refuse too, or "Scan structure" becomes a way
-  // straight around it. The structure map itself still paints, because
-  // seeing where the ground is interesting is not the problem — being
-  // handed thirty numbered coordinates to swim to is.
   const banned = DATA && DATA.spearfishing === "banned";
   const spots = banned ? [] : STRUCT.findSpots(TERRAIN, field, TERRAIN.opts);
-  // findSpots only knows the static terms, so the shelter bar in the spot
-  // list rendered as width:NaN% — an invisible, permanently empty bar.
-  // Each spot carries its grid index, so read the value straight off the
-  // field that was just computed.
   for(const s of spots) s.shelter = +(shelter[s.i] || 0).toFixed(3);
   if(sp){ sp.spots = spots; } else { DATA.spots = spots; }
   renderSpots(DATA, spots);
@@ -1226,38 +868,25 @@ $("#scan").addEventListener("click", async () => {
   $("#scanmsg").textContent = "";
   try{
     if(!STRUCT) STRUCT = await import("./structure.js");
-    // POINT.lon is the wrapped value; POINT.lonRaw is only for the marker.
     const box = STRUCT.boxAround(POINT.lat, POINT.lon, r);
     const same = scanBox && Math.abs(scanBox.lat_min-box.lat_min)<1e-6
                          && Math.abs(scanBox.lon_min-box.lon_min)<1e-6;
     if(!same || !TERRAIN){
-      // Bathymetry and the OSM context in parallel — one is a big grid
-      // download, the other a single Overpass query, and neither depends on
-      // the other. The coastline is the only thing that can tell a 300 m
-      // barrier island or a beach-backed town apart from 8 m of open water,
-      // so it is worth the wait; but it must never be able to fail the
-      // scan, so a total Overpass outage drops us back to the bathymetric
-      // land edge with the spot gates in findSpots() still holding the line.
       btn.textContent = "Fetching bathymetry and coastline…";
       const [grid, osm] = await Promise.all([
         STRUCT.fetchBathymetry(box),
         STRUCT.fetchSeabedContext(box).catch(() => null),
       ]);
       btn.textContent = "Building terrain…";
-      // Depth band comes from STRUCT.defaults (2 / 4-18 / 25 m), which now
-      // matches config.json rather than silently overriding it with 30.
       const opts = {...STRUCT.defaults, radius_km: r};
       TERRAIN = STRUCT.buildTerrain(grid, opts, osm && osm.coast);
       TERRAIN.opts = opts;
       scanBox = box;
 
-      // Depth lines: pure geometry off the bathymetry already in hand, so no
-      // extra network round trip.
       if(contours){ map.removeLayer(contours); contours=null; }
       contours = styleContours(STRUCT.contourLines(TERRAIN));
       if($("#ctoggle").checked) contours.addTo(map);
 
-      // Wrecks came back in the same response as the coastline.
       if(wreckLayer){ map.removeLayer(wreckLayer); wreckLayer=null; }
       WRECKS = null;
       if(osm && osm.wrecks && osm.wrecks.features.length){
@@ -1276,7 +905,6 @@ $("#scan").addEventListener("click", async () => {
   }
 });
 
-// score -> colour ramp: red (bad) through amber to green (good)
 function ramp(q){
   const stops=[[0,[228,87,61]],[0.5,[242,177,56]],[1,[95,191,160]]];
   q=Math.max(0,Math.min(1,q));
@@ -1289,8 +917,6 @@ function ramp(q){
   return stops[2][1];
 }
 
-// No canvas, no measuring, nothing to keep in sync — the browser repaints
-// this at whatever size the panel currently is, forever.
 function drawVerdictGradient(series){
   const el=$("#vgrad");
   const viz=series && series.visibility_m, work=series && series.workability;
@@ -1409,9 +1035,6 @@ function selectTarget(id){
          `Size: ${L.min_size_source}</div>`:"");
   }
 
-  // GPX files are written per region by the daily job; a point scan has no
-  // folder to hold one, so the link pointed at "data/null/spots.gpx" and
-  // downloaded a 404 page. Offer it only where a file exists.
   const gpx = $("#gpx");
   if(d.point || !REGION){
     gpx.removeAttribute("href");
@@ -1419,20 +1042,12 @@ function selectTarget(id){
     gpx.style.opacity = ".5";
   }else{
     gpx.style.opacity = "";
-    // Same cap as the rasters — a species GPX only exists for the days its
-    // map does.
     const gsuf = (sp && selDay >= (d.species_maps_days ?? 99)) ? "_d0" : suf;
     gpx.href = sp ? dataUrl(`spots_${sp.id}${gsuf}.gpx`) : dataUrl(`spots${suf}.gpx`);
     gpx.textContent = sp ? `GPX · ${sp.name_en || sp.common}` : "Download GPX";
   }
 
   if(d.point){
-    // Point mode used to stop here, so picking a target changed the notes
-    // and nothing else — the map stayed on the generic structure field and
-    // the spot list stayed generic with it. A dentex and an octopus want
-    // very different ground, which is the entire reason for choosing one.
-    // Repaint for the selected species instead, exactly as a precomputed
-    // region swaps in its per-species PNG.
     if(TERRAIN && STRUCT){
       if(sp && $("#f_species").options.length){ $("#f_species").value=sp.id; buildRow(); }
       paintStructure();
@@ -1447,12 +1062,6 @@ function selectTarget(id){
   const b=L.latLngBounds(d.bounds);
   if(overlay) map.removeLayer(overlay);
 
-  // Per-species rasters are the whole output budget of a run — three days
-  // times eight species per region — so config.json can limit how many days
-  // get one (species_maps_days). Scores, spots and legal status are still
-  // per-day; only the picture is capped. Fall back to day 0's map rather
-  // than requesting a file that is not there, and say so, because a map
-  // silently showing the wrong day's shelter would be worse than a note.
   const spDays = d.species_maps_days ?? 99;
   const spStale = sp && selDay >= spDays;
   const spSuf = spStale ? "_d0" : suf;
@@ -1472,8 +1081,6 @@ function selectTarget(id){
 
 let selDay=0;
 
-// Everything below reads the SELECTED day, not "now". Only shelter varies by
-// day, but it is wind-driven, so a change of wind moves the good water.
 function dayData(){ return ((DATA && DATA.days) || [])[selDay] || DATA || {}; }
 function daySuffix(){ return ((DATA && DATA.days) || []).length ? `_d${selDay}` : ""; }
 
@@ -1495,9 +1102,9 @@ function renderDays(d){
                  <span class="dt" style="color:${col}">${best}</span>${extra}`;
     b.addEventListener("click",()=>{
       selDay=i; renderDays(d); renderHours(d);
-      renderSpecies(d);              // scores are per day
-      selectTarget(sel);             // and so is the map
-      if(d.point && TERRAIN) paintStructure();   // wind moved, so shelter moved
+      renderSpecies(d);
+      selectTarget(sel);
+      if(d.point && TERRAIN) paintStructure();
     });
     host.appendChild(b);
   });
@@ -1509,8 +1116,6 @@ function renderHours(d){
   $("#hourdet").textContent="";
 
   if(!day){
-    // Data file predates the hourly breakdown - fall back to the single
-    // overall window rather than rendering an empty panel.
     const w=d.best_window;
     $("#window").innerHTML = w
       ? `<span class="when">${w.start.slice(11,16)} – ${w.end.slice(11,16)}</span>
@@ -1553,8 +1158,6 @@ function renderHours(d){
        <span style="color:var(--sound);font-size:13px">
         viz ${b.viz_m} m · ${b.wave_m} m · ${b.wind_kmh} km/h</span>`;
   }else{
-    // No window can mean two very different things. "Nothing diveable" on a
-    // flat calm day is just wrong: the day is simply over.
     const anyLeft = day.hours.some(x=>!x.past && x.daylight);
     $("#window").innerHTML = anyLeft
       ? `<span class="when">nothing diveable</span>
@@ -1575,7 +1178,6 @@ async function renderRegionGuide(d){
       REGION_SPECIES=await r.json();
     }
     const entry=REGION_SPECIES.regions?.[id];
-    // A slow response for a previous map must not overwrite the current one.
     if((d.region_id || REGION)!==id) return;
     if(!entry){ host.hidden=true; return; }
     host.hidden=false;
@@ -1625,11 +1227,6 @@ function renderSpecies(d){
   renderRegionGuide(d);
 }
 
-// Depth lines. A colour wash says a cell scores well; a 10 m line says
-// whether you can reach the bottom, which is the question that decides a dive.
-// Shared styling for depth-line and wreck layers, whether the GeoJSON came
-// from a precomputed region (server) or a scanned point (client-side, see
-// structure.js contourLines()/fetchWrecks()) — same look either way.
 function styleContours(gj){
   const shade=d=>d<=5?"#7fd4ff":d<=10?"#4fb3e0":d<=15?"#2f8fbe":d<=20?"#1f6f9c":"#14506f";
   return L.geoJSON(gj,{
@@ -1641,10 +1238,6 @@ function styleContours(gj){
 }
 function styleWrecks(gj){
   return L.geoJSON(gj,{
-    // A rotated crossed square, not a dot. The old red circleMarker was the
-    // same primitive as the "you are here" point marker and sat on top of
-    // OpenSeaMap's own wreck symbology, so three different things on the map
-    // looked alike. See .wreckmark in the stylesheet.
     pointToLayer:(f,ll)=>L.marker(ll,{
       icon:L.divIcon({className:"", iconSize:[18,18], iconAnchor:[9,9],
                       html:'<div class="wreckmark"></div>'}),
@@ -1674,8 +1267,6 @@ async function loadContours(){
   if($("#ctoggle").checked) contours.addTo(map);
 }
 
-// Charted wrecks. The one structure signal that does not care what the
-// bathymetry resolution is.
 async function loadWrecks(){
   const nav = NAV, rid = REGION;
   if(wreckLayer){ map.removeLayer(wreckLayer); wreckLayer=null; }
@@ -1714,15 +1305,11 @@ $("#locate").addEventListener("click",()=>{
   },()=>{},{enableHighAccuracy:true,timeout:8000});
 });
 
-// What the user has typed into the region filter, lower-cased.
 let regionQuery = "";
 
 function renderRegions(){
   const host=$("#regionpanel"); host.innerHTML="";
 
-  // A search box. Scrolling 468 regions across 104 countries to find your
-  // own coast is not a list, it is a haystack, and grouping alone does not
-  // fix it once the catalogue is worldwide.
   const search=document.createElement("div");
   search.className="rgsearch";
   search.innerHTML=`<input id="rgfilter" type="search" autocomplete="off"
@@ -1737,7 +1324,6 @@ function renderRegions(){
     const again=$("#rgfilter");
     if(again){ again.focus(); try{ again.setSelectionRange(at,at); }catch(_){} }
   });
-  // Keep taps on the box from closing the panel underneath it.
   search.addEventListener("click",e=>e.stopPropagation());
   const any=document.createElement("button");
   any.type="button"; any.className="rg";
@@ -1772,8 +1358,6 @@ function renderRegions(){
   const byCountry={};
   shown.forEach(r=>{ (byCountry[r.country||"Other"] ||= []).push(r); });
 
-  // Sorted best-first inside each country, so the panel doubles as a
-  // "where in Europe is actually diveable today" view.
   Object.keys(byCountry).sort().forEach(c=>{
     const g=document.createElement("div"); g.className="grp";
     g.textContent = `Precomputed · ${c}`;
@@ -1790,7 +1374,6 @@ function renderRegions(){
         tags.push(`${r.bathymetry_native_m} m bathymetry, slope only`);
       if(!r.has_species)    tags.push("no species pack");
       if(!r.has_exclusions) tags.push("no exclusion zones");
-      // Say it in the list, not only after you have opened the region.
       const ban = r.spearfishing === "banned"
         ? `<span class="ban">prohibited</span> `
         : r.spearfishing === "restricted" ? `<span class="restr">restricted</span> ` : "";
@@ -1802,12 +1385,6 @@ function renderRegions(){
         POINT=null; if(ptMarker){map.removeLayer(ptMarker); ptMarker=null;}
         $("#regionpanel").classList.remove("open");
         $("#regionbar").setAttribute("aria-expanded","false");
-        // overlay must be REMOVED, not just forgotten. Nulling the
-        // reference orphaned the previous coast's score raster on the map:
-        // renderAll's own `if(overlay) map.removeLayer(overlay)` then had
-        // nothing to remove, so the old image stayed painted under the new
-        // one. The hashchange handler below always got this right, which is
-        // why it only happened when switching from the picker.
         if(r.id!==REGION){ REGION=r.id; location.hash=r.id; sel=null;
                            if(overlay){ map.removeLayer(overlay); overlay=null; }
                            load(); }
@@ -1827,7 +1404,6 @@ $("#regionbar").addEventListener("keydown",e=>{
 
 async function load(){
   const nav = ++NAV;
-  // Region catalogue first: it decides which folder everything else lives in.
   if(!INDEX){
     try{
       const ri=await fetch("data/index.json",{cache:"no-store"});
@@ -1846,18 +1422,6 @@ async function load(){
     }
     if(INDEX.regions.some(r=>r.id===want)){ REGION = want; }
     else {
-      // OPEN ON THE WORLD, not on one coast.
-      //
-      // This used to jump to INDEX.regions[0] - whichever coast happens to be
-      // first in regions.json - and immediately run a point forecast there.
-      // For the person who built it that reads as "my home spot". For
-      // everyone else it reads as an app about Istria that has somehow
-      // guessed wrong, and it burns an Open-Meteo call before anyone has
-      // asked for anything.
-      //
-      // A zoomed-out map says what the app actually is: tap any coast on
-      // Earth. maxBounds keeps that inside the single world Leaflet is
-      // configured for.
       map.setView([25, 10], 2);
       $("#rgname").textContent = "Tap any coast";
       $("#rgsub").textContent  =
@@ -1872,14 +1436,10 @@ async function load(){
   }
   const meta = INDEX.regions.find(r=>r.id===REGION) || {};
   $("#rgname").textContent = meta.name || REGION;
-  // The bar is the control that opens the coast list now that the separate
-  // "full maps" toggle is gone, so say so here.
   $("#rgsub").textContent  = `${meta.country||""} · tap to switch coast `
                            + `(${INDEX.regions.length} available)`;
   renderRegions();
 
-  // Captured, not read from the global after the await: by the time this
-  // resolves REGION may already be a different coast.
   const rid = REGION;
   let d;
   try{
@@ -1895,9 +1455,6 @@ async function load(){
     return;
   }
 
-  // Clear whatever the previous view failed at. Without this, an error left
-  // over from a point forecast ("Could not get a forecast here…") stayed
-  // pinned to the top of a region that had loaded perfectly well.
   $("#err").style.display = "none";
   $("#err").style.color = "var(--flag)";
 
@@ -1915,15 +1472,6 @@ async function load(){
   renderAll(d, meta);
 }
 
-// The workflow that generates a region's data runs once a day, at a fixed
-// UTC hour (see .github/workflows/update.yml) — pre-dawn local time for
-// plenty of regions. "now" in the fetched JSON is only as fresh as that
-// last run, so anyone loading the page later the same day was seeing
-// generation-time conditions presented as current: calm midday sun showing
-// as "dark — no daylight" because the file was built at 4am, or the
-// reverse. Re-anchor "now" to the real clock using the hourly series
-// (d.days[].hours[]), which carries its own verdict per hour, computed the
-// same way as the headline one — see daily_breakdown() in fish_finder.py.
 function reanchorNow(d){
   if(d.point || !d.days || !d.days.length || d.utc_offset_seconds == null) return;
 
@@ -1934,9 +1482,6 @@ function reanchorNow(d){
   const allHours = d.days.flatMap(day => day.hours || []);
   if(!allHours.length) return;
 
-  // Hour-strip greying, "day is over" messaging and best-window selection
-  // all read h.past, which was computed against generation-time, not real
-  // time. Refresh it, and drop any recommendation that has since elapsed.
   for(const h of allHours) h.past = (h.t + "Z") < (nowIso + "Z");
   for(const day of d.days){
     if(day.best && (day.best.start + "Z") < (nowIso + "Z")) day.best = null;
@@ -1950,7 +1495,7 @@ function reanchorNow(d){
     const diff = Math.abs(new Date(h.t + "Z") - new Date(nowIso + "Z"));
     if(diff < best){ best = diff; match = h; }
   }
-  if(!match || match.t === d.now.time) return;   // generation-time hour was already the closest
+  if(!match || match.t === d.now.time) return;
 
   d.now = {...d.now,
     time: match.t, light: match.light, score: match.score,
@@ -1958,8 +1503,6 @@ function reanchorNow(d){
     wind_speed_kmh: match.wind_kmh, sea_temp_c: match.sea_temp_c,
     wind_regime: match.wind_regime,
   };
-  // Older cached data (pre schema v17) will not have these on the hour
-  // record — leave the stale value rather than overwriting with undefined.
   if(match.verdict){ d.now.verdict = match.verdict; d.now.limited_by = match.limited_by; }
   if(match.wind_from_deg != null){
     d.now.wind_from_deg = match.wind_from_deg;
@@ -1967,7 +1510,6 @@ function reanchorNow(d){
   }
   if(match.current_ms != null) d.now.current_ms = match.current_ms;
 
-  // Keep the spark/gradient graph's "now" marker lined up with the same hour.
   if(d.series && d.series.time && d.series.time.length){
     let si = 0, sbest = Infinity;
     for(let i = 0; i < d.series.time.length; i++){
@@ -1978,15 +1520,6 @@ function reanchorNow(d){
   }
 }
 
-// Rules panel and the amber caveat banner, for the payload being rendered.
-//
-// This used to live inline in load(), ABOVE the fetch, and read the global
-// DATA — which at that moment still held the PREVIOUS map. So the panel was
-// permanently one load behind: switching from a point to a region carried
-// the "Point forecast, press Scan structure" banner across onto the region,
-// a region's legal pack only appeared on the second visit, and the very
-// first load showed no rules at all. Both entry points call this now, with
-// the payload they are about to draw.
 function renderContext(d, meta){
   meta = meta || {};
   const LP = d.legal_pack || {};
@@ -2015,8 +1548,6 @@ function renderContext(d, meta){
     rp.style.display="none";
   }
 
-  // Spearfishing status comes first and is styled as a stop, not a caveat.
-  // Everything below it is advisory; this is not.
   const ban = $("#banner");
   if(d.spearfishing === "banned"){
     ban.className = "stop";
@@ -2038,7 +1569,6 @@ function renderContext(d, meta){
   }
 
   const warn=[];
-  // Protected areas: what was masked, and what was found but left alone.
   const pm = d.protected_masked || [], pn = d.protected_named || [];
   if(pm.length)
     warn.push(`${pm.length} strictly protected area${pm.length===1?"":"s"} `
@@ -2066,9 +1596,6 @@ function renderContext(d, meta){
     else if(!d.has_species)
       warn.push("No species data for this point. Even the worldwide fallback has no "
               + "confident match for this stretch of ocean.");
-    // Protected areas are fetched per configured region, not per arbitrary
-    // point, so a point forecast genuinely does not know. Say so rather
-    // than let the absence of a warning read as an all-clear.
     warn.push(d.spearfishing
       ? "Protected areas are not checked for an arbitrary point. The status "
         + "above comes from the configured region this point falls inside."
@@ -2076,8 +1603,6 @@ function renderContext(d, meta){
         + "Nothing here has been tested against reserve boundaries. Check "
         + "before you get in.");
   }else{
-    // Region-only caveats. These come from the region catalogue, so they
-    // must not be shown while a point forecast is on screen.
     if(meta.has_species===false)
       warn.push("No validated species pack for this region, so structure and conditions only. "
               + "Croatian closed seasons are NOT applied here.");
@@ -2092,9 +1617,6 @@ function renderContext(d, meta){
   if(d.macrotidal)
     warn.push(`Tidal range ${d.tide_range_m} m, which is macrotidal. The 8 km tide model `
             + `behind the timing is not adequate here; use a real tide table.`);
-  // Say when the land edge is only as good as the depth grid. On a coast
-  // with barrier islands or spits that is the difference between a map and
-  // a map with the beach coloured in.
   if(d.coastline_applied === false)
     warn.push("The OpenStreetMap coastline could not be fetched for this region, "
             + "so the land edge comes from the bathymetry alone. Any strip of "
@@ -2104,11 +1626,6 @@ function renderContext(d, meta){
   $("#regionwarn").innerHTML = warn.join("<br>");
 }
 
-// "Why this verdict?" The thresholds used to be invisible, so "stay home"
-// and "marginal" were black boxes - and the visibility bar is local, so the
-// same metres mean different things on different coasts. This states the
-// bar that was actually applied. Hidden when a cached older forecast has no
-// limits in it, rather than printing blanks.
 function renderWhy(d){
   const box = $("#why"), L = d.verdict_limits;
   if(!L){ box.hidden = true; return; }
@@ -2138,28 +1655,15 @@ function renderAll(d, meta){
   meta = meta || {};
   renderContext(d, meta);
   $("#region").textContent = d.region;
-  // The title used to be the hardcoded string "Novigrad", which stopped
-  // being true at region number two. A browser tab, a bookmark and a
-  // home-screen shortcut all show this, and "which coast is this" is the
-  // one thing they need to answer.
   document.title = (d.region ? d.region + " · " : "") + "dive forecast";
-  // A cached forecast may predate the night gate. Never present a calm local
-  // 02:30 as diveable when the current-hour light value says it is dark.
   const isDark = Number(d.now.light) <= 0;
   const vw = isDark ? "not now" : (d.now.verdict || "");
   $("#word").textContent = vw.charAt(0).toUpperCase() + vw.slice(1);
   $("#word").dataset.v = vw;
-  // Same value on the band, so its accent edge matches the word.
   $("#verdict").dataset.v = vw;
   if(vw === "not now"){
-    // Only supply a reason if the payload did not already give a specific
-    // one. The model now distinguishes "waiting for first light" from "no
-    // daylight left today", and overwriting both with one generic string
-    // threw that away.
     if(isDark && !/dark/i.test(d.now.limited_by || ""))
       d.now.limited_by = "dark, no daylight at this local hour";
-    // Use the per-day daylight-gated windows, never the legacy overall value
-    // which older data may have calculated without a light check.
     const w = (d.days||[]).find(day=>day.best)?.best || null;
     const nxt = w ? new Date(w.start+"Z").toLocaleString([], {weekday:"short",
                     hour:"2-digit", minute:"2-digit"}) : null;
@@ -2171,12 +1675,6 @@ function renderAll(d, meta){
 
   renderWhy(d);
 
-  // Satellite water clarity, if a recent scene was processed. Optional file:
-  // absent until s2_turbidity.py has run successfully.
-  //
-  // A point forecast has no region folder, so there is nothing to fetch and
-  // the request would 404 against "data/null/". Skip it outright rather
-  // than firing a doomed request on every tap.
   const oldS2 = document.getElementById("s2band");
   if(oldS2) oldS2.remove();
   const s2nav = NAV, s2rid = REGION;
@@ -2187,9 +1685,6 @@ function renderAll(d, meta){
       const T = s2.turbidity_relative_fnu || {};
       const age = Math.round((Date.now() - new Date(s2.scene_datetime)) / 86400000);
       const when = age <= 0 ? "today" : age + " day" + (age === 1 ? "" : "s") + " ago";
-      // Identified and removed above on every render. Without that, every
-      // Refresh or region switch appended ANOTHER copy of this panel and the
-      // sheet grew a stack of stale turbidity readings.
       const el = document.createElement("div");
       el.className = "band"; el.id = "s2band";
       el.innerHTML =
@@ -2210,9 +1705,6 @@ function renderAll(d, meta){
     })
     .catch(() => {});
 
-  // Visibility is now quoted FOR a depth, because clarity depends on one:
-  // near-bed stirring falls off with depth, so 5 m and 22 m genuinely differ
-  // under groundswell. Saying "7 m" without saying where is meaningless.
   const vizAt = d.visibility_depth_m != null ? ` at ${d.visibility_depth_m} m` : "";
   const vit = [
     ["viz" + vizAt, `${fmt(d.now.visibility_m,1)} m`],
@@ -2222,9 +1714,6 @@ function renderAll(d, meta){
     ["water",     `${fmt(d.now.sea_temp_c,1)} °C`],
     ["current",   `${fmt(d.now.current_ms,2)} m/s`],
   ];
-  // Wind sea and swell are fetched separately now. Show the split when it
-  // exists, because a metre of 12 s swell and a metre of 4 s chop are not
-  // the same day and the combined figure hides which one you are getting.
   if(d.now.swell_period_s != null)
     vit.push(["swell period", `${fmt(d.now.swell_period_s,0)} s`]);
   if(d.now.wind_wave_height_m != null)
@@ -2232,10 +1721,6 @@ function renderAll(d, meta){
   $("#vitals").innerHTML =
     vit.map(([k,v])=>`<div><span class="eyebrow">${k}</span><b>${v}</b></div>`).join("");
 
-  // Observed, reported, deliberately not scored. These are real signals with
-  // no fitted weight behind them yet, so they are shown for you to judge
-  // and for dive_log.csv to record, rather than folded into a number that
-  // would look more confident than it has earned.
   const obs = [];
   if(d.now.tide_state) obs.push(`tide ${d.now.tide_state}`);
   if(d.now.sst_trend_24h_c != null && Math.abs(d.now.sst_trend_24h_c) >= 0.3)
@@ -2265,19 +1750,11 @@ function renderAll(d, meta){
   if(!d.point){ loadContours(); loadWrecks(); TERRAIN=null; scanBox=null; }
   selectTarget(sel && (d.species||[]).some(x=>x.id===sel) ? sel : null);
 
-  // Defensive on every optional field. This block is the last thing
-  // renderAll does, and an unguarded d.depth_range_m[0] threw on every
-  // point forecast — which is the DEFAULT mode — aborting the render and
-  // replacing the panel with "Could not get a forecast here". The payload
-  // now carries these (see anywhere.js), but a cached older one will not,
-  // and a missing footer must never cost the whole page.
   const t=new Date(d.generated);
   const band = Array.isArray(d.depth_range_m)
     ? `${d.depth_range_m[0]}–${d.depth_range_m[1]} m` : "unknown";
   const wts = Object.entries(d.weights || {})
     .map(([k,v])=>k+" "+v).join(" · ") || "defaults";
-  // A point forecast has no raster, so bathymetry_native_m and
-  // grid_resolution_m are null and printed as "~null m · grid null m".
   const bathy = d.bathymetry_native_m == null
     ? `Bathymetry: ${d.bathymetry_provider || "none"}. Press Scan structure to fetch it`
     : `Bathymetry ${d.bathymetry_provider} ~${d.bathymetry_native_m} m`
@@ -2290,10 +1767,6 @@ function renderAll(d, meta){
      rules and the protected areas before you get in.`;
 }
 
-// Deep links. This used to be registered INSIDE renderAll with {once:true},
-// so a fresh listener was added on every render and the ones from earlier
-// renders were still queued: after four map loads a single back-button press
-// ran four handlers, each calling load(). Register it once, at module level.
 addEventListener("hashchange",()=>{
   const want=(location.hash||"").replace("#","");
   if(!want || !INDEX) return;
@@ -2311,7 +1784,6 @@ addEventListener("hashchange",()=>{
   }
 });
 
-// Vertical wheel scrolls the species strip horizontally when it overflows.
 $("#species").addEventListener("wheel",e=>{
   const el=e.currentTarget;
   if(el.scrollWidth<=el.clientWidth) return;
@@ -2319,7 +1791,6 @@ $("#species").addEventListener("wheel",e=>{
   el.scrollLeft += e.deltaY; e.preventDefault();
 },{passive:false});
 
-// ---- dive log row builder ----
 let logResult=0;
 function setResult(v){
   logResult=v;
@@ -2330,13 +1801,6 @@ function setResult(v){
 $("#f_r0").addEventListener("click",()=>setResult(0));
 $("#f_r1").addEventListener("click",()=>setResult(1));
 
-// What the model said FOR THE HOUR OF THE DIVE, not for whenever the form
-// happened to be open. Logging an evening dive at breakfast used to record
-// breakfast's visibility as the prediction, which then went into the
-// calibration as if it were a forecast of the dive - comparing the model
-// against a number it never produced for that moment.
-//
-// Returns the matching hour object from days[].hours[], or null.
 function forecastHourFor(dateStr, timeStr){
   if(!DATA || !DATA.days || !dateStr) return null;
   const hh = (timeStr || "").slice(0,2);
@@ -2361,29 +1825,12 @@ function buildRow(){
 ["f_date","f_lat","f_lon","f_depth","f_viz","f_wind","f_species","f_notes"]
   .forEach(id=>$("#"+id).addEventListener("input",buildRow));
 
-// Submit straight to the private log, through the relay.
-//
-// This used to open a prefilled GitHub ISSUE, which meant every dive - the
-// coordinates of someone's spot, what they took, when - was published on a
-// public repository. Editing the issue afterwards did not help: GitHub's own
-// docs say "anyone with read access to a repository can view a comment's
-// edit history", so the original body stayed one click away forever.
-//
-// A write token cannot live here instead, because this page is downloaded by
-// every visitor and anything in it is public. So the token lives in a
-// Cloudflare Worker and the browser POSTs to that. See worker/dive-relay.js.
-//
-// Fields go as JSON, not as a CSV line: the Worker builds the row, so the
-// column order lives in one place and no untrusted CSV is ever parsed.
 $("#f_submit").addEventListener("click", async () => {
-  buildRow();                                   // keeps the preview in sync
+  buildRow();
   if(!$("#f_date").value || !$("#f_lat").value || !$("#f_viz").value){
     $("#rowout").textContent = "Need at least a date, coordinates and visibility.";
     return;
   }
-  // DATA is a region's latest.json in region mode, but in POINT mode it is
-  // built client-side by forecastPoint() and carries none of the config. Fall
-  // back to model.json, which point mode always loads.
   const relay = (DATA && DATA.dive_relay_url)
              || (typeof MODEL !== "undefined" && MODEL && MODEL.dive_relay_url)
              || "";
@@ -2447,14 +1894,9 @@ $("#f_here").addEventListener("click",()=>{
 });
 
 function initLog(d){
-  // The user's own calendar day, not UTC. toISOString() is UTC, so anyone
-  // logging an evening dive west of Greenwich — or a pre-dawn one east of
-  // it — got the wrong date prefilled, which then went into dive_log.csv
-  // and quietly misaligned the calibration against the conditions series.
   const n=new Date();
   $("#f_date").value=`${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,"0")}`
                    + `-${String(n.getDate()).padStart(2,"0")}`;
-  // Local wall clock, same reasoning as the date above.
   $("#f_time").value = `${String(n.getHours()).padStart(2,"0")}:`
                      + `${String(n.getMinutes()).padStart(2,"0")}`;
   $("#f_viz").value=Math.round(d.now.visibility_m);
@@ -2464,17 +1906,10 @@ function initLog(d){
   buildRow();
 }
 
-// In point mode there is no REGION, so the old unconditional load() built
-// the URL "data/null/latest.json", 404ed, and told the user there was no
-// forecast for null — from a button whose whole job is to get a fresher
-// one. Refresh the thing that is actually on screen.
 $("#refresh").addEventListener("click",()=>{
   if(POINT) loadPoint(POINT.lat, POINT.lon); else load();
 });
 
-// No resize handler for the verdict wash any more. It is a CSS gradient on
-// an inset:0 element, so the layout engine resizes it — which is the whole
-// reason the stale-rectangle bug cannot come back.
 trackView();
 addEventListener("hashchange", trackView);
 load();

@@ -71,13 +71,6 @@ from pathlib import Path
 
 import numpy as np
 
-# Imported HERE, once, on the main thread — not lazily inside the functions
-# that draw. matplotlib's first import is not thread-safe: with regions
-# running in parallel, several workers reached `import matplotlib`
-# simultaneously and one of them got a half-built module
-# ("partially initialized module 'matplotlib' has no attribute 'rcParams'"),
-# which failed that region for the day. Getting it out of the way before any
-# worker starts removes the race entirely.
 import matplotlib
 matplotlib.use("Agg")
 from matplotlib.figure import Figure
@@ -90,11 +83,6 @@ from scipy.ndimage import (binary_dilation, binary_opening,
 
 ROOT = Path(__file__).resolve().parent
 
-# Where fitted values live. Fitting is the one genuinely proprietary thing in
-# this project - it is what dive logs turn into - so it is kept OUT of this
-# public repository. CI checks the private repository out into ./private
-# (see .github/workflows/update.yml) and this module reads weights.json from
-# there. FISH_PRIVATE_DIR points at a local clone of that repository instead.
 PRIVATE_DIR = Path(os.environ.get("FISH_PRIVATE_DIR") or ROOT / "private")
 
 
@@ -118,9 +106,6 @@ def load_fitted(name="weights.json"):
 
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-        # Valid JSON is not the same as usable JSON. A list, a null or a
-        # half-edited object would otherwise surface later as an
-        # AttributeError or KeyError inside a region and fail every region.
         if not isinstance(data, dict):
             raise ValueError("not a JSON object")
         w = data.get("weights")
@@ -132,8 +117,6 @@ def load_fitted(name="weights.json"):
                                    and num(vc.get("offset"))):
             raise ValueError("visibility_correction needs a numeric scale and offset")
     except (OSError, ValueError) as e:
-        # A truncated, corrupt or mis-shaped private file must not take the
-        # forecast down with it: fall back to the public defaults, loudly.
         print(f"WARNING: {path} is unusable ({e}) - using the public defaults",
               file=sys.stderr)
         return {}
@@ -147,36 +130,19 @@ EMODNET_HABITAT_WFS = (
 )
 OPENMETEO_MARINE = "https://marine-api.open-meteo.com/v1/marine"
 OPENMETEO_WEATHER = "https://api.open-meteo.com/v1/forecast"
-# River discharge for the catchment behind the coast. Free and keyless,
-# same family as the others, but a separate host and a separate quota.
 OPENMETEO_FLOOD = "https://flood-api.open-meteo.com/v1/flood"
 
 USER_AGENT = "fish_finder/2.0 (personal spearfishing planner)"
 EARTH_R = 6371008.8
 
 
-# --------------------------------------------------------------------------
-# small utilities
-# --------------------------------------------------------------------------
-
-# Windows consoles default to cp1252, which cannot encode the region names in
-# regions.json - "Split and Brac channel" is spelled with a c-caron, Kvarner
-# with an em dash. Printing one raised UnicodeEncodeError and killed the run
-# PART WAY THROUGH, after several regions had already written their output,
-# leaving docs/data/ half updated and index.json never written at all. A log
-# line must never be able to do that, so the streams are switched to UTF-8
-# and told to substitute anything they still cannot represent.
 for _stream in (sys.stdout, sys.stderr):
     try:
         _stream.reconfigure(encoding="utf-8", errors="replace")
     except Exception:
-        pass          # not a real stream (piped, captured, very old Python)
+        pass
 
 
-# With regions running concurrently the log becomes a braid of several
-# regions at once, and an untagged line is worse than useless when you are
-# trying to work out which coast just refused its coastline. Each worker
-# stamps its own id here.
 _LOG = threading.local()
 
 
@@ -190,21 +156,8 @@ def log(msg: str) -> None:
           f"{tag}{msg}", flush=True)
 
 
-# Open-Meteo's free tier allows 600 calls a minute, 5000 an hour and 10000 a
-# day, and every region needs two of them. Running regions in parallel means
-# those arrive in bursts, and a burst that trips the limit used to surface as
-# a bare HTTPError that failed the whole region — losing its map for the day
-# over something that would have succeeded a second later. Retry politely
-# instead, and honour Retry-After when the server sends one.
 _RETRY_STATUS = (408, 425, 429, 500, 502, 503, 504)
 
-# Minimum spacing between requests to a given host, in seconds, enforced
-# across ALL worker threads. Open-Meteo's free ceiling is 600 calls a
-# minute; six workers each finishing a warm region in about a second would
-# issue roughly 720, so the limit gets tripped by success rather than by
-# volume. 0.15 s holds the whole process to about 400 a minute no matter how
-# many workers are running, which is the difference between adding regions
-# and adding failures. Everything else is unthrottled.
 _HOST_MIN_INTERVAL = {
     "api.open-meteo.com": 0.15,
     "marine-api.open-meteo.com": 0.15,
@@ -227,7 +180,7 @@ def _throttle(url: str) -> None:
                 _HOST_LAST[host] = now
                 return
             wait = ready - now
-        time.sleep(wait)          # released the lock first, so others queue
+        time.sleep(wait)
 
 
 def http_get(url: str, timeout: int = 120, attempts: int = 4) -> bytes:
@@ -242,7 +195,7 @@ def http_get(url: str, timeout: int = 120, attempts: int = 4) -> bytes:
         except urllib.error.HTTPError as e:
             last = e
             if e.code not in _RETRY_STATUS:
-                raise                       # a real error; retrying is pointless
+                raise
             wait = delay
             hdr = e.headers.get("Retry-After") if e.headers else None
             if hdr:
@@ -251,7 +204,7 @@ def http_get(url: str, timeout: int = 120, attempts: int = 4) -> bytes:
                 except ValueError:
                     pass
         except (urllib.error.URLError, TimeoutError, OSError) as e:
-            last = e                        # transient network, worth another go
+            last = e
             wait = delay
         if i + 1 < attempts:
             time.sleep(min(wait, 30.0))
@@ -280,10 +233,6 @@ def haversine_m(lat1, lon1, lat2, lon2):
     a = np.sin(dp / 2) ** 2 + np.cos(p1) * np.cos(p2) * np.sin(dl / 2) ** 2
     return 2 * EARTH_R * np.arcsin(np.sqrt(np.clip(a, 0, 1)))
 
-
-# --------------------------------------------------------------------------
-# target grid — one explicit grid that everything is interpolated onto
-# --------------------------------------------------------------------------
 
 def load_regions(path=None):
     doc = json.loads((path or (ROOT / "regions.json")).read_text(encoding="utf-8"))
@@ -344,14 +293,12 @@ def region_config(base, region):
     holds geography and what data that place actually has. Keeping them apart
     means tuning the model once instead of once per region.
     """
-    cfg = json.loads(json.dumps(base))            # deep copy
+    cfg = json.loads(json.dumps(base))
     cfg["region_id"] = region["id"]
     cfg["region_name"] = region["name"]
     cfg["country"] = region.get("country", "")
     cfg["jurisdiction"] = region.get("jurisdiction", "")
     cfg["region_note"] = region.get("note", "")
-    # Curated warning flag: "banned", "restricted", or absent meaning
-    # UNKNOWN. Not legal advice and not exhaustive - see regions.json.
     cfg["spearfishing"] = region.get("spearfishing")
     cfg["spearfishing_note"] = region.get("spearfishing_note")
     cfg["bbox"] = region["bbox"]
@@ -363,24 +310,12 @@ def region_config(base, region):
                 "wind_regimes", "grid_resolution_m", "coastline", "wrecks"):
         if key in region:
             if region[key] is None:
-                cfg[key] = None                    # explicit "not applicable here"
+                cfg[key] = None
             elif isinstance(region[key], dict) and isinstance(cfg.get(key), dict):
                 cfg[key].update(region[key])
             else:
                 cfg[key] = region[key]
 
-    # The inherited thermocline is a NORTH ADRIATIC one: no stratification
-    # in winter, 8 C of it in July and August. Handed unchanged to a region
-    # in the southern hemisphere that is exactly six months wrong - it puts
-    # the summer thermocline on their winter - and handed to the tropics it
-    # invents an 8 C drop over 25 m in water that is near-uniform to well
-    # below diving depth. 57 of the regions in this file are southern and 80
-    # are tropical, so between them that is most of the catalogue.
-    #
-    # Only applied where a region has NOT supplied its own numbers.
-    # Satellite-observed turbidity, applied AFTER any per-region override so
-    # a hand-set baseline is still the starting point rather than being
-    # replaced by it.
     vis = cfg.get("visibility")
     if isinstance(vis, dict):
         try:
@@ -401,10 +336,8 @@ def region_config(base, region):
         drops = list(tc["monthly_drop_c"])
         notes = []
         if lat0 < 0:
-            drops = drops[6:] + drops[:6]        # swap the seasons over
+            drops = drops[6:] + drops[:6]
             notes.append("seasons shifted six months for the southern hemisphere")
-        # Away from the temperate belt the seasonal thermocline in the top
-        # 25 m gets weaker, and in the deep tropics it is close to absent.
         a = abs(lat0)
         scale = 0.25 if a < 15 else (0.6 if a < 23.5 else (0.85 if a < 30 else 1.0))
         if scale < 1.0:
@@ -456,8 +389,6 @@ def regrid(src_lats, src_lons, src, dst_lats, dst_lons, fill=np.nan,
     if src_lons[0] > src_lons[-1]:
         src_lons, src = src_lons[::-1], src[:, ::-1]
 
-    # Interpolate the values and a validity mask separately, so NaN regions
-    # do not bleed into good data.
     valid = np.isfinite(src).astype(float)
     filled = np.where(np.isfinite(src), src, 0.0)
 
@@ -471,24 +402,12 @@ def regrid(src_lats, src_lons, src, dst_lats, dst_lons, fill=np.nan,
         (src_lats, src_lons), valid, bounds_error=False, fill_value=0.0
     )(pts).reshape(gy.shape)
 
-    # min_valid is how much of a target cell's neighbourhood must be real
-    # data. At 0.5 a cell straddling the coast still gets a water value, which
-    # pushes the shoreline about one cell (100 m) inland. Raise it for
-    # bathymetry so a partly-covered cell becomes nodata instead.
     out = np.full(gy.shape, fill, dtype=float)
     ok = fm > min_valid
     out[ok] = fv[ok] / fm[ok]
     return out
 
 
-# --------------------------------------------------------------------------
-# bathymetry — EMODnet DTM, ~115 m, cached to disk
-# --------------------------------------------------------------------------
-
-# EMODnet covers European seas at ~115 m. Everywhere else the best free
-# numeric source is SRTM15+ at 15 arc-seconds, which is 300-450 m depending on
-# latitude. That is not a small difference: the relief term exists to find
-# mounds a few cells across, and at 450 m a reef is smaller than one cell.
 EMODNET_FOOTPRINT = {"lon_min": -36.0, "lat_min": 24.0,
                      "lon_max": 43.0, "lat_max": 90.0}
 ERDDAP_BASE = "https://coastwatch.pfeg.noaa.gov/erddap/griddap"
@@ -535,8 +454,6 @@ def fetch_erddap_bathymetry(bbox, cfg):
     var = b.get("erddap_variable", "z")
     lon_min, lon_max = bbox["lon_min"], bbox["lon_max"]
 
-    # The Lon0360 twin exists for the Pacific; a box that crosses the
-    # antimeridian is unrepresentable in -180..180.
     if lon_min > lon_max or lon_min < -180 or lon_max > 180:
         dataset = b.get("erddap_dataset_360", "srtm15plus_Lon0360")
         lon_min %= 360.0
@@ -548,7 +465,7 @@ def fetch_erddap_bathymetry(bbox, cfg):
     url = f"{ERDDAP_BASE}/{dataset}.json?{urllib.parse.quote(query, safe='(),:.-')}"
     log(f"bathymetry: requesting {dataset} from NOAA ERDDAP (global tier)")
     lats, lons, elev = parse_erddap_json(http_get(url, timeout=300))
-    lons = np.where(lons > 180.0, lons - 360.0, lons)   # back to -180..180
+    lons = np.where(lons > 180.0, lons - 360.0, lons)
     order = np.argsort(lons)
     return lats, lons[order], elev[:, order]
 
@@ -571,7 +488,7 @@ def fetch_gmrt_bathymetry(bbox, cfg):
     params = {
         "north": bbox["lat_max"], "south": bbox["lat_min"],
         "west": bbox["lon_min"], "east": bbox["lon_max"],
-        "layer": "topo",                      # includes land; we mask on elev >= 0
+        "layer": "topo",
         "format": "geotiff",
         "resolution": b.get("gmrt_resolution", "high"),
     }
@@ -645,7 +562,7 @@ def fetch_emodnet_bathymetry(bbox: dict, res_deg: float, cache_key: str):
     Values are elevation: negative below sea level, positive on land.
     Static data, so it is cached and never refetched.
     """
-    import rasterio  # imported here so --selftest works without it
+    import rasterio
 
     params = {
         "service": "wcs",
@@ -653,7 +570,6 @@ def fetch_emodnet_bathymetry(bbox: dict, res_deg: float, cache_key: str):
         "request": "getcoverage",
         "coverage": "emodnet:mean",
         "crs": "EPSG:4326",
-        # WCS 1.0.0 EPSG:4326 BBOX order is minx,miny,maxx,maxy (lon,lat)
         "BBOX": f"{bbox['lon_min']},{bbox['lat_min']},{bbox['lon_max']},{bbox['lat_max']}",
         "format": "image/tiff",
         "interpolation": "nearest",
@@ -674,7 +590,6 @@ def fetch_emodnet_bathymetry(bbox: dict, res_deg: float, cache_key: str):
         elev = ds.read(1).astype(float)
         if ds.nodata is not None:
             elev[elev == ds.nodata] = np.nan
-        # very large magnitudes are EMODnet's fill values
         elev[np.abs(elev) > 12000] = np.nan
         t = ds.transform
         lons = t.c + t.a * (np.arange(ds.width) + 0.5)
@@ -685,10 +600,6 @@ def fetch_emodnet_bathymetry(bbox: dict, res_deg: float, cache_key: str):
 
     return lats, lons, elev
 
-
-# --------------------------------------------------------------------------
-# structure terms
-# --------------------------------------------------------------------------
 
 def metric_gradient(field, lats, lons):
     """Gradient magnitude in metres per metre.
@@ -722,10 +633,6 @@ def open_sea_mask(land, cfg):
     if r >= 1:
         yy, xx = np.ogrid[-r:r + 1, -r:r + 1]
         disk = (yy ** 2 + xx ** 2) <= r * r
-        # Pad with edge replication first. binary_opening treats everything
-        # outside the array as background, so without this it erodes the whole
-        # border of the water mask - which silently killed the connectivity
-        # anchor at the offshore edge.
         pad = r + 1
         padded = binary_opening(np.pad(water, pad, mode="edge"), structure=disk)
         keep = padded[pad:-pad, pad:-pad]
@@ -734,15 +641,11 @@ def open_sea_mask(land, cfg):
             log(f"water mask: dropped {n} cells in channels and basins narrower "
                 f"than about {2 * r * cfg['grid_resolution_m']:.0f} m")
 
-    # Width alone is not enough. EMODnet carries estuaries inland, so the Mirna
-    # valley survives any opening wide enough to keep real coves. Once the
-    # opening has severed the narrow neck at the mouth, connectivity finishes
-    # the job: keep only water that reaches the open, offshore edge of the box.
     if wcfg.get("require_sea_connection", True) and keep.any():
         lab, n_comp = label(keep)
         sizes = np.bincount(lab.ravel())
         sizes[0] = 0
-        sea_id = int(np.argmax(sizes))            # the open sea is the biggest
+        sea_id = int(np.argmax(sizes))
         connected = lab == sea_id
         sea_frac = float(sizes[sea_id]) / float(keep.sum())
 
@@ -753,10 +656,6 @@ def open_sea_mask(land, cfg):
             f"{n_comp} bodies total, reaches the "
             f"{', '.join(touches) if touches else 'no'} edge(s)")
 
-        # The only assumption worth guarding is that the biggest water body
-        # really is the sea. Requiring it to touch a NAMED edge was too
-        # brittle - EMODnet's raster need not reach the requested bbox corner,
-        # and the deepest offshore water can be masked out anyway.
         floor = wcfg.get("min_sea_fraction", 0.5)
         if sea_frac < floor:
             log(f"water mask: largest body is only {sea_frac:.0%} of water - "
@@ -794,9 +693,6 @@ def structure_terms(depth_m, land, lats, lons, cfg):
     """depth_m is positive-down water depth; land is a boolean mask."""
     d = np.where(land, np.nan, depth_m)
 
-    # Fill land with a smooth extrapolation before any filtering, otherwise
-    # every coastline produces a fake gradient wall — the bright rim of
-    # "fronts" the first version drew around the whole shore.
     filled = d.copy()
     if np.any(np.isnan(filled)):
         med = np.nanmedian(filled) if np.any(np.isfinite(filled)) else 0.0
@@ -806,11 +702,6 @@ def structure_terms(depth_m, land, lats, lons, cfg):
             filled = np.where(np.isnan(d), sm, d)
             filled = np.where(np.isnan(filled), med, filled)
 
-    # Relief: how far this cell rises above the local seabed. Positive for a
-    # mound (tegnua, boulder field, wreck mound), negative for a hole.
-    # EMODnet is a composite of survey swaths, and the seams show up as
-    # one-cell-wide north-south stripes that the relief term happily reports as
-    # structure. A 3x3 median removes them and leaves a real 100 m mound intact.
     if cfg["structure"].get("destripe", True):
         filled = destripe(filled, sigma=cfg["structure"].get("destripe_sigma", 8.0))
     if cfg["structure"].get("despeckle", True):
@@ -840,10 +731,6 @@ def depth_fit(depth_m, land, cfg):
     hi = cfg["depth"]["max_m"]
     edge = max(cfg["depth"]["soft_edge_m"], 1e-6)
 
-    # Relief and slope are naturally strongest right where the seabed falls
-    # away from shore, so a flat plateau over 4-24 m put almost every mark in
-    # 5 m of water. A trapezoid with its plateau over the depths you actually
-    # want to hunt spreads them across the band instead.
     best = cfg["depth"].get("best_m")
     if best:
         blo, bhi = float(best[0]), float(best[1])
@@ -945,14 +832,6 @@ def depth_contours(depth_m, land, lats, lons, cfg):
     every = max(1, int(c.get("decimate", 3)))
     min_pts = int(c.get("min_points", 8))
 
-    # Fill land with the mean water depth BEFORE smoothing, then mask it out
-    # afterwards — the same technique buildTerrain()/contourLines() use in
-    # docs/structure.js. Smoothing a -5 m sentinel into the coast built a
-    # false wall there, and every shallow level picked up a spurious ring
-    # running along the shoreline; masking alone would not have helped,
-    # because the damage was already baked into the blurred field. Masked
-    # cells are then genuinely skipped by contour(), so no line is ever drawn
-    # across dry land.
     water = ~land
     mean_d = float(np.nanmean(depth_m[water])) if water.any() else 0.0
     filled = np.where(water, np.nan_to_num(depth_m, nan=mean_d), mean_d)
@@ -977,7 +856,7 @@ def depth_contours(depth_m, land, lats, lons, cfg):
                                                   round(float(y), 5)] for x, y in pts]},
                 })
     finally:
-        fig.clear()          # a bare Figure holds no global state to close
+        fig.clear()
     return {"type": "FeatureCollection", "features": feats}
 
 
@@ -991,7 +870,7 @@ def upwind_shelter(land, lats, lons, wind_from_deg, cfg, nodata=None):
     n_steps = int(max_km * 1000 / step_m)
 
     th = math.radians(wind_from_deg)
-    east = math.sin(th)   # towards the source of the wind
+    east = math.sin(th)
     north = math.cos(th)
 
     lat0 = float(np.mean(lats))
@@ -1002,10 +881,6 @@ def upwind_shelter(land, lats, lons, wind_from_deg, cfg, nodata=None):
     lon_step = lons[1] - lons[0]
     ny, nx = land.shape
 
-    # Cells with no bathymetry are not land. EMODnet's raster does not always
-    # reach the requested bbox, and treating that empty western band as a
-    # coastline made offshore cells read as sheltered from exactly the
-    # direction they are most exposed to.
     blocks = land if nodata is None else (land & ~nodata)
 
     gy, gx = np.meshgrid(lats, lons, indexing="ij")
@@ -1021,7 +896,6 @@ def upwind_shelter(land, lats, lons, wind_from_deg, cfg, nodata=None):
         outside = (iy < 0) | (iy >= ny) | (ix < 0) | (ix >= nx)
         iyc = np.clip(iy, 0, ny - 1)
         ixc = np.clip(ix, 0, nx - 1)
-        # Outside the tile we cannot see land, so assume open water.
         hit = blocks[iyc, ixc] & ~outside & ~done
         fetch[hit] = s * step_m
         done |= hit
@@ -1032,10 +906,6 @@ def upwind_shelter(land, lats, lons, wind_from_deg, cfg, nodata=None):
     shelter[land] = 0.0
     return shelter, fetch
 
-
-# --------------------------------------------------------------------------
-# exclusion zones and habitat polygons
-# --------------------------------------------------------------------------
 
 def _rings_from_geojson(gj):
     rings = []
@@ -1069,7 +939,7 @@ def rasterize_polygons(path_or_gj, lats, lons):
         return mask
 
     gy, gx = np.meshgrid(lats, lons, indexing="ij")
-    pts = np.stack([gx.ravel(), gy.ravel()], axis=-1)  # GeoJSON is lon,lat
+    pts = np.stack([gx.ravel(), gy.ravel()], axis=-1)
     for ring in rings:
         if len(ring) < 3:
             continue
@@ -1077,11 +947,6 @@ def rasterize_polygons(path_or_gj, lats, lons):
     return mask
 
 
-# Overpass is a free, shared, volunteer-run service that rate-limits per
-# client. Every region in regions.json is enabled, so a daily run makes one
-# request per region back to back; on a single host most of them come back
-# 429 and the regions silently lose their coastline, their wrecks, or both.
-# These are the public mirrors, all serving the same planet database.
 OVERPASS_MIRRORS = [
     "https://overpass-api.de/api/interpreter",
     "https://overpass.kumi.systems/api/interpreter",
@@ -1089,11 +954,6 @@ OVERPASS_MIRRORS = [
 ]
 
 
-# Overpass gives each client a small number of concurrent query slots — two,
-# typically — and hands out 429s beyond that. Six workers each asking for a
-# coastline at once would spend most of its budget being refused, so the
-# whole process is held to two in flight regardless of worker count. The
-# other workers are computing while they wait, so this costs almost nothing.
 _OVERPASS_SLOTS = threading.Semaphore(2)
 
 
@@ -1126,7 +986,7 @@ def overpass_query(q, timeout=75, deadline_s=200):
             except urllib.error.HTTPError as e:
                 last = e
                 if e.code not in (429, 502, 503, 504):
-                    raise                  # a real error, not congestion
+                    raise
             except Exception as e:
                 last = e
     raise last or RuntimeError("no Overpass mirror answered in time")
@@ -1154,13 +1014,6 @@ def fetch_osm_context(bbox, cfg, region_id):
 
     Returns (coastline_lines, wrecks_geojson).
     """
-    # Keyed by region id AND bbox. It used to be the id alone, which is
-    # wrong in the one case that matters: MOVING A REGION'S BOX. The
-    # bathymetry cache is keyed by bbox and would refetch correctly, so a
-    # corrected box would silently keep the OLD coastline and wrecks and
-    # look unchanged. costa-blanca is exactly that case — its box had no
-    # coastline at all, and that empty result would have been served back
-    # forever, defeating the fix. A moved box now simply misses.
     bkey = (f"{bbox['lon_min']}_{bbox['lat_min']}_"
             f"{bbox['lon_max']}_{bbox['lat_max']}")
     cf = CACHE / f"coastline_{region_id}_{bkey}.json"
@@ -1191,11 +1044,6 @@ out geom tags;"""
             if len(geom) >= 2:
                 lines.append([[p["lon"], p["lat"]] for p in geom])
             continue
-        # `out geom` gives nodes their lat/lon and ways their full geometry,
-        # so a wreck mapped as a way is averaged to a centre here instead of
-        # needing a second `out center` pass. `or` would treat a coordinate
-        # of exactly 0.0 as missing, which drops everything on the Greenwich
-        # meridian and the equator, so test for None.
         lat, lon = el.get("lat"), el.get("lon")
         if lat is None and geom:
             lat = sum(p["lat"] for p in geom) / len(geom)
@@ -1263,14 +1111,6 @@ def _stitch_rings(segments, tol=1e-7):
     return rings
 
 
-# IUCN management categories that mean "do not take anything here".
-#   1a strict nature reserve, 1b wilderness, 2 national park,
-#   3 natural monument
-# Categories 4, 5 and 6 routinely permit fishing - the Great Barrier Reef
-# Marine Park is a 6 - so masking those would delete most of the usable
-# water on some coasts for no good reason. They are reported by name
-# instead, which is the honest split: mask what is certainly closed, name
-# what might be.
 PROTECT_STRICT = {"1a", "1b", "2", "3"}
 
 
@@ -1355,11 +1195,6 @@ def coastline_mask(lines, lats, lons):
     lat0, lon0 = float(lats[0]), float(lons[0])
     dlat, dlon = float(lats[1] - lats[0]), float(lons[1] - lons[0])
 
-    # Every segment of every way at once. This was a Python loop per segment,
-    # which is fine for the 6,800 vertices Novigrad's coastline has and not
-    # fine for the tens of thousands a fjord or an archipelago brings — the
-    # Bay of Islands alone is 610 ways and 25,757 vertices, and Lofoten is
-    # far worse. Vectorised it is one pass over a handful of arrays.
     xs, ys = [], []
     for line in lines:
         arr = np.asarray(line, dtype=float)
@@ -1375,13 +1210,10 @@ def coastline_mask(lines, lats, lons):
     y0 = np.concatenate([a[:-1] for a in ys])
     y1 = np.concatenate([a[1:] for a in ys])
 
-    # Sample each segment at half-cell steps so a diagonal cannot slip
-    # between two cells and leave a hole for the flood fill to escape.
     steps = np.maximum(1, np.ceil(2 * np.maximum(np.abs(x1 - x0),
                                                  np.abs(y1 - y0))).astype(np.int64))
     counts = steps + 1
 
-    # Chunked so a pathological coastline cannot allocate a gigabyte here.
     CHUNK = 2_000_000
     start = 0
     while start < len(counts):
@@ -1390,7 +1222,7 @@ def coastline_mask(lines, lats, lons):
         while stop < len(counts) and taken + counts[stop] <= CHUNK:
             taken += int(counts[stop])
             stop += 1
-        stop = max(stop, start + 1)              # always make progress
+        stop = max(stop, start + 1)
         c = counts[start:stop]
         total = int(c.sum())
         seg = np.repeat(np.arange(stop - start), c)
@@ -1466,21 +1298,10 @@ def habitat_edge_score(gj, lats, lons, cfg):
                                 lats, lons).astype(float)
     sigma = max(1.0, cfg["habitat"]["edge_width_m"] / cfg["grid_resolution_m"])
     blurred = gaussian_filter(inside, sigma=sigma)
-    # peaks at the boundary (blurred ~0.5), falls off deep inside or outside
     return np.clip(1.0 - np.abs(2.0 * blurred - 1.0), 0.0, 1.0)
 
 
-# --------------------------------------------------------------------------
-# conditions — Open-Meteo, keyless
-# --------------------------------------------------------------------------
-
 MARINE_VARS = [
-    # Wind sea and swell, SEPARATELY, as well as the combined sea state.
-    # They are two different things doing two different jobs: short-period
-    # wind chop is what makes the surface unworkable, long-period swell is
-    # what reaches the bottom and lifts sediment, and they routinely arrive
-    # from different quarters. Collapsing them into one significant height
-    # threw all of that away. Free — same request, more fields.
     "wave_height", "wave_period", "wave_direction",
     "wind_wave_height", "wind_wave_period", "wind_wave_direction",
     "swell_wave_height", "swell_wave_period", "swell_wave_direction",
@@ -1556,7 +1377,6 @@ def fetch_conditions_batch(points, cfg):
             log(f"conditions: batch of {len(chunk)} failed "
                 f"({e.__class__.__name__}) - those regions will fetch singly")
             return {}
-        # A single-location request comes back as an object, not a list.
         m = m if isinstance(m, list) else [m]
         w = w if isinstance(w, list) else [w]
         if len(m) != len(chunk) or len(w) != len(chunk):
@@ -1578,8 +1398,6 @@ def fetch_conditions_batch(points, cfg):
     else:
         from concurrent.futures import ThreadPoolExecutor
         with ThreadPoolExecutor(max_workers=min(8, len(chunks))) as pool:
-            # Merged here on the main thread rather than in the workers, so
-            # nothing depends on dict writes being atomic.
             for got in pool.map(one, chunks):
                 out.update(got)
     log(f"conditions: {len(out)}/{len(points)} region(s) from "
@@ -1651,7 +1469,7 @@ def river_series(lat, lon, times, cfg, region_id):
         return None
     base = float(np.nanmedian(vals))
     if not np.isfinite(base) or base <= 0.01:
-        return None                       # no meaningful river at this point
+        return None
 
     ratio = np.clip(vals / base, 0.0, None)
     by_date = {d: r for d, r in zip(dates, ratio) if np.isfinite(r)}
@@ -1674,9 +1492,8 @@ def moon_illumination(times_local, tz_offset_s):
     out = []
     for t in times_local:
         u = dt.datetime.fromisoformat(t) - dt.timedelta(seconds=tz_offset_s)
-        # Days since a known new moon: 2000-01-06 18:14 UTC.
         d = (u - dt.datetime(2000, 1, 6, 18, 14)).total_seconds() / 86400.0
-        phase = (d % 29.530588853) / 29.530588853        # 0 new, 0.5 full
+        phase = (d % 29.530588853) / 29.530588853
         out.append(0.5 * (1.0 - math.cos(2 * math.pi * phase)))
     return np.array(out)
 
@@ -1745,9 +1562,6 @@ def classify_wind(dir_deg, speed_kmh, gust_kmh, cfg):
     """
     regs = cfg.get("wind_regimes") or {}
     if not regs:
-        # bora, jugo and maestral mean nothing in Hawaii. With no named set the
-        # wind still counts through fetch and workability, it just is not
-        # given a local name or a clarity multiplier.
         return {"name": "", "viz_factor": 1.0, "work_factor": 1.0,
                 "gust_ratio": 1.0, "note": ""}
     name, spec = "other", regs.get("other", {})
@@ -1763,8 +1577,6 @@ def classify_wind(dir_deg, speed_kmh, gust_kmh, cfg):
     viz_f = float(spec.get("viz_factor", 1.0))
     work_f = float(spec.get("work_factor", 1.0))
 
-    # Gustiness is the bora signature and it is what makes the surface
-    # unworkable even when mean wind looks fine.
     gust_ratio = 1.0
     if speed_kmh and speed_kmh > 3 and np.isfinite(gust_kmh):
         gust_ratio = float(gust_kmh) / float(speed_kmh)
@@ -1818,8 +1630,6 @@ def bottom_orbital_velocity(height_m, period_s, depth_m):
     k = wave_number(period_s, depth_m)
     hh = max(float(depth_m), 0.5)
     T = np.clip(np.asarray(period_s, dtype=float), 1.0, 25.0)
-    # sinh overflows for short waves in deep water; those are exactly the
-    # cases where the bed feels nothing, so clamp and let it go to zero.
     sinh = np.sinh(np.minimum(k * hh, 50.0))
     return math.pi * H / (T * np.maximum(sinh, 1e-9))
 
@@ -1860,9 +1670,6 @@ def stirring_series(h, cfg, depth_m):
         b = ub_swell if ub_swell is not None else 0.0
         ub = np.sqrt(np.square(a) + np.square(b))
 
-    # Energetics: suspended load goes roughly as the cube of the near-bed
-    # velocity, the same shape the old Hs^3 term had — but of the right
-    # quantity this time.
     ref = float(c.get("orbital_ref_ms", 0.35))
     p = float(c.get("orbital_exponent", 3.0))
     return norm(ub ** p, 0.0, ref ** p)
@@ -1876,7 +1683,7 @@ def decay_memory(x, tau_h):
     for i, v in enumerate(np.asarray(x, dtype=float)):
         acc = acc * k + v
         out[i] = acc
-    return out * (1.0 - k)       # normalised so a constant input -> that value
+    return out * (1.0 - k)
 
 
 def s2_baseline_shift(region_id, cfg):
@@ -1921,8 +1728,6 @@ def s2_baseline_shift(region_id, cfg):
             d = json.loads(obs.read_text(encoding="utf-8"))
             med = float(d["turbidity_relative_fnu"]["median"])
             when = str(d.get("scene_datetime") or "")
-            # Keyed by scene, so re-running the model does not re-count the
-            # same satellite pass and drag the reference toward it.
             if when and not any(e.get("scene") == when for e in hist):
                 hist.append({"scene": when, "median": med})
                 hist = sorted(hist, key=lambda e: e["scene"])[-40:]
@@ -1938,7 +1743,7 @@ def s2_baseline_shift(region_id, cfg):
                      "reading means anything")
 
     meds = sorted(e["median"] for e in hist)
-    ref = meds[len(meds) // 2]                       # this region's own normal
+    ref = meds[len(meds) // 2]
     latest = hist[-1]["median"]
     lim = float(c.get("max_shift", 0.15))
     raw = (latest - ref) * float(c.get("baseline_per_fnu", 0.06))
@@ -1973,45 +1778,6 @@ def visibility_series(h, cfg, depth_m=None, river=None):
     stir = decay_memory(stirring_series(h, cfg, depth_m), c["wave_tau_h"])
     plume = decay_memory(pr, c["rain_tau_h"])
 
-    # Baseline turbidity: what the water carries when NOTHING has happened.
-    #
-    # Without this the model starts from perfectly clear water and only ever
-    # subtracts, so a calm dry day scored turbidity 0.003 and visibility
-    # pinned at viz_max_m - the ceiling - every single time. That is why the
-    # number always looked optimistic: it was not a forecast, it was the
-    # maximum, reported whenever there had been no recent swell or rain.
-    #
-    # Real coastal water is never optically clean. There is always plankton,
-    # always some resuspension from tidal and wind-driven currents, always
-    # river and land input, and on a shallow shelf always fine sediment that
-    # never fully settles. baseline is that floor, 0-1, and it is the single
-    # most region-specific number in this file: a turbid northern Adriatic
-    # shelf and a Cycladic drop-off are not the same water. Override it per
-    # region in regions.json.
-    # stirring_series already returns 0-1, so it needs no second normalise.
-    # Rain responds on a CONCAVE curve, not a straight line.
-    #
-    # decay_memory normalises so that a *constant* input converges to that
-    # input, which means a short sharp downpour never reaches anything near
-    # the reference: 5 mm in an hour peaked at 0.12 against a 1.2 reference,
-    # so it moved visibility by 0.7 m and a 2 mm shower by 0.3 m. Both are
-    # far too forgiving - runoff and the first flush off the land wreck
-    # inshore water long before the total looks impressive.
-    #
-    # Simply lowering the reference fixes the small events and ruins the big
-    # ones: at every setting that made 5 mm bite, a 20 mm storm and a 60 mm
-    # deluge both pinned to the floor and became indistinguishable. An
-    # exponent below 1 lifts the bottom of the range without spending the
-    # top, which is the actual shape of the problem. Measured, 12 m depth:
-    #
-    #                    before            after
-    #   2 mm in 1 h      0.3 m            1.2 m
-    #   5 mm in 1 h      0.7 m            2.0 m
-    #   20 mm over 6 h   2.5 m            4.1 m
-    #   60 mm over 12 h  6.5 m            6.5 m   (still the full range)
-    #
-    # and 24 h after a 20 mm storm it is still 3.1 m down rather than 1.3 m,
-    # which is nearer to how long a coast actually stays dirty.
     rain_term = norm(plume, 0.0, c["rain_ref_mm_per_h"]) ** float(
         c.get("rain_exponent", 1.0))
     turbidity = (float(c.get("baseline", 0.0))
@@ -2020,7 +1786,6 @@ def visibility_series(h, cfg, depth_m=None, river=None):
     if river is not None:
         turbidity = turbidity + float(c.get("river_weight", 0.35)) * river
     viz = np.clip(1.0 - turbidity, 0.0, 1.0)
-    # rough metres, for a number you can actually reason about
     viz_m = c["viz_min_m"] + viz * (c["viz_max_m"] - c["viz_min_m"])
     return viz, viz_m
 
@@ -2030,12 +1795,6 @@ def workability_series(h, cfg):
     hs = np.nan_to_num(h["wave_height"], nan=1.0)
     wind = np.nan_to_num(h["wind_speed_10m"], nan=30.0)
 
-    # A given significant height feels very different depending on period:
-    # short-period wind chop is steep and tiring to work in, long-period
-    # ground swell of the same height is smooth. Scale the height fed to the
-    # comfort test by how its period compares to a reference, rather than
-    # judging height alone. Bounded so a bad/missing reading cannot swing the
-    # result too far — this is a real but secondary effect next to height.
     ref = c.get("period_ref_s", 8.0)
 
     def steepness_scaled(hkey, tkey, fallback_h=None):
@@ -2051,10 +1810,6 @@ def workability_series(h, cfg):
              else np.full_like(H, ref))
         return H * np.clip(ref / np.clip(T, 2.0, 20.0), 0.6, 1.6)
 
-    # Wind sea and swell judged separately, worst one wins. A metre of
-    # 4 s chop and a metre of 12 s swell are not the same day on the
-    # surface, and averaging them into one significant height said they
-    # were. Falls back to the combined sea state where the split is absent.
     chop = steepness_scaled("wind_wave_height", "wind_wave_period")
     swell = steepness_scaled("swell_wave_height", "swell_wave_period")
     if chop is None and swell is None:
@@ -2062,7 +1817,6 @@ def workability_series(h, cfg):
     else:
         parts = [p for p in (chop, swell) if p is not None]
         hs_eff = np.maximum.reduce(parts)
-        # Never claim it is calmer than the combined field says it is.
         combined = steepness_scaled("wave_height", "wave_period", fallback_h=hs)
         if combined is not None:
             hs_eff = np.maximum(hs_eff, 0.8 * combined)
@@ -2070,10 +1824,6 @@ def workability_series(h, cfg):
     sea = 1.0 - norm(hs_eff, c["hs_good_m"], c["hs_bad_m"])
     air = 1.0 - norm(wind, c["wind_good_kmh"], c["wind_bad_kmh"])
 
-    # Current. A knot of drift is a different dive; two is not a dive at
-    # all, and nothing in this model used to say so — ocean_current_velocity
-    # only ever nudged the "movement" reward, so a screaming spring tide
-    # could read as MORE attractive rather than as a reason to stay out.
     cur_bad = float(c.get("current_bad_ms", 0.0) or 0.0)
     if cur_bad > 0 and "ocean_current_velocity" in h:
         cur = np.nan_to_num(h["ocean_current_velocity"], nan=0.0)
@@ -2099,7 +1849,7 @@ def pressure_factor_series(h, cfg):
     win = max(1, int(c.get("trend_window_h", 3)))
     sens = c.get("sensitivity", 0.02)
     cap = c.get("max_swing", 0.08)
-    trend = np.full(p.shape, np.nan)          # hPa/h; negative = falling
+    trend = np.full(p.shape, np.nan)
     if p.size > win:
         trend[win:] = (p[win:] - p[:-win]) / win
     trend = np.nan_to_num(trend, nan=0.0)
@@ -2109,7 +1859,7 @@ def pressure_factor_series(h, cfg):
 def movement_series(h, cfg):
     """Water movement: tide rate of change plus modelled current."""
     lvl = np.nan_to_num(h["sea_level_height_msl"], nan=0.0)
-    rate = np.abs(np.gradient(lvl))          # m per hour
+    rate = np.abs(np.gradient(lvl))
     cur = np.nan_to_num(h["ocean_current_velocity"], nan=0.0)
     c = cfg["movement"]
     return np.clip(0.5 * norm(rate, 0.0, c["tide_rate_ref_m_per_h"])
@@ -2125,7 +1875,6 @@ def daylight_mask(times, daily):
     for r, s in zip(rises, sets):
         ok |= np.array([r <= t <= s for t in ts])
     if not ok.any():
-        # No usable sunrise/sunset coverage — do not silently veto every hour.
         return np.ones(len(times), dtype=bool)
     return ok
 
@@ -2146,7 +1895,7 @@ def best_window(h, daily, viz, work, move, cfg, now_iso, light=None):
     future = np.array([t >= now_iso for t in times])
     if not future.any():
         return None
-    start0 = int(np.argmax(future))   # index of the first future hour
+    start0 = int(np.argmax(future))
 
     win = cfg["conditions"]["window_hours"]
     avail = hourly[start0:]
@@ -2155,8 +1904,6 @@ def best_window(h, daily, viz, work, move, cfg, now_iso, light=None):
     kern = np.ones(win) / win
     rolled = np.convolve(avail, kern, mode="valid")
     if rolled.max() <= 0:
-        # Do not manufacture a night-time "best" window just because the
-        # weather is calm. A zero is useful: no daylight dive window remains.
         return None
     j = int(np.argmax(rolled))
     i = j + start0
@@ -2181,8 +1928,6 @@ def hourly_scores(h, daily, viz, work, move, cfg, light=None):
     ok = work > cfg["workability"]["hard_floor"]
     if light is None:
         light = daylight_mask(h["time"], daily).astype(float)
-    # Light is a quality factor now, not a yes/no: it zeroes the dark hours
-    # and still prefers dawn and dusk over flat midday sun.
     return base * ok * light, ok, light
 
 
@@ -2210,18 +1955,13 @@ def daily_breakdown(h, daily, viz, viz_m, work, move, cfg, now_iso,
     by_date = {}
     for i, t in enumerate(h["time"]):
         if t[:10] < today:
-            continue                       # past days are history, not a plan
+            continue
         by_date.setdefault(t[:10], []).append(i)
 
     days = []
     for date, idx in sorted(by_date.items()):
         hours = []
         for k, i in enumerate(idx):
-            # Is the sun coming back up again later in THIS day? Passing a
-            # flat True here labelled 22:00 "waiting for first light", which
-            # is only true at 04:00. The frontend re-anchors "now" onto one
-            # of these hour records (see reanchorNow() in docs/index.html),
-            # so a wrong answer here becomes the wrong headline all evening.
             more_light = any(float(light[j]) > 0 for j in idx[k + 1:])
             vw, lim, _ = verdict(
                 float(viz[i]), float(viz_m[i]), float(work[i]),
@@ -2249,7 +1989,6 @@ def daily_breakdown(h, daily, viz, viz_m, work, move, cfg, now_iso,
                 "past": h["time"][i] < now_iso,
             })
 
-        # best contiguous block of `win` hours inside this day, entirely future
         best = None
         if len(hours) >= win:
             sums = [(sum(x["score"] for x in hours[j:j + win]) / win, j)
@@ -2322,7 +2061,6 @@ def verdict_limits(cfg):
     floor = float(wc.get("hard_floor", 0.2))
 
     def at_floor(good, bad):
-        # Inverse of work = 1 - norm(x, good, bad) at the hard floor.
         return good + (1.0 - floor) * (bad - good)
 
     cur_bad = float(wc.get("current_bad_ms", 0.0) or 0.0)
@@ -2358,8 +2096,6 @@ def verdict(viz_now, viz_m_now, work_now, sea_now, air_now, cfg,
     viz_local = local_viz(viz_now, cfg)
     day = min(viz_local, work_now)
 
-    # Conditions alone are not a verdict. "Go" at 22:00 is wrong however flat
-    # the sea is, and it contradicted the panel below saying the day was over.
     if light_now <= 0:
         return ("not now",
                 "dark, waiting for first light" if daylight_left
@@ -2379,10 +2115,6 @@ def verdict(viz_now, viz_m_now, work_now, sea_now, air_now, cfg,
     return "poor", limit, day
 
 
-# --------------------------------------------------------------------------
-# scoring and spot extraction
-# --------------------------------------------------------------------------
-
 def trapezoid(x, lo, best_lo, best_hi, hi):
     """1.0 across [best_lo, best_hi], ramping linearly to 0 at lo and hi."""
     x = np.asarray(x, dtype=float)
@@ -2394,21 +2126,16 @@ def trapezoid(x, lo, best_lo, best_hi, hi):
 def load_species(cfg):
     name = cfg.get("species_file")
     if not name:
-        # Deliberate: a region without a validated pack shows structure and
-        # conditions only. Croatian closed seasons in Greek water would be
-        # worse than no species view at all.
         return []
     path = ROOT / name
     if not path.exists():
         log(f"species: {name} not found - running structure only")
         return []
     doc = json.loads(path.read_text(encoding="utf-8"))
-    wanted = cfg.get("species_ids")          # null/absent = all of them
+    wanted = cfg.get("species_ids")
     out = [sp for sp in doc.get("species", [])
            if not wanted or sp["id"] in wanted]
 
-    # Law is per jurisdiction, biology is not. Merge the right pack in here so
-    # the same species file can serve any Mediterranean coast.
     law = load_legal(cfg)
     for sp in out:
         sp["legal"] = dict(law.get("species", {}).get(sp["id"], {}))
@@ -2424,8 +2151,6 @@ def load_legal(cfg):
     Croatian closed season in Greek water is worse than showing nothing.
     """
     cc = (cfg.get("jurisdiction") or "").upper()
-    # Prefer the documented legal/ directory, but accept country packs at the
-    # repository root too. Older exports used the latter layout.
     candidates = [ROOT / "legal" / f"{cc}.json", ROOT / f"{cc}.json"]
     path = next((p for p in candidates if cc and p.exists()), None)
     if path is None:
@@ -2458,22 +2183,12 @@ def fetch_cmems_profile(lat, lon, cfg):
             "- falling back to the thermocline estimate")
         return None
 
-    # Keyed by region as well as by date. It was keyed by date alone, so with
-    # more than one region enabled the SECOND region loaded the FIRST one's
-    # profile from cache — the Adriatic thermocline silently applied to the
-    # Azores, and every region after the first got a temperature at depth
-    # from somewhere else entirely.
     region = cfg.get("region_id", "default")
     cache_file = CACHE / f"cmems_{region}_{dt.date.today().isoformat()}.json"
     if cache_file.exists():
         log("cmems: cache hit for today")
         return json.loads(cache_file.read_text(encoding="utf-8"))
 
-    # The Mediterranean physics product does not cover the Atlantic, Pacific
-    # or Indian oceans, so outside its footprint the request came back empty
-    # and every non-Med region fell back to the Adriatic thermocline guess.
-    # config.json has carried dataset_id_global all along without anything
-    # ever reading it.
     med = (-6.0 <= lon <= 36.5) and (30.0 <= lat <= 46.0)
     dataset = c["dataset_id"] if med else (c.get("dataset_id_global")
                                            or c["dataset_id"])
@@ -2542,7 +2257,6 @@ def legal_status(sp, on_date):
     """
     L = sp.get("legal") or {}
     if not L.get("seasons_researched", True):
-        # No closure data for this country. Say so rather than implying open.
         return {"open": True, "reason": "", "reopens": None, "unknown": True}
     md = f"{on_date.month:02d}-{on_date.day:02d}"
     for w in L.get("closed_seasons", []):
@@ -2565,14 +2279,12 @@ def species_day_factors(sp, sea_temp_c, viz_score, month, cfg=None, profile=None
     """
     t_lo, t_hi = sp["temp_c"]
     tb_lo, tb_hi = sp["temp_best_c"]
-    # Evaluate at the depth the species actually holds, not at the surface.
     d_mid = 0.5 * (sp["depth_best_m"][0] + sp["depth_best_m"][1])
     t_at = temp_at_depth(sea_temp_c, d_mid, month, cfg or {}, profile)
     temp_fit = float(trapezoid(t_at, t_lo, tb_lo, tb_hi, t_hi))
 
     season_fit = 1.0 if month in sp["months"] else 0.0
 
-    # A legal closure is an absolute gate, and it overrides everything else.
     law = legal_status(sp, on_date or dt.date.today())
     if not law["open"]:
         season_fit = 0.0
@@ -2581,8 +2293,6 @@ def species_day_factors(sp, sea_temp_c, viz_score, month, cfg=None, profile=None
     if pref == "clear":
         viz_fit = float(viz_score)
     elif pref == "murky":
-        # The inversion that matters: bass and orada get easier as the
-        # water colours up, which is exactly when the generic map says stay home.
         viz_fit = float(1.0 - 0.65 * viz_score)
     else:
         viz_fit = float(0.55 + 0.45 * viz_score)
@@ -2630,19 +2340,12 @@ def species_spatial_score(sp, terms, depth_m, land, gates, cfg):
         parts["habitat"] = terms["habitat"]
         denom += 1.0
 
-    # A charted wreck is real structure for any species that holds near
-    # relief at all — the general map already gets this via combine_score's
-    # weighted blend of every term in terms_d, including "wreck" when one is
-    # present. This hand-rolled combination was missing it, so a species map
-    # could stay flat right on top of a wreck the generic map lit up.
     if "wreck" in terms:
         parts["wreck"] = terms["wreck"]
         denom += 1.0
 
     structure = sum(parts.values()) / max(denom, 1e-9)
 
-    # Shelter keeps its configured pull: it is about you being able to hunt,
-    # not about the fish.
     ws = cfg["weights"].get("shelter", 0.3)
     score = (1.0 - ws) * structure + ws * terms["shelter"]
 
@@ -2689,17 +2392,6 @@ def find_spots(score, lats, lons, depth_m, terms, cfg, limit=None):
     size = 2 * sep_cells + 1
     peaks = (score >= maximum_filter(score, size=size)) & (score > cfg["min_spot_score"])
 
-    # Two hard gates that do not depend on the score field being right. A
-    # waypoint on the beach - or in the street behind it - is the most
-    # damaging output this produces, and it stayed reachable whenever the
-    # land mask was wrong: a coarse grid over a sandy shore averages the
-    # first few hundred metres of town to a negative elevation, so those
-    # cells read as water at a good depth and won the local-maximum test.
-    # The overlay was already held back by overlay.land_buffer_m; the spots
-    # were not, so they marched inland on their own.
-    # depth_m is NaN exactly where the land mask is set (see run()), so the
-    # mask is recoverable here without threading another argument through
-    # every call site.
     wet = np.isfinite(depth_m)
     buf_m = float((cfg.get("overlay") or {}).get("land_buffer_m", 200.0))
     if buf_m > 0 and (~wet).any():
@@ -2731,10 +2423,6 @@ def find_spots(score, lats, lons, depth_m, terms, cfg, limit=None):
     return out
 
 
-# --------------------------------------------------------------------------
-# outputs
-# --------------------------------------------------------------------------
-
 def mercator_y(lat_deg):
     lat = np.radians(np.clip(lat_deg, -85.05, 85.05))
     return np.log(np.tan(math.pi / 4 + lat / 2))
@@ -2747,17 +2435,10 @@ def write_overlay_png(score, lats, lons, path, land=None, cfg_overlay=None):
     PNG dropped straight in is therefore shifted north-south by tens of
     metres at 45 N — enough to matter when you are looking for a 40 m reef.
     """
-    # Was placed above the string literal, which demoted the docstring to a
-    # discarded expression and left this function undocumented to help().
     cfg_overlay = cfg_overlay or {}
-    # Supersample. The grid is 100 m, which at dive zoom is a block the size of
-    # a building; drawing it 1:1 with crisp edges is accurate and unreadable.
-    # Interpolating inside the water and masking the land with nearest-
-    # neighbour gives a smooth field with a coastline still exactly where the
-    # data puts it.
     ss = max(1, int(cfg_overlay.get("supersample", 2)))
     ny = len(lats) * ss
-    lons_hi = np.linspace(lons[0], lons[-1], len(lons) * ss)   # target only
+    lons_hi = np.linspace(lons[0], lons[-1], len(lons) * ss)
     y_edges = np.linspace(mercator_y(lats[0]), mercator_y(lats[-1]), ny)
     lat_merc = np.degrees(2 * np.arctan(np.exp(y_edges)) - math.pi / 2)
     pts = None
@@ -2767,30 +2448,11 @@ def write_overlay_png(score, lats, lons, path, land=None, cfg_overlay=None):
     pts = np.stack([gy.ravel(), gx.ravel()], -1)
     resampled = src(pts).reshape(gy.shape)
 
-    # The Mercator resample interpolates linearly, so a cell straddling the
-    # coast picks up a fraction of the neighbouring water score and paints it
-    # onto the shore. At 100 m cells that is a visible smear of colour on land.
-    # Carry the land mask through with NEAREST sampling and force it clear.
     if land is not None:
-        # Pull the visible wash back from any detected shoreline. Chart
-        # bathymetry disagrees with the vector coastline right at the coast
-        # — river mouths, breakwaters, marinas, reclaimed land — and the
-        # disagreement is a DISTANCE, not a cell count, so a fixed one-cell
-        # dilation was ~100 m at Novigrad's 100 m grid and only ~40 m
-        # wherever the grid came out finer. Express the margin in metres and
-        # convert to cells for the grid in hand, so the pull-back is the
-        # same on the ground in every region.
-        #
-        # Cosmetic only: it does not touch the land mask used for scoring or
-        # spot-finding, so real nearshore spots are unaffected.
         buf_m = float(cfg_overlay.get("land_buffer_m", 200.0))
         cell_m = (abs(float(np.gradient(lats).mean())) * 111320.0
                   if np.size(lats) > 1 else 100.0)
         cells = max(1, int(round(buf_m / max(cell_m, 1e-6))))
-        # A disk, not binary_dilation's default cross. Iterating the cross
-        # grows a diamond, which reaches the full radius along the axes but
-        # only 1/sqrt(2) of it diagonally — so a coast running NE-SW, which
-        # most of this one does, got the smallest margin of all.
         yy, xx = np.ogrid[-cells:cells + 1, -cells:cells + 1]
         disk = (yy ** 2 + xx ** 2) <= cells * cells
         land_buffered = (binary_dilation(land, structure=disk)
@@ -2802,29 +2464,19 @@ def write_overlay_png(score, lats, lons, path, land=None, cfg_overlay=None):
 
     rgba = matplotlib.colormaps["viridis"](np.clip(resampled, 0, 1))
 
-    # Paint only water worth looking at. The old ramp made a 0.3 score almost
-    # as visible as a 0.9 one, so every bay read as promising and the chart
-    # underneath disappeared.
     floor = float(cfg_overlay.get("alpha_floor_score", 0.35))
     top = float(cfg_overlay.get("alpha_full_score", 0.80))
     peak = float(cfg_overlay.get("alpha_max", 0.85))
     rgba[..., 3] = np.clip((resampled - floor) / max(top - floor, 1e-6), 0, 1) * peak
     rgba[resampled <= floor, 3] = 0.0
 
-    arr = (np.flipud(rgba) * 255).astype(np.uint8)   # PNG rows run north to south
+    arr = (np.flipud(rgba) * 255).astype(np.uint8)
     try:
-        # Quantise to a palette: visually identical, roughly a quarter the
-        # size. These get committed every day, so it adds up.
         from PIL import Image
         im = Image.fromarray(arr, mode="RGBA")
-        # Fewer palette entries: the field is mostly transparent and the
-        # visible band is narrow, so 32 is indistinguishable and much smaller.
         im.quantize(colors=int(cfg_overlay.get("palette_colors", 32)),
                     method=Image.Quantize.FASTOCTREE).save(path, optimize=True)
     except Exception:
-        # Pillow missing or the quantiser refused. Write the RGBA straight
-        # out; matplotlib.image.imsave is the pyplot-free equivalent and,
-        # unlike plt.imsave, touches no global figure state.
         from matplotlib.image import imsave
         imsave(path, np.flipud(rgba))
     log(f"wrote {path}")
@@ -2861,28 +2513,21 @@ def write_gpx(spots, path, name):
     log(f"wrote {path}")
 
 
-# --------------------------------------------------------------------------
-# main
-# --------------------------------------------------------------------------
-
 def synthetic_bathymetry(bbox, res_deg):
     """A fake shelf with a few mounds, so the whole pipeline can be run
     and checked without touching the network."""
     lats = np.arange(bbox["lat_min"], bbox["lat_max"], res_deg)
     lons = np.arange(bbox["lon_min"], bbox["lon_max"], res_deg)
     gy, gx = np.meshgrid(lats, lons, indexing="ij")
-    # Sea to the WEST, land to the east, matching this coast - so the
-    # sea-connectivity check is actually exercised by --selftest.
     shore = bbox["lon_min"] + 0.60 * (bbox["lon_max"] - bbox["lon_min"])
-    elev = (gx - shore) * 260.0             # negative (deeper) to the west
+    elev = (gx - shore) * 260.0
     elev += 4.0 * np.sin(gy * 900) * np.cos(gx * 700)
     rng = np.random.default_rng(7)
-    # an inland valley the connectivity check should discard
     inland = ((gy > bbox["lat_min"] + 0.45 * (bbox["lat_max"] - bbox["lat_min"])) &
               (gy < bbox["lat_min"] + 0.52 * (bbox["lat_max"] - bbox["lat_min"])) &
               (gx > shore))
     elev[inland] = -6.0
-    for _ in range(6):                       # tegnue-like mounds
+    for _ in range(6):
         cy = rng.uniform(bbox["lat_min"], bbox["lat_max"])
         cx = rng.uniform(bbox["lon_min"], shore)
         r = np.hypot((gy - cy) * 111.0, (gx - cx) * 78.0)
@@ -2891,10 +2536,6 @@ def synthetic_bathymetry(bbox, res_deg):
 
 
 def run(cfg, selftest=False, out_dir=None, conditions=None):
-    # OUT is a LOCAL, not the module global it used to reassign. Two regions
-    # computed at the same time would otherwise race on it and write each
-    # other's PNGs into the wrong folder — which is the one thing that has to
-    # be true before regions can run in parallel at all.
     OUT = out_dir or (ROOT / "docs" / "data")
     OUT.mkdir(parents=True, exist_ok=True)
     bbox = cfg["bbox"]
@@ -2902,7 +2543,6 @@ def run(cfg, selftest=False, out_dir=None, conditions=None):
     lats, lons = build_target_grid(bbox, cfg["grid_resolution_m"])
     log(f"target grid: {len(lats)} x {len(lons)} at {cfg['grid_resolution_m']} m")
 
-    # ---- bathymetry ----
     if selftest:
         blats, blons, elev = synthetic_bathymetry(bbox, res_deg)
         provider, native = "synthetic", 100.0
@@ -2912,10 +2552,6 @@ def run(cfg, selftest=False, out_dir=None, conditions=None):
         blats, blons, elev, provider, native = fetch_bathymetry(
             bbox, res_deg, key, cfg)
 
-        # Satellite-derived depth, if sdb.py produced one that passed its own
-        # R2 check. It only covers the optically shallow band, so it is laid
-        # OVER the chart grid rather than replacing it - fine detail where the
-        # satellite can see, the original everywhere else.
         sdb_file = CACHE / f"sdb_{cfg.get('region_id','default')}.npz"
         if (cfg.get("bathymetry") or {}).get("use_sdb") and sdb_file.exists():
             z = np.load(sdb_file)
@@ -2930,9 +2566,6 @@ def run(cfg, selftest=False, out_dir=None, conditions=None):
                 f"(R2 {float(z['r2']):.2f}, RMSE {float(z['rmse_m']):.1f} m, "
                 f"scene {str(z['scene'])[:10]}) - native now ~{native:.0f} m")
 
-    # Do not resample far below what the source actually resolves. A 100 m
-    # target grid on a 450 m global tile is fake precision, and it quadruples
-    # the output for no information.
     floor = max(native / float((cfg.get("bathymetry") or {}).get("min_cells_per_native", 1.5)),
                 float((cfg.get("bathymetry") or {}).get("min_grid_resolution_m", 40.0)))
     if cfg["grid_resolution_m"] < floor:
@@ -2954,20 +2587,9 @@ def run(cfg, selftest=False, out_dir=None, conditions=None):
     nodata = ~np.isfinite(elev_g)
     land = nodata | (elev_g >= 0)
     if nodata.any():
-        # Name the provider that was actually used. This said "EMODnet"
-        # unconditionally, so every GMRT and SRTM15+ region in the world
-        # reported a gap in a source it had never queried.
         log(f"bathymetry: {nodata.mean():.0%} of the box has no {provider} data "
             "(raster does not reach the bbox) - treated as unusable, not as land")
 
-    # Intersect with the real coastline before deciding what is sea. Without
-    # it, any land narrower than a cell or two is invisible to the model and
-    # gets scored, painted and contoured as open water.
-    #
-    # Coastline AND wrecks come back from one Overpass request here; the
-    # wrecks are held until the scoring section further down. Two requests
-    # per region across 55 regions is 110 in a run, and the second of each
-    # pair was reliably rate-limited.
     coast_used = False
     osm_wrecks = None
     if not selftest:
@@ -2987,11 +2609,6 @@ def run(cfg, selftest=False, out_dir=None, conditions=None):
             if lines:
                 blocked = coastline_mask(lines, lats, lons)
                 land_c = open_sea_mask(land | blocked, cfg)
-                # Overpass clips ways at the bbox, so a coastline can arrive
-                # with an open end. A hole lets the fill leak and we are no
-                # worse off than before; but on a mostly-enclosed box the
-                # fill can instead be strangled to a puddle. Refuse the mask
-                # rather than turn the whole region to land.
                 if (~land_c).mean() > 0.2 * (~land).mean():
                     land, coast_used = land_c, True
                     log(f"coastline: {len(lines)} OSM way(s) applied; "
@@ -3017,7 +2634,6 @@ def run(cfg, selftest=False, out_dir=None, conditions=None):
     log(f"water covers {water_frac:.0%} of the box; "
         f"depth {np.nanmin(depth_m):.1f}-{np.nanmax(depth_m):.1f} m")
 
-    # ---- conditions ----
     clat = 0.5 * (bbox["lat_min"] + bbox["lat_max"])
     clon = 0.5 * (bbox["lon_min"] + bbox["lon_max"])
     if selftest:
@@ -3036,36 +2652,26 @@ def run(cfg, selftest=False, out_dir=None, conditions=None):
         h["wind_direction_10m"] = np.full(n, 130.0)
         h["wind_gusts_10m"] = h["wind_speed_10m"] * 1.4
         h["cloud_cover"] = np.full(n, 20.0)
-        h["pressure_msl"] = 1015.0 - 3.0 * np.linspace(0, 1, n)   # slow, steady fall
+        h["pressure_msl"] = 1015.0 - 3.0 * np.linspace(0, 1, n)
         daily = {"sunrise": [f"2026-07-{28+d}T03:30" for d in range(4)],
                  "sunset": [f"2026-07-{28+d}T18:40" for d in range(4)]}
         now_i = 24
         tz_offset = 0
     else:
         if conditions is not None:
-            # Already fetched, batched with every other region in this run.
             h, daily, tz_offset = conditions
             log("conditions: from the batched fetch")
         else:
             log("conditions: Open-Meteo marine + weather")
             h, daily, tz_offset = fetch_conditions(clat, clon, cfg)
-        # Which hour is "now" here. Computed for BOTH paths: it lived inside
-        # the single-fetch branch, so the batched one reached the next line
-        # with now_i unbound and every region failed.
-        # The API returns local wall-clock times, so compare against local now.
         now = (dt.datetime.now(dt.timezone.utc) + dt.timedelta(seconds=tz_offset)
                ).replace(minute=0, second=0, microsecond=0, tzinfo=None)
         now_i = int(np.argmin([abs((dt.datetime.fromisoformat(t) - now).total_seconds())
                                for t in h["time"]]))
 
-    # River discharge, if this coast has a river worth knowing about. The
-    # rainfall term only sees weather that fell HERE.
     river = None if selftest else river_series(
         clat, clon, h["time"], cfg, cfg.get("region_id", "default"))
 
-    # Visibility is now evaluated at the depth actually hunted, because the
-    # near-bed orbital velocity that lifts sediment depends on it. A 5 m
-    # spot and a 22 m spot part company completely in groundswell.
     best_band = (cfg.get("depth") or {}).get("best_m") or [4.0, 12.0]
     viz_depth = 0.5 * (float(best_band[0]) + float(best_band[1]))
     viz, viz_m = visibility_series(h, cfg, viz_depth, river)
@@ -3073,8 +2679,6 @@ def run(cfg, selftest=False, out_dir=None, conditions=None):
     move = movement_series(h, cfg)
     now_iso = h["time"][now_i]
 
-    # Named wind regimes: bora, jugo, maestral do different things to the
-    # water and to whether you can work in it.
     lvl = np.nan_to_num(h["sea_level_height_msl"], nan=0.0)
     tide_range = float(np.nanmax(lvl) - np.nanmin(lvl)) if lvl.size else 0.0
     macrotidal = tide_range > float((cfg.get("movement") or {}).get(
@@ -3084,25 +2688,10 @@ def run(cfg, selftest=False, out_dir=None, conditions=None):
             "term and Open-Meteo's 8 km tide model are not adequate here; treat "
             "timing as unreliable and use a real tide table.")
 
-    # ---- observed, reported, deliberately NOT scored --------------------
-    #
-    # Each of these is real, cheap and plausibly useful, and each would need
-    # a weight this model has no way to justify yet: the existing weights are
-    # already guesses and calibrate.py has nothing to fit against. Adding
-    # unfitted terms to an unfitted model does not make it more accurate, it
-    # makes it more confident-looking, which is the failure this repo has
-    # been careful about everywhere else. So they go out in the payload, the
-    # app shows them, dive_log.csv can record what happened, and calibration
-    # decides later whether any of them predicts anything.
-
-    # Tide state. The movement term uses |d(level)/dt|, which cannot tell a
-    # flood from an ebb — and plenty of ground only fishes on one of them.
     rate_signed = np.gradient(lvl)
     tide_state = np.where(rate_signed > 0.01, "flood",
                           np.where(rate_signed < -0.01, "ebb", "slack"))
 
-    # Sea temperature trend over 24 h. A three-degree drop shuts a coast
-    # down for days and the absolute value alone never shows it.
     sst = np.nan_to_num(h["sea_surface_temperature"],
                         nan=float(np.nanmedian(h["sea_surface_temperature"]))
                         if np.any(np.isfinite(h["sea_surface_temperature"])) else 20.0)
@@ -3110,9 +2699,6 @@ def run(cfg, selftest=False, out_dir=None, conditions=None):
     if sst.size > 24:
         sst_trend[24:] = sst[24:] - sst[:-24]
 
-    # Moon. Spring and neap are already implicit in the sea-level series, so
-    # this is here for the nocturnal-feeding argument, which is folklore
-    # with a real mechanism behind it and no evidence in this dataset.
     moon = moon_illumination(h["time"], tz_offset)
 
     regimes, viz_f, work_f = wind_regime_series(h, cfg)
@@ -3121,27 +2707,15 @@ def run(cfg, selftest=False, out_dir=None, conditions=None):
     viz_m = vc["viz_min_m"] + viz * (vc["viz_max_m"] - vc["viz_min_m"])
     work = np.clip(work * work_f, 0.0, 1.0)
 
-    # A fitted correction from calibrate.py --fit-viz, if one exists. Written
-    # only when the model actually tracks reality, so its presence means the
-    # visibility number has been checked against real dives. Applied last,
-    # to the final viz_m (after the wind-regime adjustment above) — that is
-    # the number calibrate.py was actually fitted against, since it is the
-    # one that reaches the log and the app. Correcting the pre-wind-regime
-    # value here would just get overwritten by the recompute above and the
-    # fit would silently have no effect.
     vzc = load_fitted().get("visibility_correction")
     if vzc:
         viz_m = np.clip(vzc["scale"] * viz_m + vzc["offset"], 0.3, 40.0)
-        # No numbers in the log: Actions logs of a public repository are
-        # public, and these are the fitted values this change keeps private.
         log("visibility: applying the privately fitted correction")
 
     elev = solar_elevation_deg(h["time"], clat, clon, tz_offset)
     light = light_quality(elev, cfg, h.get("cloud_cover"))
 
     today_str = now_iso[:10]
-    # Sun only — see verdict(). Whether any of that light is workable is a
-    # different question and gets its own answer.
     light_left = any(light[i] > 0
                      and h["time"][i] >= now_iso and h["time"][i][:10] == today_str
                      for i in range(len(h["time"])))
@@ -3154,7 +2728,6 @@ def run(cfg, selftest=False, out_dir=None, conditions=None):
                            light, regimes, sea_ok, air_ok)
     log(f"verdict: {word} (limited by {limiter}), viz ~{viz_m[now_i]:.0f} m")
 
-    # ---- spatial terms ----
     relief_s, slope_s, relief_raw, slope_raw = structure_terms(
         depth_m, land, lats, lons, cfg)
 
@@ -3173,7 +2746,6 @@ def run(cfg, selftest=False, out_dir=None, conditions=None):
         weights_cfg.update(fitted["weights"])
         log("weights: using the privately fitted values")
 
-    # ---- gates: static, so computed once ----
     dfit = depth_fit(depth_m, land, cfg)
     afit = access_fit(lats, lons, cfg)
     clear_min = (cfg.get("water") or {}).get("min_shore_clearance_m", 0)
@@ -3184,11 +2756,6 @@ def run(cfg, selftest=False, out_dir=None, conditions=None):
     excl = (rasterize_polygons(ROOT / excl_name, lats, lons) if excl_name
             else np.zeros((len(lats), len(lons)), dtype=bool))
 
-    # Protected areas from OpenStreetMap, on top of any hand-drawn file.
-    # Strictly protected categories are MASKED; the rest are named so you
-    # can check them yourself, because 4, 5 and 6 routinely permit fishing
-    # and blanking them would delete most of the usable water on some
-    # coasts for no reason.
     protected_named, protected_masked = [], []
     if (cfg.get("protected") or {}).get("enabled", True) and not selftest:
         try:
@@ -3229,7 +2796,6 @@ def run(cfg, selftest=False, out_dir=None, conditions=None):
         log(f"exclusions: {excl.mean():.1%} of the box masked out in total")
     gates = [afit, cfit, (~excl).astype(float)]
 
-    # Already fetched, in the same Overpass request as the coastline.
     wrecks_gj, wrecks = None, None
     if (cfg.get("wrecks") or {}).get("enabled", True) and osm_wrecks is not None:
         try:
@@ -3245,11 +2811,6 @@ def run(cfg, selftest=False, out_dir=None, conditions=None):
             log(f"wrecks: could not be scored ({e.__class__.__name__}) - continuing without")
 
     habitat = None
-    # EUSeaMap is a European product, so there is no point asking for a
-    # Hawaiian or Indonesian box: it would be 200-odd WFS calls a run that
-    # can only ever come back empty. Ask only inside the footprint that has
-    # an answer, and say plainly elsewhere that substrate is unknown rather
-    # than silently scoring as though it were uniform.
     if cfg["habitat"]["enabled"] and not selftest:
         if inside(bbox, EMODNET_FOOTPRINT):
             try:
@@ -3267,21 +2828,11 @@ def run(cfg, selftest=False, out_dir=None, conditions=None):
     species_defs = load_species(cfg)
     sp_cap = cfg.get("species_top_spots", 12)
 
-    # ---- one map per forecast day ----
-    # Only shelter varies with the day, but it varies a lot: it is driven by
-    # wind direction, so a jugo day and a bora day put the good water in
-    # completely different places. Relief, slope and the gates are static.
     for di, day in enumerate(days):
         ri = representative_hour(day, h["time"])
         wind_d = float(h["wind_direction_10m"][ri])
         if not np.isfinite(wind_d):
             wind_d = 0.0
-        # The SWELL direction, not the combined one. combined_shelter exists
-        # precisely for "a light onshore breeze with an old swell still
-        # running in from a different quarter", and feeding it the combined
-        # wave direction — which is dominated by whichever component is
-        # bigger — meant that on the days the split mattered most, both rays
-        # were traced from roughly the same bearing.
         swell_d = None
         for key in ("swell_wave_direction", "wave_direction"):
             if key in h and np.isfinite(h[key][ri]):
@@ -3298,12 +2849,6 @@ def run(cfg, selftest=False, out_dir=None, conditions=None):
 
         score_d = combine_score(terms_d, w_d, gates)
         score_d[land] = 0.0
-        # A region flagged as banned publishes NO waypoints. Handing someone
-        # thirty numbered coordinates on a coast where spearfishing is
-        # prohibited is the most damaging thing this can do, and a warning
-        # banner above a list of marks is not a deterrent - the marks are
-        # what gets used. The conditions and the structure map still run,
-        # because knowing what the sea is doing is not itself a problem.
         spots_d = ([] if cfg.get("spearfishing") == "banned"
                    else find_spots(score_d, lats, lons, depth_m, terms_d, cfg))
         write_overlay_png(score_d, lats, lons, OUT / f"score_d{di}.png", land,
@@ -3317,14 +2862,6 @@ def run(cfg, selftest=False, out_dir=None, conditions=None):
         month_d = int(day["date"][5:7])
         date_d = dt.date.fromisoformat(day["date"])
 
-        # Per-species MAPS are the whole output budget: three days times
-        # eight species is 24 PNGs and 24 GPX files per region per run, on
-        # top of the three general ones. Scores, spots and legal status
-        # still come out for every day - those are a few kilobytes of JSON -
-        # but the rasters can be limited to the first N days. The app falls
-        # back to day 0's map for later days and says so (see selectTarget()
-        # in docs/index.html), which is a small honesty cost for roughly a
-        # 60% cut in artifact size and write time.
         write_species_maps = di < int(cfg.get("species_maps_days", 3))
 
         sp_out = []
@@ -3365,9 +2902,6 @@ def run(cfg, selftest=False, out_dir=None, conditions=None):
         log(f"day {day['date']} (judged at {h['time'][ri][11:16]}, wind {wind_d:.0f} deg): "
             + ", ".join(f"{x['name_en']} {x['today']:.2f}" for x in sp_out[:3]))
 
-    # Say plainly whether the days actually differ. Only shelter varies, and it
-    # is wind-driven - so if the wind holds, identical maps are the correct
-    # answer, not a broken one. Without this you cannot tell the two apart.
     if len(day_scores) > 1:
         water = ~land
         for i in range(1, len(day_scores)):
@@ -3376,7 +2910,6 @@ def run(cfg, selftest=False, out_dir=None, conditions=None):
             log(f"map day {i} vs day 0: mean score change {d_abs:.4f} - {same} "
                 f"(wind {days[0]['wind_from_deg']}deg -> {days[i]['wind_from_deg']}deg)")
 
-    # today's maps are also the default ones the page loads first
     import shutil
     for src, dst in [("score_d0.png", "score.png"), ("spots_d0.gpx", "spots.gpx")]:
         if (OUT / src).exists():
@@ -3412,10 +2945,6 @@ def run(cfg, selftest=False, out_dir=None, conditions=None):
         "has_species": bool(cfg.get("species_file")),
         "legal_pack": load_legal(cfg),
         "has_exclusions": bool(cfg.get("exclusions_file")) or bool(protected_masked),
-        # Protected areas, split into what was masked and what was only
-        # found. Absence of a mask is NOT evidence there is no reserve:
-        # OSM's marine coverage is incomplete and the authoritative source
-        # (WDPA) needs an API token.
         "spearfishing": cfg.get("spearfishing"),
         "spearfishing_note": cfg.get("spearfishing_note"),
         "protected_masked": protected_masked,
@@ -3436,7 +2965,6 @@ def run(cfg, selftest=False, out_dir=None, conditions=None):
                                  if "ocean_current_direction" in h
                                  and np.isfinite(h["ocean_current_direction"][now_i])
                                  else None),
-            # Observed and reported, not scored — see the note in run().
             "tide_state": str(tide_state[now_i]),
             "sst_trend_24h_c": round(float(sst_trend[now_i]), 2),
             "moon_illumination": round(float(moon[now_i]), 2),
@@ -3459,10 +2987,6 @@ def run(cfg, selftest=False, out_dir=None, conditions=None):
         "best_window": window,
         "days": days,
         "utc_offset_seconds": tz_offset,
-        # The footer prints these, and latest.json is public. Publishing the
-        # fitted values here would hand out exactly what weights.json being
-        # private is meant to protect, so the file carries the baseline from
-        # config.json and a flag saying the maps were computed with tuned ones.
         "weights": dict(cfg["weights"]),
         "weights_tuned": weights_tuned,
         "verdict_limits": verdict_limits(cfg),
@@ -3486,17 +3010,10 @@ def run(cfg, selftest=False, out_dir=None, conditions=None):
         "sea_temp_now_c": round(sea_temp, 1),
         "tide_range_m": round(tide_range, 2),
         "macrotidal": macrotidal,
-        # The depth the visibility number is quoted FOR. Clarity is now
-        # depth-dependent, so a single figure without one is meaningless.
         "visibility_depth_m": round(viz_depth, 1),
         "river_influenced": river is not None,
         "species_top_spots": sp_cap,
-        # How many days actually have a per-species raster on disk. The app
-        # reads this instead of discovering the 404 the hard way.
         "species_maps_days": int(cfg.get("species_maps_days", 3)),
-        # A flag only. The fitted scale/offset/r used to be published here
-        # too, which put the private calibration in a public file; nothing
-        # in the app read them, so they are simply not written.
         "visibility_calibrated": bool(vzc),
         "temp_source": ("Copernicus Marine measured profile" if profile
                         else "estimated from SST + seasonal thermocline"),
@@ -3548,9 +3065,6 @@ def main():
                     help="run the whole pipeline on synthetic data, no network")
     args = ap.parse_args()
 
-    # Anchored here rather than at the region loop so the budget covers the
-    # whole process - installing, loading, and the batched conditions fetch
-    # all happen on the same clock the CI runner is counting.
     deadline = (time.monotonic() + args.max_minutes * 60
                 if args.max_minutes > 0 else None)
 
@@ -3600,12 +3114,8 @@ def main():
         + ", ".join(r["id"] for r in chosen[:12])
         + (f" … and {len(chosen) - 12} more" if len(chosen) > 12 else ""))
 
-    # First, before anything can go wrong: the point model's constants.
     write_model(base, regions)
 
-    # Conditions for every chosen region, in a handful of requests rather
-    # than two per region. Any region missing from the result simply fetches
-    # its own inside run(), so a partial batch costs nothing but calls.
     CONDITIONS = {}
     if not args.selftest:
         pts = [(r["id"],
@@ -3618,26 +3128,12 @@ def main():
             log(f"conditions: batching unavailable ({e.__class__.__name__}) - "
                 "every region will fetch its own")
 
-    # index.json is what the app reads to know which coasts exist, and it
-    # used to be written only after every region had finished. A run that
-    # was killed — a workflow timeout, a cancelled job — therefore threw away
-    # every region it had already computed, however many hours in it was.
-    # With a full cold catalogue taking hours that is not a theoretical
-    # risk, so the catalogue is rewritten each time a region lands. It is a
-    # few tens of kB; writing it 264 times costs nothing next to losing the
-    # lot. Partial output is a perfectly good site — it just has fewer
-    # coasts on it.
     idx_path = ROOT / "docs" / "data" / "index.json"
     idx_path.parent.mkdir(parents=True, exist_ok=True)
     idx_lock = threading.Lock()
 
     def write_index(entries, failures, done=False):
         if not entries and not failures:
-            # Nothing has been computed. On a resumed run docs/data still
-            # holds the PREVIOUS catalogue, restored from the cache, and
-            # replacing it with an empty one would blank a working site — so
-            # a run that spends its whole budget before starting anything
-            # leaves the last good index exactly where it is.
             return
         payload = {
             "schema_version": 18,
@@ -3647,15 +3143,6 @@ def main():
             "regions": entries,
             "failed": failures,
         }
-        # Atomic, so a reader never sees a half-written index. The rename
-        # can still fail transiently on Windows when something else has the
-        # file open for a moment - OneDrive syncing it, a virus scanner -
-        # and THAT MUST NOT FAIL THE REGION. This runs inside the per-region
-        # completion handler, so an exception here was being attributed to
-        # whichever region happened to finish at that instant, marking a
-        # perfectly good result as failed. Retry briefly, then give up
-        # quietly: the next region to land writes the catalogue again, and
-        # the final write at the end of the run is the one that matters.
         tmp = idx_path.with_suffix(".json.tmp")
         for attempt in range(4):
             try:
@@ -3674,9 +3161,6 @@ def main():
 
     def compute(r):
         """One region, start to finish. Runs on a worker thread."""
-        # Checked before any work, never in the middle of it. A half-computed
-        # region would leave a partial folder behind and the next run, seeing
-        # a populated cache, would trust it.
         if deadline is not None and time.monotonic() >= deadline:
             raise Deferred()
         log_tag(f"{r['id']}: ")
@@ -3689,13 +3173,6 @@ def main():
             "id": r["id"], "name": r["name"], "country": r.get("country", ""),
             "jurisdiction": r.get("jurisdiction", ""),
             "group": r.get("group", ""),
-            # The region note is deliberately NOT in the index. It is long
-            # prose, the app never renders it from here, and index.json is
-            # downloaded by every visitor before anything else can happen —
-            # at 468 regions the notes alone were 37% of a 540 KB file, on a
-            # page whose whole point is opening on one bar of signal. The
-            # note still travels in each region's own latest.json, which is
-            # fetched only when that coast is actually opened.
             "has_species": bool(r.get("species_file")),
             "species_file": r.get("species_file"),
             "has_exclusions": bool(r.get("exclusions_file")),
@@ -3712,27 +3189,14 @@ def main():
             "verdict": payload["now"]["verdict"],
             "score": payload["now"]["score"],
             "visibility_m": payload["now"]["visibility_m"],
-            # This coast's calm-day turbidity. A tap INSIDE the region runs
-            # the in-browser point model, which only knows the global default
-            # unless told - so every tap in Cornwall was being judged as if
-            # it were 0.35 water rather than the 0.45 it is configured as.
             "viz_baseline": round(float(cfg["visibility"]["baseline"]), 3),
             "wind_from_deg": payload["now"]["wind_from_deg"],
             "best_window": payload.get("best_window"),
             "generated": payload["generated"],
         }
 
-    # Regions in parallel. Almost all of the wall time is spent waiting on
-    # EMODnet, Overpass and Open-Meteo rather than computing, and numpy
-    # releases the GIL for the array work that is left, so threads give
-    # close to a linear speed-up here without any of the pickling that
-    # processes would need. run() writes only into its own region folder and
-    # keeps no global state, which is what makes this safe.
     t_start = time.time()
     jobs = max(1, min(int(args.jobs), len(chosen)))
-    # Keep the catalogue in the order regions.json declares them, not the
-    # order the threads happened to finish in, so the region picker does not
-    # reshuffle itself between runs.
     order = {r["id"]: i for i, r in enumerate(chosen)}
     results = []
 
@@ -3741,7 +3205,6 @@ def main():
         with idx_lock:
             results.append((r, entry, err))
             if err is not None and not isinstance(err, Deferred):
-                # One region failing must not take the others down with it.
                 log(f"{r['id']} FAILED: {err.__class__.__name__}: {err}")
             done = sorted(results, key=lambda t: order[t[0]["id"]])
             try:
@@ -3752,9 +3215,6 @@ def main():
                 log(f"index: interim write failed ({e.__class__.__name__}) "
                     "- the region itself is fine")
             n = len(results)
-            # Deferred regions drain in milliseconds, so once the budget is
-            # spent the counter runs to the end almost instantly. Reporting
-            # every tenth of those would bury the summary.
             skipped = sum(1 for _, _, x in results if isinstance(x, Deferred))
             if not skipped and (n % 10 == 0 or n == len(chosen)):
                 bad = sum(1 for _, _, x in results if x is not None)
@@ -3802,9 +3262,6 @@ def main():
 
     if not index:
         if deferred and not failed:
-            # Out of time before a single region started, which means the
-            # budget is too small for even one cold region rather than
-            # anything being broken. The previous catalogue is untouched.
             log("nothing computed - the budget was spent before any region "
                 "could start. Raise --max-minutes.")
             return
@@ -3815,9 +3272,6 @@ def main():
         + (f", {len(failed)} failed" if failed else "")
         + (f", {len(deferred)} deferred" if deferred else "") + ")")
 
-    # Crawlable pages last, from the same entries the catalogue was built
-    # from. Wrapped: this is discoverability, and nothing about it is worth
-    # failing a run that has already produced a good forecast.
     try:
         write_static_pages(index, base)
     except Exception as e:
@@ -3867,16 +3321,6 @@ border-bottom:1px solid var(--line);padding-bottom:5px}
 """
 
 
-# One short GET, no third-party script, no cookies, no storage. The path is
-# baked in at build time and is always /r/<id>, which is a public region id
-# and carries no location - unlike the app's hash, which can hold the
-# coordinates of somewhere a person is thinking of diving. Do Not Track and
-# Global Privacy Control are honoured, same as the app.
-#
-# The path deliberately MATCHES what the app reports for the same region, so
-# a coast reads as one row rather than two. Search landings are still
-# distinguishable: they arrive with an external referrer and in-app views do
-# not.
 STATIC_BEACON = """
 <script>
 (function(){
@@ -3970,10 +3414,6 @@ def write_static_pages(index, base):
         viz = r.get("visibility_m")
         verdict = r.get("verdict", "")
         win = r.get("best_window") or {}
-        # best_window carries ISO start/end in LOCAL time, not a label. The
-        # first version of this looked for one and quietly printed "see the
-        # map" on all 800 pages, which is the least useful thing a page
-        # about when to dive could say.
         wtxt = "see the map"
         try:
             a = dt.datetime.fromisoformat(win["start"])
@@ -4057,9 +3497,6 @@ every six hours. <a href="../">All coasts</a> &middot;
         (d / "index.html").write_text(page, encoding="utf-8")
         written += 1
 
-    # A hub page. The sitemap alone is enough for the big engines, but an
-    # ordinary page of links is what makes the set crawlable by anything
-    # else, and it is genuinely useful as a plain list of every coast.
     by_country = {}
     for r in index:
         by_country.setdefault(r.get("country") or "Elsewhere", []).append(r)
@@ -4127,30 +3564,15 @@ def write_model(base, regions):
     through should still leave it in place rather than take the whole
     anywhere-on-Earth half of the app down with it.
     """
-    # "depth" and "weights" join the model constants: the in-browser point
-    # model needs the working depth band and the term weights to report the
-    # same footer the region maps do, and reading them from here keeps the
-    # two halves from drifting the way duplicated numbers always do.
     model_keys = ("visibility", "workability", "movement", "light",
                   "wind_regimes", "gust", "day_weights", "verdict",
                   "conditions", "thermocline", "shelter", "pressure",
                   "depth", "weights")
     model = {k: base.get(k) for k in model_keys}
 
-    # POINT MODE NEEDS THESE TOO. They used to live only in a region's
-    # latest.json, so the Log a dive button worked on a region and silently
-    # refused everywhere else - and point mode is the DEFAULT view, so for
-    # most visitors it never worked at all. model.json is the one file point
-    # mode always loads, so they belong here.
     model["dive_relay_url"] = base.get("dive_relay_url")
     model["repo_issue_url"] = base.get("repo_issue_url")
 
-    # Every species pack in the repository, not just the ones a region
-    # happens to declare. The ocean-basin fallback in biomeSpeciesFile()
-    # (docs/index.html) can name a pack no enabled region uses, and a pack
-    # that is named but not bundled fails silently as "no species data for
-    # this point" — which is indistinguishable, from the map, from genuinely
-    # having no match. Globbing means adding a biome rule is a one-file edit.
     species_filenames = {p.name for p in ROOT.glob("species*.json")}
     species_filenames |= {r.get("species_file") for r in regions
                           if r.get("species_file")}

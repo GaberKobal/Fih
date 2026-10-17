@@ -2,23 +2,6 @@ name: Update dive forecast
 
 on:
   schedule:
-    # Every 6 hours, FOUR runs a day. Offset off the hour because scheduled
-    # workflows queue behind everyone else's on the hour and get delayed.
-    #
-    # Four, not six, because of how Open-Meteo actually counts calls. Batching
-    # 100 locations into one HTTP request does not make it one billable call:
-    # their pricing page counts LOCATIONS, and bills fractionally above 10
-    # variables. MARINE_VARS is 13, so a run of 800 regions costs
-    # 800 x 1.3 (marine) + 800 x 1.0 (weather) = about 1,840 calls, not 16.
-    # Six runs a day was ~11,000 against a 10,000/day free ceiling - over it.
-    # Four runs is ~7,400, comfortably inside.
-    #
-    # It costs almost nothing in freshness. The app re-anchors "now"
-    # to the real clock from the hourly series in the file it already has
-    # (reanchorNow() in docs/index.html), so a several-hour-old file still
-    # reports the CURRENT hour correctly — staleness was never the problem
-    # this solves. What a fresh run actually buys is a newer upstream model
-    # run and a forecast horizon that reaches further out.
     - cron: "40 1,7,13,19 * * *"
   workflow_dispatch:
     inputs:
@@ -46,17 +29,11 @@ on:
       - "docs/structure.js"
       - "docs/sw.js"
 
-# Pages is published from a build artifact rather than committed files. With
-# several regions the output is a few MB a day, which would bloat the repo
-# permanently; this way the site updates and git history stays clean.
 permissions:
   contents: read
   pages: write
   id-token: write
 
-# A queued forecast is a stale forecast, and two runs racing collide on the
-# Pages deployment API ("due to in progress deployment"). Let the newer run
-# supersede the older one rather than wait behind it.
 concurrency:
   group: pages
   cancel-in-progress: true
@@ -64,42 +41,12 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    # 360 minutes is the hard ceiling for a GitHub-hosted job, so this is as
-    # high as it goes. A region that has never been computed downloads its
-    # bathymetry and coastline first: ~32 s at 6 workers against ~2.5 s once
-    # cached, which puts a cold run of all 800 at roughly 7 hours. It does
-    # not fit, and no timeout setting can make it fit.
-    #
-    # What matters far more than the number is NOT REACHING IT. This timeout
-    # kills the job, and a killed job does not reliably run its post steps —
-    # which is where actions/cache SAVES. Overrunning would therefore throw
-    # away the several hours of bathymetry the run had just downloaded and
-    # leave the next run just as cold. That is the real cost, not the lost
-    # minutes.
-    #
-    # So FISH_MAX_MINUTES below stops the model cleanly, well short of this,
-    # and this value is only the backstop for something genuinely wedged.
     timeout-minutes: 360
     steps:
       - uses: actions/checkout@v4
         with:
-          # Needed to diff against github.event.before and tell a
-          # frontend-only push from one that changes the model.
           fetch-depth: 0
 
-      # The fitted weights are the proprietary part of this project, so they
-      # live in a PRIVATE repository and never in this public one. This reads
-      # them in at build time.
-      #
-      # Optional by design: with no token, or an expired one, the build
-      # carries on with the public defaults in config.json and says so. A
-      # missing fit must never take the site down.
-      #
-      # The token is a SEPARATE fine-grained PAT with Contents: READ-ONLY on
-      # that one repository. Do not reuse the dive-log relay's token - that
-      # one can write, and a public repository's workflows should not hold it.
-      # The checkout is sparse, so the dive log itself is never downloaded to
-      # the runner, only the weights files.
       - name: Is a private repository configured?
         id: pvt
         env:
@@ -158,45 +105,15 @@ jobs:
             echo "no CMEMS credentials - skipping (model will use the estimate)"
           fi
 
-      # Bathymetry, coastlines and wrecks never change, so they are fetched
-      # once per region and reused forever. Getting that right is the whole
-      # difference between a run costing 11 minutes and a run costing hours.
-      #
-      # The key is the RUN ID on purpose, not a hash of regions.json.
-      # actions/cache skips the save step entirely when the key hits exactly,
-      # and the key used to be a hash of regions.json + config.json — so
-      # turning a group on through the FISH_REGIONS variable, which by design
-      # changes no file, produced an exact hit: the run downloaded 38 cold
-      # bathymetries, threw them away at the end, and did it again on the
-      # next run, forever. A unique key never hits exactly, so the cache is
-      # always written back and every region stays cold exactly once.
-      #
-      # restore-keys pulls the most recent previous cache. GitHub evicts
-      # least-recently-used entries past 10 GB a repository; at roughly
-      # 1.4 MB a region a full 264-region cache is about 370 MB, so a couple
-      # of weeks of history fits comfortably.
       - name: Restore bathymetry, coastline and wreck cache
         uses: actions/cache@v4
         with:
-          # docs/data rides along on purpose. It is gitignored — it only ever
-          # exists as a build artifact — so without a copy of the last run's
-          # output there is nothing to publish, and every change to the page
-          # had to recompute every enabled region from scratch just to have
-          # a site to deploy. Carrying it here is what lets a frontend-only
-          # push skip the model entirely (see below).
           path: |
             cache
             docs/data
           key: bathy-${{ github.run_id }}
           restore-keys: bathy-
 
-      # A change to index.html does not change the forecast. Work out whether
-      # anything that actually feeds the model moved; if not, publish the
-      # restored output with the new page and skip the run.
-      #
-      # Fails safe in every direction: an unreadable diff, an empty diff, a
-      # first push on a new branch, a missing cache — all fall through to
-      # running the model.
       - name: Decide whether the model needs to run
         id: plan
         run: |
@@ -226,12 +143,6 @@ jobs:
           echo "run_model=$RUN" >> "$GITHUB_OUTPUT"
           echo "→ run_model=$RUN"
 
-      # Which regions run, in order of precedence:
-      #   1. the `regions` input, when the workflow is started by hand
-      #   2. the FISH_REGIONS repository variable (Settings -> Variables),
-      #      which is how the SCHEDULED run gets repointed at a group without
-      #      a commit — set it to e.g. "med-west,adriatic" or "all"
-      #   3. otherwise, whatever has "enabled": true in regions.json
       - name: Run model
         if: steps.plan.outputs.run_model == 'true'
         env:
@@ -239,24 +150,6 @@ jobs:
           COPERNICUSMARINE_SERVICE_PASSWORD: ${{ secrets.COPERNICUSMARINE_SERVICE_PASSWORD }}
           FISH_REGIONS: ${{ github.event.inputs.regions || vars.FISH_REGIONS || '' }}
           FISH_JOBS: ${{ github.event.inputs.jobs || vars.FISH_JOBS || '4' }}
-          # Stop starting regions after this long and exit cleanly.
-          #
-          # 180, not 300, and the binding constraint is NOT the 360-minute
-          # timeout — it is the cron above. Runs are 4 hours apart and
-          # `cancel-in-progress` is on, so any run still working when the
-          # next one fires is killed by its own schedule. A budget over
-          # ~240 minutes guarantees that during a cold build.
-          #
-          # 180 leaves a full hour for everything around the model: cache
-          # restore (~1.4 GB at 800 regions), the artifact upload (334 MB,
-          # 19,200 files, slow), the deploy, and above all the cache save.
-          #
-          # This is what makes a catalogue too big for one run a non-issue.
-          # The model works through regions in regions.json order; already
-          # computed ones cost ~2.5 s because their bathymetry is cached, so
-          # each run gets meaningfully further than the last and a cold 800
-          # converges over a few scheduled runs on its own. Nothing is ever
-          # recomputed and nothing is ever lost.
           FISH_MAX_MINUTES: ${{ vars.FISH_MAX_MINUTES || '180' }}
         run: python fish_finder.py
 
@@ -280,13 +173,6 @@ jobs:
         env:
           CDSE_CLIENT_ID: ${{ secrets.CDSE_CLIENT_ID }}
           CDSE_CLIENT_SECRET: ${{ secrets.CDSE_CLIENT_SECRET }}
-          # How many coasts get looked at per run, least-recently-sampled
-          # first. The reading is RELATIVE, so it does nothing for a region
-          # until that region has s2.min_scenes of its own history - at one
-          # region a week the second coast in the list would never get there.
-          # Be honest about the arithmetic: 8 a week is 416 samples a year,
-          # so this is a feature for a handful of home coasts, not for 800.
-          # Raise it, or drop the Monday-only condition below, to go faster.
           S2_MAX_REGIONS: ${{ vars.S2_MAX_REGIONS || '8' }}
         run: |
           if [ -z "$CDSE_CLIENT_ID" ]; then
@@ -297,11 +183,6 @@ jobs:
             echo "not Monday - skipping (runs weekly, or on a manual run)"
           fi
 
-      # GitHub Pages will not publish a site over 1 GB, and the artifact
-      # upload slows down badly well before that. At roughly 400 KB per
-      # region that is a hard ceiling near 2500 regions and an uncomfortable
-      # one near 1000 — worth seeing in the log while the catalogue grows,
-      # rather than discovering it on the day a deploy starts failing.
       - name: Report output size
         run: |
           du -sh docs/data
