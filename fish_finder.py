@@ -3027,6 +3027,12 @@ def run(cfg, selftest=False, out_dir=None, conditions=None):
     return payload
 
 
+def describe_failure(err):
+    line = " ".join(f"{err.__class__.__name__}: {err}".split())
+    line = re.sub(r"(?i)\b(key|token|password|secret|passwd|apikey)=[^&\s]+", r"\1=***", line)
+    return line[:240]
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[1])
     ap.add_argument("--config", default=str(ROOT / "config.json"))
@@ -3132,7 +3138,7 @@ def main():
     idx_path.parent.mkdir(parents=True, exist_ok=True)
     idx_lock = threading.Lock()
 
-    def write_index(entries, failures, done=False):
+    def write_index(entries, failures, done=False, reasons=None):
         if not entries and not failures:
             return
         payload = {
@@ -3142,6 +3148,7 @@ def main():
             "expected": len(chosen),
             "regions": entries,
             "failed": failures,
+            "failure_reasons": reasons or {},
         }
         tmp = idx_path.with_suffix(".json.tmp")
         for attempt in range(4):
@@ -3210,7 +3217,9 @@ def main():
             try:
                 write_index([e for _, e, x in done if x is None],
                             [rr["id"] for rr, _, x in done
-                             if x is not None and not isinstance(x, Deferred)])
+                             if x is not None and not isinstance(x, Deferred)],
+                            reasons={rr["id"]: describe_failure(x) for rr, _, x in done
+                                     if x is not None and not isinstance(x, Deferred)})
             except Exception as e:
                 log(f"index: interim write failed ({e.__class__.__name__}) "
                     "- the region itself is fine")
@@ -3267,7 +3276,9 @@ def main():
             return
         raise SystemExit("every region failed - nothing written")
 
-    write_index(index, failed, done=not deferred)
+    write_index(index, failed, done=not deferred,
+                reasons={r["id"]: describe_failure(x) for r, _, x in ordered
+                         if x is not None and not isinstance(x, Deferred)})
     log(f"wrote {idx_path} ({len(index)} region(s)"
         + (f", {len(failed)} failed" if failed else "")
         + (f", {len(deferred)} deferred" if deferred else "") + ")")
