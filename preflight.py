@@ -16,11 +16,13 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 FAILURES = []
 WARNINGS = []
+INFO = {}
 
 SCRIPT_RE = re.compile(r"<script\b([^>]*)>(.*?)</script>", re.S | re.I)
 
@@ -44,7 +46,9 @@ console.log(JSON.stringify(out));
 
 def check(label, ok, detail=""):
     print(("PASS  " if ok else "FAIL  ") + label + (f"   {detail}" if detail else ""))
-    if not ok:
+    if ok:
+        INFO["passed"] = INFO.get("passed", 0) + 1
+    else:
         FAILURES.append(label)
 
 
@@ -126,6 +130,7 @@ def check_javascript(files, node):
         print("NOTE  node is not available: JavaScript syntax and parity checks skipped")
         return
     version = sh([node, "--version"]).stdout.strip()
+    INFO["node"] = version
     bad = 0
     count = 0
     for f in files:
@@ -249,14 +254,17 @@ def check_selftest(ff_regions):
     present = [p.name for p in outputs if p.exists()]
     if present:
         print(f"NOTE  selftest skipped: {', '.join(present)} already exist under docs/ and would be overwritten")
+        INFO["selftest"] = "skipped"
         return
     region = ff_regions[0]["id"]
+    started = time.monotonic()
     needed = ["now", "days", "best_window", "weights", "verdict_limits", "series", "depth_range_m", "spots"]
     try:
         run = subprocess.run(
             [sys.executable, "fish_finder.py", "--selftest", "--select", region],
             cwd=ROOT, capture_output=True, text=True, timeout=600,
         )
+        INFO["selftest"] = f"ran on {region} in {time.monotonic() - started:.1f}s"
         if run.returncode != 0:
             tail = (run.stdout + run.stderr).strip().splitlines()[-1:] or [""]
             check(f"selftest runs ({region})", False, tail[0][:140])
@@ -300,13 +308,20 @@ def main():
         check_verdicts(ff, base, regions)
         check_parity(ff, base, regions, node)
         check_selftest(regions)
+    summary = (
+        f"{INFO.get('passed', 0)} checks passed, {len(FAILURES)} failed, "
+        f"{len(WARNINGS)} warning(s), selftest {INFO.get('selftest', 'not run')}, "
+        f"node {INFO.get('node', 'not available')}"
+    )
     print()
     if FAILURES:
         print(f"PRE-FLIGHT FAILED: {len(FAILURES)} check(s)")
         for f in FAILURES:
             print(f"  - {f}")
+        print(f"::error title=Pre-flight failed::{summary}. Failed: {'; '.join(FAILURES)}")
         return 1
     print("pre-flight passed" + (f" with {len(WARNINGS)} warning(s)" if WARNINGS else ""))
+    print(f"::notice title=Pre-flight::{summary}")
     return 0
 
 
