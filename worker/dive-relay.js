@@ -75,10 +75,11 @@ const b64decode = (s) => {
 
 function reconcileHeader(content) {
   const want = COLUMNS.join(",");
-  const lines = content.split("\n");
+
+  const lines = content.replace(/\r/g, "").split("\n");
   const have = (lines[0] || "").trim();
-  const rebuilt = () => lines.join(chr10());
-  if (have === want) return { content: lines.join(NL) };
+
+  if (have === want) return { content: lines.join("\n") };
   if (!have) return { content: want + "\n" };
 
   const old = have.split(",");
@@ -94,6 +95,7 @@ function reconcileHeader(content) {
   }
   return { content: lines.join("\n") };
 }
+
 
 async function appendToRepo(env, row) {
   const url = `https://api.github.com/repos/${env.DIVELOG_REPO}/contents/${FILE}`;
