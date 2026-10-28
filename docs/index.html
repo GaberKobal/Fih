@@ -736,6 +736,21 @@ function biomeSpeciesFile(lat, lon){
   return hit ? hit.file : null;
 }
 
+function clearForecast(){
+  DATA = null;
+  $("#region").textContent = "";
+  $("#word").textContent = "…";
+  $("#word").dataset.v = "";
+  $("#verdict").dataset.v = "";
+  for(const id of ["limit","vitals","observed","species","spnote","days","hours","hourdet","sparklabel","spots","stamp","whybody"])
+    $("#" + id).innerHTML = "";
+  $("#window").innerHTML = `<span class="when">…</span>`;
+  $("#spark").innerHTML = "";
+  $("#why").hidden = true;
+  $("#regionguide").hidden = true;
+  for(const id of ["banner","regionwarn","rules","scanbox"]) $("#" + id).style.display = "none";
+}
+
 function clearSpatial(){
   [overlay, contours, wreckLayer].forEach(l => l && map.removeLayer(l));
   overlay = contours = wreckLayer = null;
@@ -801,9 +816,10 @@ async function loadPoint(lat, lonRaw){
     renderAll(d, host);
   }catch(e){
     if(nav !== NAV) return;
+    clearForecast();
     $("#err").style.color = "var(--flag)";
-    const inland = /inland|marine data/i.test(e.message);
-    $("#err").textContent = "Could not get a forecast here: " + e.message
+    const inland =!e.code && /inland|marine data/i.test(e.message);
+    $("#err").textContent = (e.code === "NO_MARINE" ? "No forecast here. " : "Could not get a forecast here: ") + e.message
       + (inland ? " Open-Meteo has no marine data for inland points, so tap"
                 + " closer to open water." : "");
   }
@@ -1145,7 +1161,7 @@ function renderHours(d){
       $("#hourdet").innerHTML =
         `<b>${String(h.hour).padStart(2,"0")}:00</b> · score <b>${h.score.toFixed(2)}</b>
          · viz <b>${h.viz_m}</b> m · swell <b>${h.wave_m}</b> m
-         · wind <b>${h.wind_kmh}</b> km/h · <b>${h.sea_temp_c}</b> °C
+         · wind <b>${h.wind_kmh}</b> km/h${h.sea_temp_c == null ? "" : ` · <b>${h.sea_temp_c}</b> °C`}
          ${h.daylight?"":" · dark"}${h.workable?"":" · unworkable"}${h.past?" · past":""}`;
     });
     host.appendChild(b);
@@ -1711,7 +1727,7 @@ function renderAll(d, meta){
     ["swell",     `${fmt(d.now.wave_height_m,2)} m`],
     ["wind",      `${fmt(d.now.wind_speed_kmh,0)} km/h`],
     ["wind from", `${d.now.wind_from_deg}°`],
-    ["water",     `${fmt(d.now.sea_temp_c,1)} °C`],
+    ["water",     d.now.sea_temp_c == null ? "n/a" : `${fmt(d.now.sea_temp_c,1)} °C`],
     ["current",   `${fmt(d.now.current_ms,2)} m/s`],
   ];
   if(d.now.swell_period_s != null)

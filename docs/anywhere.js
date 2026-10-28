@@ -221,8 +221,8 @@ export async function forecastPoint(lat, lon, cfg, legalPack){
     fetch(`${OM_WEATHER}?${q}&hourly=${wVars.join(",")}&daily=sunrise,sunset`).then(r=>r.json()),
   ]);
   if(m.error || w.error) throw new Error(m.reason || w.reason || "Open-Meteo error");
-  if(!m.hourly || !m.hourly.wave_height)
-    throw new Error("no marine data here, this looks like an inland point");
+  if(!m.hourly || !m.hourly.wave_height || !m.hourly.wave_height.some(v => v != null))
+    throw Object.assign(new Error("Open-Meteo has no wave data for this spot, so it is not open sea: it is a lake, a river or land. This app forecasts the sea, so tap on the coast."), {code: "NO_MARINE"});
 
   const times = m.hourly.time;
   const h = {time: times};
@@ -324,7 +324,7 @@ export async function forecastPoint(lat, lon, cfg, legalPack){
       t: times[i], hour: +times[i].slice(11,13), score: +hourly[i].toFixed(3),
       viz_m: +vizM[i].toFixed(1), wave_m: +(h.wave_height[i]||0).toFixed(2),
       wind_kmh: +(h.wind_speed_10m[i]||0).toFixed(1),
-      sea_temp_c: +(h.sea_surface_temperature[i]||0).toFixed(1),
+      sea_temp_c: isFinite(h.sea_surface_temperature[i]) ? +h.sea_surface_temperature[i].toFixed(1) : null,
       daylight: light[i] > 0, light: +light[i].toFixed(2),
       workable: work[i] > wc.hard_floor, past: times[i] < nowIso,
       wind_regime: regimes[i].name,
@@ -355,7 +355,7 @@ export async function forecastPoint(lat, lon, cfg, legalPack){
             wind_from_deg: Math.round(h.wind_direction_10m[rep] || 0),
             swell_from_deg: isFinite(h.wave_direction[rep])
                             ? Math.round(h.wave_direction[rep]) : null,
-            sea_temp_c: +(h.sea_surface_temperature[rep] || 0).toFixed(1),
+            sea_temp_c: isFinite(h.sea_surface_temperature[rep]) ? +h.sea_surface_temperature[rep].toFixed(1) : null,
             viz_m: +vizM[rep].toFixed(1), species: []};
   });
 
@@ -411,7 +411,7 @@ export async function forecastPoint(lat, lon, cfg, legalPack){
       wave_height_m: +(h.wave_height[nowI]||0).toFixed(2),
       wind_speed_kmh: +(h.wind_speed_10m[nowI]||0).toFixed(1),
       wind_from_deg: Math.round(h.wind_direction_10m[nowI]||0),
-      sea_temp_c: +(h.sea_surface_temperature[nowI]||0).toFixed(1),
+      sea_temp_c: isFinite(h.sea_surface_temperature[nowI]) ? +h.sea_surface_temperature[nowI].toFixed(1) : null,
       current_ms: +(h.ocean_current_velocity[nowI]||0).toFixed(2),
       wind_regime: regimes[nowI].name, wind_regime_note: regimes[nowI].note,
       sun_elevation_deg: +solarElevation([times[nowI]], lat, lon, tz)[0].toFixed(1),

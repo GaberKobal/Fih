@@ -43,6 +43,54 @@ for (const b of JSON.parse(process.argv[3])) {
 console.log(JSON.stringify(out));
 """
 
+POINT_JS = """
+import { pathToFileURL } from "node:url";
+import { readFileSync } from "node:fs";
+const root = process.argv[2];
+const cfg = JSON.parse(readFileSync(root + "/config.json", "utf8"));
+const keys = ["visibility", "workability", "movement", "light", "wind_regimes", "gust", "day_weights", "verdict", "conditions", "thermocline", "shelter", "pressure", "depth", "weights"];
+const model = Object.fromEntries(keys.map((k) => [k, cfg[k]]));
+model.species = [];
+const { forecastPoint } = await import(pathToFileURL(root + "/docs/anywhere.js").href);
+const N = 8 * 24;
+const start = Date.UTC(2026, 0, 1);
+const times = Array.from({ length: N }, (_, i) => new Date(start + i * 3600e3).toISOString().slice(0, 13) + ":00");
+const col = (v) => times.map(() => v);
+function marine(waves, sst) {
+  const p = waves === null ? null : 5;
+  return {
+    utc_offset_seconds: 0,
+    hourly: {
+      time: times, wave_height: col(waves), wave_period: col(p), wave_direction: col(90),
+      wind_wave_height: col(waves), wind_wave_period: col(p), wind_wave_direction: col(90),
+      swell_wave_height: col(waves), swell_wave_period: col(p), swell_wave_direction: col(90),
+      sea_surface_temperature: col(sst), sea_level_height_msl: col(0),
+      ocean_current_velocity: col(null), ocean_current_direction: col(null),
+    },
+  };
+}
+const days = [...new Set(times.map((t) => t.slice(0, 10)))];
+const weather = {
+  utc_offset_seconds: 0,
+  hourly: {
+    time: times, precipitation: col(0), wind_speed_10m: col(8), wind_direction_10m: col(90),
+    wind_gusts_10m: col(10), cloud_cover: col(20), pressure_msl: col(1015),
+  },
+  daily: { time: days, sunrise: days.map((d) => d + "T06:30"), sunset: days.map((d) => d + "T19:30") },
+};
+Date.now = () => Date.UTC(2026, 0, 5, 12, 0);
+async function run(waves, sst) {
+  globalThis.fetch = async (url) => new Response(JSON.stringify(/marine-api/.test(url) ? marine(waves, sst) : weather));
+  try {
+    const d = await forecastPoint(50, 0, model, null);
+    return { ok: true, sea_temp_c: d.now.sea_temp_c, verdict: d.now.verdict };
+  } catch (e) {
+    return { ok: false, code: e.code || null, message: e.message };
+  }
+}
+console.log(JSON.stringify({ noWaves: await run(null, null), noTemp: await run(0.4, null), warm: await run(0.4, 18) }));
+"""
+
 
 def check(label, ok, detail=""):
     print(("PASS  " if ok else "FAIL  ") + label + (f"   {detail}" if detail else ""))
@@ -248,6 +296,35 @@ def check_parity(ff, base, regions, node):
     check("browser and python verdict limits agree", not wrong, f"{len(baselines)} baselines" if not wrong else "; ".join(wrong[:3]))
 
 
+def check_point_model(node):
+    if not node:
+        return
+    with tempfile.TemporaryDirectory() as tmp:
+        script = Path(tmp) / "point.mjs"
+        script.write_text(POINT_JS, encoding="utf-8")
+        run = subprocess.run([node, str(script), str(ROOT)], capture_output=True, text=True)
+    if run.returncode != 0:
+        lines = [l for l in run.stderr.splitlines() if "Error" in l]
+        check("point model runs on synthetic forecasts", False, (lines or ["node failed"])[0][:140])
+        return
+    got = json.loads(run.stdout)
+    check(
+        "a spot with no wave data is refused, not forecast",
+        not got["noWaves"]["ok"] and got["noWaves"]["code"] == "NO_MARINE",
+        json.dumps(got["noWaves"])[:120],
+    )
+    check(
+        "missing water temperature stays missing",
+        got["noTemp"]["ok"] and got["noTemp"]["sea_temp_c"] is None,
+        json.dumps(got["noTemp"]),
+    )
+    check(
+        "a real water temperature passes through",
+        got["warm"]["ok"] and got["warm"]["sea_temp_c"] == 18,
+        json.dumps(got["warm"]),
+    )
+
+
 def check_selftest(ff_regions):
     docs = ROOT / "docs"
     outputs = [docs / "data", docs / "r", docs / "sitemap.xml", docs / "robots.txt"]
@@ -307,6 +384,7 @@ def main():
         regions = ff.load_regions(ROOT / "regions.json")
         check_verdicts(ff, base, regions)
         check_parity(ff, base, regions, node)
+        check_point_model(node)
         check_selftest(regions)
     summary = (
         f"{INFO.get('passed', 0)} checks passed, {len(FAILURES)} failed, "
