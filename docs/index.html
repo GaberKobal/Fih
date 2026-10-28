@@ -687,7 +687,7 @@ mtBreak.addEventListener("change", e => {
   if (mtSaved === null) setTools(!e.matches);
 });
 
-let overlay=null, marks=[], DATA=null, sel=null;
+let overlay=null, marks=[], DATA=null, sel=null, LAKES=[];
 let INDEX=null, REGION=null, contours=null, wreckLayer=null, meMarker=null;
 let MODEL=null, POINT=null, ptMarker=null, REGION_SPECIES=null;
 let STRUCT=null, TERRAIN=null, scanBox=null, WRECKS=null;
@@ -783,6 +783,26 @@ async function loadPoint(lat, lonRaw){
     if(nav !== NAV) return;
     const { forecastPoint } = await import("./anywhere.js");
     if(nav !== NAV) return;
+    const { lakeAtPoint } = await import("./lakes.js");
+    const lakeHit = await lakeAtPoint(lat, lon, MODEL);
+    if(nav !== NAV) return;
+    if(lakeHit){
+      const lakeCfg = {...MODEL, species: [], wind_regimes: null,
+        visibility: {...MODEL.visibility, baseline: lakeHit.lake.baseline},
+        depth: {...MODEL.depth, best_m: (MODEL.lake && MODEL.lake.depth_best_m) || [2, 8]}};
+      const ld = await forecastPoint(lakeHit.lat, lakeHit.lon, lakeCfg, null, lakeHit.lake);
+      if(nav !== NAV) return;
+      ld.region_id = null; ld.local_tuning = true; ld.species_source = "lake";
+      ld.spearfishing = null; ld.spearfishing_note = null;
+      POINT = {lat: lakeHit.lat, lon: lakeHit.lon, lonRaw: lakeHit.lon};
+      ptMarker.setLatLng([lakeHit.lat, lakeHit.lon]);
+      $("#rgname").textContent = ld.region;
+      $("#rgsub").textContent = "lake forecast · tap the map to move · tap here to switch";
+      $("#err").style.display = "none";
+      DATA = ld; sel = null;
+      renderAll(ld, null);
+      return;
+    }
     const host = regionContaining(lat, lon);
     const cfg = {...MODEL};
     const localTuned = !!(host && host.viz_baseline != null);
@@ -1027,8 +1047,9 @@ function selectTarget(id){
     b.setAttribute("aria-pressed", String(b.dataset.id===(id||"")) ));
 
   if(!sp){
-    $("#spnote").textContent =
-      "Structure map: where there is reachable relief and shelter, regardless of species.";
+    $("#spnote").textContent = d.lake
+      ? "Lake forecast: conditions only. There is no species list, structure map or rules data for fresh water."
+      : "Structure map: where there is reachable relief and shelter, regardless of species.";
   }else{
     const L = sp.legal || {};
     const rules = [];
@@ -1160,7 +1181,7 @@ function renderHours(d){
       b.setAttribute("aria-pressed","true");
       $("#hourdet").innerHTML =
         `<b>${String(h.hour).padStart(2,"0")}:00</b> · score <b>${h.score.toFixed(2)}</b>
-         · viz <b>${h.viz_m}</b> m · swell <b>${h.wave_m}</b> m
+         · viz <b>${h.viz_m}</b> m · ${DATA && DATA.lake ? "waves" : "swell"} <b>${h.wave_m}</b> m
          · wind <b>${h.wind_kmh}</b> km/h${h.sea_temp_c == null ? "" : ` · <b>${h.sea_temp_c}</b> °C`}
          ${h.daylight?"":" · dark"}${h.workable?"":" · unworkable"}${h.past?" · past":""}`;
     });
@@ -1223,8 +1244,9 @@ function renderSpecies(d){
   if(!list.length){
     host.style.display="none";
     $("#spnote").textContent =
-      "Structure map: where there is reachable relief and shelter. "
-      + "No species pack for this region.";
+      (d.lake ? "Lake forecast: conditions only. There is no species list, structure map or rules data for fresh water. "
+              : "Structure map: where there is reachable relief and shelter. ")
+      + (d.lake ? "" : "No species pack for this region.");
     renderRegionGuide(d);
     return;
   }
@@ -1329,7 +1351,7 @@ function renderRegions(){
   const search=document.createElement("div");
   search.className="rgsearch";
   search.innerHTML=`<input id="rgfilter" type="search" autocomplete="off"
-      placeholder="Search 800 coasts by name, country or group"
+      placeholder="Search coasts and lakes by name, country or group"
       value="${regionQuery.replace(/"/g,"&quot;")}">`;
   host.appendChild(search);
   const input=search.querySelector("input");
@@ -1408,6 +1430,32 @@ function renderRegions(){
       host.appendChild(b);
     });
   });
+  const lakes = (LAKES || []).filter(l => !q
+    || (l.name || "").toLowerCase().includes(q)
+    || (l.country || "").toLowerCase().includes(q)
+    || "lake".includes(q));
+  if(lakes.length){
+    const g = document.createElement("div");
+    g.className = "grp";
+    g.textContent = "Lakes · conditions live";
+    host.appendChild(g);
+    lakes.forEach(l => {
+      const b = document.createElement("button");
+      b.type = "button"; b.className = "rg";
+      b.setAttribute("aria-current", String(!!(DATA && DATA.lake && DATA.lake.id === l.id)));
+      b.innerHTML = `<span><span class="n">${l.name}</span>
+          <span class="tag">${l.country} · ${Math.round(l.area_km2).toLocaleString()} km²</span></span>
+        <span class="w" style="color:var(--buoy)">lake</span><span class="v"></span>`;
+      b.addEventListener("click", () => {
+        $("#regionpanel").classList.remove("open");
+        $("#regionbar").setAttribute("aria-expanded", "false");
+        REGION = null;
+        map.fitBounds([[l.bbox[0], l.bbox[1]], [l.bbox[2], l.bbox[3]]]);
+        loadPoint(l.centre[0], l.centre[1]);
+      });
+      host.appendChild(b);
+    });
+  }
 }
 
 function toggleRegions(){
@@ -1425,12 +1473,14 @@ async function load(){
       const ri=await fetch("data/index.json",{cache:"no-store"});
       if(!ri.ok) throw new Error("HTTP "+ri.status);
       INDEX=await ri.json();
+      try{ LAKES = (await (await import("./lakes.js")).loadLakeIndex()).lakes || []; }catch(_){ LAKES = []; }
       if(nav !== NAV) return;
     }catch(e){
       $("#err").style.display="block";
       $("#err").textContent="No region index yet. Run the Update dive forecast workflow, then reload.";
       return;
     }
+    renderRegions();
     const want=(location.hash||"").replace("#","");
     if(want.startsWith("@")){
       const [la,lo]=want.slice(1).split(",").map(Number);
@@ -1565,7 +1615,14 @@ function renderContext(d, meta){
   }
 
   const ban = $("#banner");
-  if(d.spearfishing === "banned"){
+  if(d.lake){
+    ban.className = "caution";
+    ban.innerHTML =
+      `<b>Spearfishing in lakes is banned or restricted in many countries.</b> `
+      + `This app has no freshwater rules, so check local law before you take anything. `
+      + `These are conditions for freediving and swimming.`;
+    ban.style.display = "block";
+  }else if(d.spearfishing === "banned"){
     ban.className = "stop";
     ban.innerHTML =
       `<b>Spearfishing is prohibited here.</b> ${d.spearfishing_note || ""}. `
@@ -1596,10 +1653,21 @@ function renderContext(d, meta){
       + `categories 4 to 6 often permit fishing: `
       + `${pn.slice(0,4).map(x=>x.name).join(", ")}`
       + `${pn.length>4?` and ${pn.length-4} more`:""}. Check them yourself.`);
-  if(!d.point)
+  if(!d.point && !d.lake)
     warn.push("Protected areas come from OpenStreetMap, whose marine coverage "
       + "is incomplete. <b>No mask is not evidence that there is no reserve.</b>");
-  if(d.point){
+  if(d.lake){
+    const L = d.lake;
+    warn.push(`<b>${L.name}</b>: about ${Math.round(L.area_km2).toLocaleString()} km², mean depth ${L.mean_depth_m} m, ${Math.round(L.altitude_m).toLocaleString()} m above sea level.`);
+    (L.hazards || []).forEach(x => warn.push(`<b>Hazard:</b> ${x}.`));
+    if(L.ice_now)
+      warn.push("<b>The lake is probably frozen or partly frozen.</b> Ice is estimated from recent air temperature, not observed. Do not go on or under it.");
+    warn.push(`Waves are computed from the wind and the shape of the lake (about ${L.fetch_km} km of open water upwind right now), not measured. `
+            + `Water temperature is estimated from the last year of air temperature and can be several degrees off`
+            + (L.history_days < 100 ? ", and more so now because that history could not be loaded" : "") + `. `
+            + `Visibility uses a typical figure for a ${L.clarity} lake, so treat the metres as a guide.`);
+    warn.push("Lakes have no species list, structure map or rules data here. Protected areas and local access rules are not checked.");
+  }else if(d.point){
     const host = POINT ? regionContaining(POINT.lat, POINT.lon) : null;
     warn.push("Point forecast. Conditions are live for this exact spot; press "
             + "<b>Scan structure</b> on the map to fetch bathymetry and score "
@@ -1648,13 +1716,13 @@ function renderWhy(d){
   box.hidden = false;
   const f = x => (+x).toFixed(1);
   let h = L.local_bar
-    ? `<b>Visibility is judged against this coast.</b> The best a calm, dry day`
+    ? `<b>Visibility is judged against ${d.lake ? "this lake" : "this coast"}.</b> The best a calm, dry day`
       + ` reaches here is about <b>${f(L.viz_best_m)} m</b>, so <b>Go</b> needs about`
       + ` <b>${f(L.viz_go_m)} m</b> and <b>Marginal</b> about <b>${f(L.viz_marginal_m)} m</b>.`
     : `<b>Visibility:</b> Go from about <b>${f(L.viz_go_m)} m</b>, Marginal from`
       + ` <b>${f(L.viz_marginal_m)} m</b> (one fixed bar for every coast).`;
   h += `<br><b>Stay home</b> overrides everything once the sea passes any one of:`
-     + ` swell about <b>${(+L.swell_stay_home_m).toFixed(2)} m</b> (at a ${L.period_ref_s} s period;`
+     + ` ${d.lake ? "waves" : "swell"} about <b>${(+L.swell_stay_home_m).toFixed(2)} m</b> (at a ${L.period_ref_s} s period;`
      + ` short chop counts for more, long swell for less), wind about`
      + ` <b>${L.wind_stay_home_kmh} km/h</b>`
      + (L.current_stay_home_ms != null
@@ -1724,11 +1792,11 @@ function renderAll(d, meta){
   const vizAt = d.visibility_depth_m != null ? ` at ${d.visibility_depth_m} m` : "";
   const vit = [
     ["viz" + vizAt, `${fmt(d.now.visibility_m,1)} m`],
-    ["swell",     `${fmt(d.now.wave_height_m,2)} m`],
+    [d.lake ? "waves" : "swell", `${fmt(d.now.wave_height_m,2)} m`],
     ["wind",      `${fmt(d.now.wind_speed_kmh,0)} km/h`],
     ["wind from", `${d.now.wind_from_deg}°`],
-    ["water",     d.now.sea_temp_c == null ? "n/a" : `${fmt(d.now.sea_temp_c,1)} °C`],
-    ["current",   `${fmt(d.now.current_ms,2)} m/s`],
+    [d.lake ? "water (est.)" : "water", d.now.sea_temp_c == null ? "n/a" : `${d.lake ? "~" : ""}${fmt(d.now.sea_temp_c, d.lake ? 0 : 1)} °C`],
+    ...(d.lake ? [] : [["current", `${fmt(d.now.current_ms,2)} m/s`]]),
   ];
   if(d.now.swell_period_s != null)
     vit.push(["swell period", `${fmt(d.now.swell_period_s,0)} s`]);
@@ -1762,7 +1830,7 @@ function renderAll(d, meta){
   if(!d.point && !overlay) map.fitBounds(L.latLngBounds(d.bounds));
   renderSpecies(d);
   initLog(d);
-  $("#scanbox").style.display = d.point ? "block" : "none";
+  $("#scanbox").style.display = d.point && !d.lake ? "block" : "none";
   if(!d.point){ loadContours(); loadWrecks(); TERRAIN=null; scanBox=null; }
   selectTarget(sel && (d.species||[]).some(x=>x.id===sel) ? sel : null);
 
@@ -1772,7 +1840,7 @@ function renderAll(d, meta){
   const wts = Object.entries(d.weights || {})
     .map(([k,v])=>k+" "+v).join(" · ") || "defaults";
   const bathy = d.bathymetry_native_m == null
-    ? `Bathymetry: ${d.bathymetry_provider || "none"}. Press Scan structure to fetch it`
+    ? (d.lake ? "No bathymetry for lakes" : `Bathymetry: ${d.bathymetry_provider || "none"}. Press Scan structure to fetch it`)
     : `Bathymetry ${d.bathymetry_provider} ~${d.bathymetry_native_m} m`
       + (d.grid_resolution_m != null ? ` · grid ${d.grid_resolution_m} m` : "");
   $("#stamp").innerHTML =

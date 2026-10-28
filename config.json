@@ -104,6 +104,36 @@
   "species_file": "species.json",
   "species_ids": null,
   "species_maps_days": 1,
+  "lake": {
+    "wind_factor": 1.15,
+    "fetch_cap_km": 150,
+    "snap_m": 2500,
+    "past_days": 7,
+    "archive_lag_days": 8,
+    "depth_best_m": [
+      2,
+      8
+    ],
+    "decay_min_hours": 1,
+    "temperature": {
+      "tau_min_days": 4,
+      "tau_per_ln_depth_days": 5,
+      "tau_max_days": 40,
+      "overshoot_c": 1.5,
+      "history_days": 400,
+      "window_days": 365,
+      "min_window_days": 200
+    },
+    "ice": {
+      "freeze_c": 2.0,
+      "stefan": 0.025,
+      "melt_m_per_degree_day": 0.004,
+      "tau_base_days": 4,
+      "tau_per_sqrt_depth_days": 5,
+      "tau_max_days": 150,
+      "min_thickness_m": 0.03
+    }
+  },
   "thermocline": {
     "monthly_drop_c": [
       0,

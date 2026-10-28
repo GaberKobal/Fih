@@ -3578,7 +3578,7 @@ def write_model(base, regions):
     model_keys = ("visibility", "workability", "movement", "light",
                   "wind_regimes", "gust", "day_weights", "verdict",
                   "conditions", "thermocline", "shelter", "pressure",
-                  "depth", "weights")
+                  "depth", "weights", "lake")
     model = {k: base.get(k) for k in model_keys}
 
     model["dive_relay_url"] = base.get("dive_relay_url")

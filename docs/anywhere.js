@@ -204,7 +204,24 @@ export function verdictLimits(cfg){
   return out;
 }
 
-export async function forecastPoint(lat, lon, cfg, legalPack){
+function lakeBlock(lake, meta, nowI){
+  const {rings, ...info} = lake;
+  return {...info, fetch_km: +meta.fetchKm[nowI].toFixed(1), ice_now: !!meta.ice[nowI],
+          waves_computed: true, temperature_estimated: true, history_days: meta.historyDays};
+}
+
+export async function forecastPoint(lat, lon, cfg, legalPack, lake){
+  let cond;
+  if(lake){
+    const { lakeConditions } = await import("./lakes.js");
+    cond = await lakeConditions(lat, lon, cfg, lake);
+  }else{
+    cond = await marineConditions(lat, lon, cfg);
+  }
+  return assemblePoint(lat, lon, cfg, legalPack, lake, cond);
+}
+
+async function marineConditions(lat, lon, cfg){
   const past = (cfg.conditions?.past_days ?? 5), fwd = (cfg.conditions?.forecast_days ?? 3);
   const mVars = ["wave_height","wave_period","wave_direction",
                  "wind_wave_height","wind_wave_period","wind_wave_direction",
@@ -222,7 +239,7 @@ export async function forecastPoint(lat, lon, cfg, legalPack){
   ]);
   if(m.error || w.error) throw new Error(m.reason || w.reason || "Open-Meteo error");
   if(!m.hourly || !m.hourly.wave_height || !m.hourly.wave_height.some(v => v != null))
-    throw Object.assign(new Error("Open-Meteo has no wave data for this spot, so it is not open sea: it is a lake, a river or land. This app forecasts the sea, so tap on the coast."), {code: "NO_MARINE"});
+    throw Object.assign(new Error("Open-Meteo has no wave data for this spot, so it is not open sea: it is a lake, a river or land. This app forecasts the sea and a short list of large lakes, so tap the coast or pick a lake from the list."), {code: "NO_MARINE"});
 
   const times = m.hourly.time;
   const h = {time: times};
@@ -247,7 +264,11 @@ export async function forecastPoint(lat, lon, cfg, legalPack){
   });
 
   const tz = (w.utc_offset_seconds ?? m.utc_offset_seconds ?? 0) | 0;
+  return {h, times, tz, meta: null};
+}
 
+function assemblePoint(lat, lon, cfg, legalPack, lake, cond){
+  const {h, times, tz, meta} = cond;
   const c = cfg.visibility;
   const dBest = cfg.depth?.best_m || [4, 12];
   const vizDepth = 0.5 * (dBest[0] + dBest[1]);
@@ -288,6 +309,7 @@ export async function forecastPoint(lat, lon, cfg, legalPack){
     : 1);
   const work = seaOk.map((s,i) =>
     clamp01(Math.min(s, airOk[i], flowOk[i]) * regimes[i].work));
+  if(meta && meta.ice) meta.ice.forEach((frozen, i) => { if(frozen) work[i] = 0; });
 
   const mc = cfg.movement || {};
   const lvl = h.sea_level_height_msl.map(v => isFinite(v) ? v : 0);
@@ -365,6 +387,7 @@ export async function forecastPoint(lat, lon, cfg, legalPack){
   const dayScore = Math.min(vizLocal(nowI), work[nowI]);
   const lightLeft = times.some((t,i) => i >= nowI && light[i] > 0
                                       && t.slice(0,10) === today);
+  const seaLabel = lake ? "waves" : "sea state";
   let word, limit;
   if(light[nowI] <= 0){
     word = "not now";
@@ -372,12 +395,12 @@ export async function forecastPoint(lat, lon, cfg, legalPack){
                       : "dark, no daylight left today";
   }
   else if(work[nowI] < wc.hard_floor)
-    { word = "stay home"; limit = seaOk[nowI] <= airOk[nowI] ? "sea state" : "wind"; }
+    { word = "stay home"; limit = meta && meta.ice && meta.ice[nowI] ? "ice" : (seaOk[nowI] <= airOk[nowI] ? seaLabel : "wind"); }
   else if(dayScore >= vc.go)      { word = "go"; limit = "nothing limiting"; }
   else {
     word = dayScore >= vc.marginal ? "marginal" : "poor";
     limit = vizLocal(nowI) < work[nowI] ? "visibility"
-          : (seaOk[nowI] <= airOk[nowI] ? "sea state" : "wind");
+          : (seaOk[nowI] <= airOk[nowI] ? seaLabel : "wind");
   }
 
   const speciesOn = (i, dateStr) => {
@@ -401,8 +424,10 @@ export async function forecastPoint(lat, lon, cfg, legalPack){
     weights: cfg.weights || {},
     weights_tuned: false,
     verdict_limits: verdictLimits(cfg),
-    temp_source: "Open-Meteo sea surface temperature (no depth profile for a point)",
-    region: `${lat.toFixed(3)}, ${lon.toFixed(3)}`,
+    temp_source: lake ? "Estimated from the last year of air temperature"
+                      : "Open-Meteo sea surface temperature (no depth profile for a point)",
+    region: lake ? lake.name : `${lat.toFixed(3)}, ${lon.toFixed(3)}`,
+    lake: lake ? lakeBlock(lake, meta, nowI) : null,
     generated: new Date().toISOString(),
     bounds: [[lat-0.001, lon-0.001],[lat+0.001, lon+0.001]],
     now: {

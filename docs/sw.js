@@ -1,4 +1,4 @@
-const VERSION = "v28";
+const VERSION = "v29";
 const SHELL = `shell-${VERSION}`;
 const DATA = `data-${VERSION}`;
 const TILES = "tiles";
@@ -10,6 +10,7 @@ const SHELL_URLS = [
   "./index.html",
   "./anywhere.js",
   "./structure.js",
+  "./lakes.js",
   "./region-species.json",
   "./add-region.html",
   "./manifest.webmanifest",
@@ -102,7 +103,7 @@ self.addEventListener("fetch", e => {
 
   if (url.origin !== self.location.origin) return;
 
-  if (url.pathname.includes("/data/")) {
+  if (url.pathname.includes("/data/") || url.pathname.includes("/lakes/")) {
     e.respondWith((async () => {
       const c = await caches.open(DATA);
       try {

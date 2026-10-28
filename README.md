@@ -1042,6 +1042,47 @@ Okinawa. Set `bathymetry.use_sdb` on a region to put a passing fit into
 service; it is laid over the chart grid, so fine detail where the satellite
 can see and the original everywhere else.
 
+## Lakes
+
+A short, curated list of large lakes (`lakes.json`, 22 so far) is forecast in
+the browser, next to the sea. Open-Meteo has wave data for only a few lakes, so
+a tap on any other lake or on land is refused with a message instead of a
+made-up forecast.
+
+What is measured and what is not:
+
+| | Where it comes from |
+| --- | --- |
+| Wind, rain, cloud, air temperature | Open-Meteo, live |
+| Waves | **Computed**: fetch-limited wind waves (the standard JONSWAP/SPM formulas) from the wind and how far it travels over open water, which is measured from the lake's outline in 36 directions |
+| Water temperature | **Estimated**: a year of air temperature from the Open-Meteo archive, smoothed with a memory that grows with the lake's depth, then scaled to the lake's typical surface range |
+| Ice | **Estimated** for lakes that freeze, from freezing and thawing degree-days, and only inside the months ice is possible there |
+| Visibility | Same model as the coast, with a baseline set by a hand-assigned clarity class |
+
+Against typical monthly surface temperatures for 11 lakes the estimate is off by
+about 1.2 °C on average and 4 °C at worst. Those reference values are rough
+climatology, not measurements, so treat that as a sanity check. Ice is
+deliberately biased toward staying "frozen" longer than reality.
+
+Lakes have no species, structure map or rules data, and the page says so.
+Spearfishing in fresh water is banned or restricted in many countries, so every
+lake page leads with that warning and presents conditions for freediving and
+swimming.
+
+Outlines are Natural Earth 1:10m (public domain), built once and committed:
+
+```bash
+python lakes_build.py            # rebuilds docs/lakes/ from lakes.json
+python lakes_build.py --only tahoe
+```
+
+To add a lake, add an entry to `lakes.json` (its Natural Earth name, a
+`check_near` point that must fall inside its outline, depth, clarity class,
+typical surface range, ice behaviour) and run the build. The build refuses a
+lake whose outline is not where `check_near` says it should be, which is how a
+mislabelled Natural Earth feature (its "Lago di Como" is really Lake Maggiore)
+was caught.
+
 ## Offline
 
 `docs/sw.js` caches the app shell and map tiles aggressively and the forecast

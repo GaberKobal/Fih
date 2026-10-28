@@ -1,0 +1,159 @@
+{
+  "clarity_baseline": {"very clear": 0.12, "clear": 0.2, "moderate": 0.35, "turbid": 0.55, "very turbid": 0.7},
+  "lakes": [
+    {
+      "id": "tahoe", "name": "Lake Tahoe", "country": "United States",
+      "source": {"file": "ne_10m_lakes", "name": "Lake Tahoe"}, "check_near": [39.1, -120.0],
+      "mean_depth_m": 303, "altitude_m": 1897, "clarity": "very clear",
+      "ice_risk": "rare", "surface_c": [6, 20],
+      "hazards": ["Cold water, and an altitude of about 1,900 m"]
+    },
+    {
+      "id": "victoria", "name": "Lake Victoria", "country": "Uganda, Kenya, Tanzania",
+      "source": {"file": "ne_10m_lakes", "name": "Lake Victoria"}, "check_near": [-1.0, 33.0],
+      "mean_depth_m": 40, "altitude_m": 1133, "clarity": "very turbid",
+      "ice_risk": "none", "surface_c": [24, 27],
+      "hazards": ["Schistosomiasis (bilharzia) is widespread in the shallows", "Crocodiles and hippos"]
+    },
+    {
+      "id": "tanganyika", "name": "Lake Tanganyika", "country": "Tanzania, DR Congo, Burundi, Zambia",
+      "source": {"file": "ne_10m_lakes", "name": "Lake Tanganyika"}, "check_near": [-6.0, 29.7],
+      "mean_depth_m": 570, "altitude_m": 773, "clarity": "clear",
+      "ice_risk": "none", "surface_c": [25, 28],
+      "hazards": ["Crocodiles and hippos along many shores", "Schistosomiasis is possible in shallow, vegetated areas"]
+    },
+    {
+      "id": "malawi", "name": "Lake Malawi", "country": "Malawi, Mozambique, Tanzania",
+      "source": {"file": "ne_10m_lakes", "name": "Lake Malawi"}, "check_near": [-12.0, 34.5],
+      "mean_depth_m": 292, "altitude_m": 472, "clarity": "clear",
+      "ice_risk": "none", "surface_c": [24, 29],
+      "hazards": ["Schistosomiasis is a known risk in shallow, reedy areas", "Crocodiles and hippos in some areas"]
+    },
+    {
+      "id": "baikal", "name": "Lake Baikal", "country": "Russia",
+      "source": {"file": "ne_10m_lakes", "name": "Lake Baikal"}, "check_near": [53.5, 108.0],
+      "mean_depth_m": 744, "altitude_m": 456, "clarity": "very clear",
+      "ice_risk": "seasonal", "surface_c": [0.5, 14], "ice_months": [12, 1, 2, 3, 4, 5, 6],
+      "hazards": ["Very cold water all year", "Ice cover from about January to May"]
+    },
+    {
+      "id": "biwa", "name": "Lake Biwa", "country": "Japan",
+      "source": {"file": "ne_10m_lakes", "name": "Biwa Ko"}, "check_near": [35.3, 136.1],
+      "mean_depth_m": 41, "altitude_m": 85, "clarity": "moderate",
+      "ice_risk": "rare", "surface_c": [8, 28],
+      "hazards": []
+    },
+    {
+      "id": "issyk-kul", "name": "Issyk-Kul", "country": "Kyrgyzstan",
+      "source": {"file": "ne_10m_lakes", "name": "Issyk-Kul"}, "check_near": [42.45, 77.25],
+      "mean_depth_m": 270, "altitude_m": 1607, "clarity": "clear",
+      "ice_risk": "none", "surface_c": [4, 18],
+      "hazards": ["Altitude of about 1,600 m"]
+    },
+    {
+      "id": "toba", "name": "Lake Toba", "country": "Indonesia",
+      "source": {"file": "ne_10m_lakes", "name": "Danau Toba"}, "check_near": [2.65, 98.85],
+      "mean_depth_m": 228, "altitude_m": 903, "clarity": "clear",
+      "ice_risk": "none", "surface_c": [23, 27],
+      "hazards": []
+    },
+    {
+      "id": "titicaca", "name": "Lake Titicaca", "country": "Peru, Bolivia",
+      "source": {"file": "ne_10m_lakes", "name": "Lago Titicaca"}, "check_near": [-15.9, -69.4],
+      "mean_depth_m": 107, "altitude_m": 3812, "clarity": "moderate",
+      "ice_risk": "none", "surface_c": [11, 15],
+      "hazards": ["Altitude of about 3,800 m: less oxygen, and cold water"]
+    },
+    {
+      "id": "constance", "name": "Lake Constance (Bodensee)", "country": "Germany, Switzerland, Austria",
+      "source": {"file": "ne_10m_lakes", "name": "Bodensee"}, "check_near": [47.6, 9.4],
+      "mean_depth_m": 90, "altitude_m": 395, "clarity": "moderate",
+      "ice_risk": "rare", "surface_c": [5, 21],
+      "hazards": ["Foehn winds can build quickly"]
+    },
+    {
+      "id": "geneva", "name": "Lake Geneva", "country": "Switzerland, France",
+      "source": {"file": "ne_10m_lakes", "name": "Lake Geneva"}, "check_near": [46.45, 6.55],
+      "mean_depth_m": 154, "altitude_m": 372, "clarity": "moderate",
+      "ice_risk": "none", "surface_c": [6, 21],
+      "hazards": ["The Bise and Vaudaire winds can build quickly"]
+    },
+    {
+      "id": "garda", "name": "Lake Garda", "country": "Italy",
+      "source": {"file": "ne_10m_lakes", "name": "Lago di Garda"}, "check_near": [45.65, 10.7],
+      "mean_depth_m": 136, "altitude_m": 65, "clarity": "clear",
+      "ice_risk": "none", "surface_c": [8, 26],
+      "hazards": ["Strong daily winds (the Peler in the morning, the Ora in the afternoon)"]
+    },
+    {
+      "id": "como", "name": "Lake Como", "country": "Italy",
+      "source": {"file": "ne_10m_lakes_europe", "name": "Lago di Como"}, "check_near": [46.0, 9.27],
+      "mean_depth_m": 154, "altitude_m": 198, "clarity": "moderate",
+      "ice_risk": "none", "surface_c": [7, 25],
+      "hazards": ["Strong daily winds (the Tivano in the morning, the Breva in the afternoon)"]
+    },
+    {
+      "id": "maggiore", "name": "Lake Maggiore", "country": "Italy, Switzerland",
+      "source": {"file": "ne_10m_lakes", "name": "Lago di Como"}, "check_near": [45.95, 8.65],
+      "mean_depth_m": 177, "altitude_m": 193, "clarity": "moderate",
+      "ice_risk": "none", "surface_c": [7, 24],
+      "hazards": []
+    },
+    {
+      "id": "balaton", "name": "Lake Balaton", "country": "Hungary",
+      "source": {"file": "ne_10m_lakes", "name": "Lake Balaton"}, "check_near": [46.83, 17.73],
+      "mean_depth_m": 3.3, "altitude_m": 104, "clarity": "turbid",
+      "ice_risk": "seasonal", "surface_c": [1, 26], "ice_months": [12, 1, 2, 3],
+      "hazards": ["Very shallow, so it turns rough and muddy quickly in a blow", "Ice cover in cold winters"]
+    },
+    {
+      "id": "vanern", "name": "Vänern", "country": "Sweden",
+      "source": {"file": "ne_10m_lakes", "name": "Vänern"}, "check_near": [58.9, 13.2],
+      "mean_depth_m": 27, "altitude_m": 44, "clarity": "moderate",
+      "ice_risk": "seasonal", "surface_c": [1, 19], "ice_months": [12, 1, 2, 3, 4],
+      "hazards": ["Ice cover in winter"]
+    },
+    {
+      "id": "ladoga", "name": "Lake Ladoga", "country": "Russia",
+      "source": {"file": "ne_10m_lakes", "name": "Lake Ladoga"}, "check_near": [60.8, 31.5],
+      "mean_depth_m": 51, "altitude_m": 5, "clarity": "moderate",
+      "ice_risk": "seasonal", "surface_c": [0.5, 18], "ice_months": [12, 1, 2, 3, 4, 5],
+      "hazards": ["Cold water", "Ice cover in winter"]
+    },
+    {
+      "id": "saimaa", "name": "Lake Saimaa", "country": "Finland",
+      "source": {"file": "ne_10m_lakes", "name": "Lake Saimaa"}, "check_near": [61.5, 28.3],
+      "mean_depth_m": 12, "altitude_m": 76, "clarity": "turbid",
+      "ice_risk": "seasonal", "surface_c": [0.5, 20], "ice_months": [11, 12, 1, 2, 3, 4, 5],
+      "hazards": ["Tea-coloured water limits visibility", "Ice cover in winter"]
+    },
+    {
+      "id": "okanagan", "name": "Okanagan Lake", "country": "Canada",
+      "source": {"file": "ne_10m_lakes_north_america", "name": "Okanagan Lake"}, "check_near": [50.0, -119.5],
+      "mean_depth_m": 76, "altitude_m": 342, "clarity": "moderate",
+      "ice_risk": "rare", "surface_c": [4, 22],
+      "hazards": []
+    },
+    {
+      "id": "taupo", "name": "Lake Taupō", "country": "New Zealand",
+      "source": {"file": "ne_10m_lakes", "name": "Lake Taupo"}, "check_near": [-38.8, 175.9],
+      "mean_depth_m": 95, "altitude_m": 357, "clarity": "clear",
+      "ice_risk": "none", "surface_c": [9, 19],
+      "hazards": []
+    },
+    {
+      "id": "wakatipu", "name": "Lake Wakatipu", "country": "New Zealand",
+      "source": {"file": "ne_10m_lakes", "name": "Lake Wakatipu"}, "check_near": [-45.1, 168.6],
+      "mean_depth_m": 230, "altitude_m": 310, "clarity": "very clear",
+      "ice_risk": "none", "surface_c": [8, 17],
+      "hazards": ["Very cold, glacier-fed water"]
+    },
+    {
+      "id": "te-anau", "name": "Lake Te Anau", "country": "New Zealand",
+      "source": {"file": "ne_10m_lakes", "name": "Lake Te Anau"}, "check_near": [-45.25, 167.8],
+      "mean_depth_m": 170, "altitude_m": 210, "clarity": "very clear",
+      "ice_risk": "none", "surface_c": [8, 16],
+      "hazards": ["Very cold, glacier-fed water"]
+    }
+  ]
+}
